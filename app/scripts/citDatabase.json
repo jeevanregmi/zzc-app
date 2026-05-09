@@ -1,0 +1,300 @@
+[
+  {
+    "title": "Citizens Unit Scheme",
+    "organization": "CIT",
+    "category": "Investment",
+    "subcategory": "Mutual Fund",
+    "summary": "CIT's flagship open-ended mutual fund scheme. Investors buy and redeem units at NAV price anytime. CIT provides on-premises buyback facility for liquidity. Also accepts investment from Nepali diaspora abroad, with piloting from South Korea via Sunrise Bank.",
+    "nepaliSummary": "नागरिक एकांक योजना CIT को प्रमुख खुला म्युचुअल फण्ड हो। लगानीकर्ताले NAV मूल्यमा जुनसुकै बेला एकाइ किन्न र बेच्न सक्छन्। CIT ले आफ्नै परिसरमा बायब्याक सुविधा दिन्छ। विदेशमा रहेका नेपालीहरूले पनि लगानी गर्न सक्छन् — दक्षिण कोरियाबाट सनराइज बैंक मार्फत परीक्षण भइरहेको छ।",
+    "interestRate": null,
+    "riskLevel": "Moderate Risk",
+    "liquidity": "High",
+    "retirementSupport": false,
+    "medicalCoverage": false,
+    "insurance": false,
+    "gratuity": false,
+    "calculatorEnabled": true,
+    "graphEnabled": true,
+    "benefits": [
+      "Government backed scheme",
+      "Open-ended — buy/sell anytime",
+      "NAV-based transparent pricing",
+      "Buyback facility at CIT premises",
+      "Diaspora investment accepted",
+      "Expert trust committee oversight"
+    ],
+    "eligibility": [
+      "Any Nepali citizen (resident or non-resident)",
+      "Minimum investment as per current NAV",
+      "Valid citizenship or passport",
+      "Non-resident Nepalis via designated bank channels",
+      "Institutional investors also eligible"
+    ],
+    "documents": [
+      "Unit purchase application form",
+      "Citizenship certificate or passport",
+      "Recent passport-size photograph",
+      "Bank account details (for redemption)",
+      "PAN card (if applicable)",
+      "KYC form"
+    ],
+    "loanLimit": null,
+    "pension": false,
+    "compareTags": ["mutual-fund", "investment", "open-ended", "NAV", "liquidity", "diaspora"]
+  },
+  {
+    "title": "Citizens Pension Scheme",
+    "organization": "CIT",
+    "category": "Pension",
+    "subcategory": "Voluntary Pension",
+    "summary": "CIT's voluntary pension scheme launched in 2019. Anyone can contribute minimum NPR 500/month on a monthly, quarterly, half-yearly, or yearly basis. Pension starts at age 60 after 15 years of contribution and continues for life. On death, transferred to spouse; remaining fund goes to legal nominees.",
+    "nepaliSummary": "CIT को स्वैच्छिक पेन्सन योजना २०१९ मा सुरु भयो। जो कोहीले न्यूनतम ५०० रुपैयाँ मासिक, त्रैमासिक, अर्धवार्षिक वा वार्षिक रूपमा योगदान गर्न सक्छन्। ६० वर्षको उमेर र १५ वर्षको योगदान पुगेपछि जीवनभर पेन्सन पाइन्छ। मृत्युपछि पेन्सन पति/पत्नीलाई हस्तान्तरण हुन्छ र उनको मृत्युपछि बाँकी रकम नामांकित व्यक्तिले पाउँछ।",
+    "interestRate": null,
+    "riskLevel": "Low Risk",
+    "liquidity": "Low",
+    "retirementSupport": true,
+    "medicalCoverage": false,
+    "insurance": false,
+    "gratuity": false,
+    "calculatorEnabled": true,
+    "graphEnabled": true,
+    "benefits": [
+      "Government backed scheme",
+      "Retirement support",
+      "Lifetime pension after age 60",
+      "Spouse continues pension after death",
+      "Nominees receive remaining fund",
+      "Flexible contribution frequency",
+      "Open to all — not just employees"
+    ],
+    "eligibility": [
+      "Any Nepali citizen (employed or self-employed)",
+      "Minimum age: 18 years at enrollment",
+      "Maximum entry age: 50 years",
+      "Minimum contribution: NPR 500/month",
+      "Must contribute for minimum 15 years to qualify for pension",
+      "If unable to complete 15 years due to age, can contribute lump sum"
+    ],
+    "documents": [
+      "Pension scheme enrollment form",
+      "Citizenship certificate",
+      "Recent passport-size photograph",
+      "Bank account details",
+      "PAN card",
+      "Nominee declaration form"
+    ],
+    "loanLimit": null,
+    "pension": true,
+    "compareTags": ["pension", "retirement", "voluntary", "lifetime", "spouse-benefit", "self-employed"]
+  },
+  {
+    "title": "Gratuity and Pension Fund Scheme",
+    "organization": "CIT",
+    "category": "Pension",
+    "subcategory": "Institutional Retirement Fund",
+    "summary": "CIT manages organizations' long-term gratuity and pension liabilities by segregating and investing the funds. Organizations deposit employee gratuity and pension liabilities into CIT, which ensures funds are fully available at retirement. Relieves institutions from future financial burden.",
+    "nepaliSummary": "CIT ले संस्थाहरूको दीर्घकालीन उपदान र पेन्सन दायित्व व्यवस्थापन गर्छ — रकम अलग राखेर लगानी गर्दछ। संस्थाहरूले कर्मचारीको उपदान र पेन्सन दायित्व CIT मा जम्मा गर्छन्, जसले अवकाशमा पैसा पूर्ण उपलब्ध हुन्छ भन्ने सुनिश्चित गर्छ। संस्थाहरूलाई भविष्यको आर्थिक बोझबाट मुक्त गर्छ।",
+    "interestRate": null,
+    "riskLevel": "Low Risk",
+    "liquidity": "Low",
+    "retirementSupport": true,
+    "medicalCoverage": false,
+    "insurance": false,
+    "gratuity": true,
+    "calculatorEnabled": false,
+    "graphEnabled": false,
+    "benefits": [
+      "Government backed scheme",
+      "Retirement support",
+      "Fully funded liability management",
+      "Employee benefits guaranteed at retirement",
+      "Relieves organizations from future burden",
+      "Professional CIT fund management"
+    ],
+    "eligibility": [
+      "Organizations and institutions (government or private)",
+      "Must have registered employee gratuity or pension liabilities",
+      "Formal agreement with CIT required",
+      "Fund deposits must match computed liabilities"
+    ],
+    "documents": [
+      "Institutional enrollment form",
+      "Organization registration certificate",
+      "Employee liability computation sheet",
+      "Board resolution / authorization letter",
+      "MOU with CIT",
+      "Employee list with service details"
+    ],
+    "loanLimit": null,
+    "pension": true,
+    "compareTags": ["pension", "gratuity", "institutional", "retirement-fund", "corporate", "liability-management"]
+  },
+  {
+    "title": "Employee Savings Growth Retirement Scheme",
+    "organization": "CIT",
+    "category": "Investment",
+    "subcategory": "Retirement Savings",
+    "summary": "Voluntary defined contributory individual account-based retirement scheme. Monthly salary deductions are channeled through Commercial Banks or Nepal Rastra Bank collection centers. Offers tax deduction up to the contribution amount or 33% of total remuneration. Designed to complement pension reform and replace pay-as-you-go systems.",
+    "nepaliSummary": "स्वैच्छिक, परिभाषित अंशदान, पूर्णरूपमा सञ्चित, व्यक्तिगत खाता आधारित अवकाश योजना। मासिक तलबबाट काटिएको रकम वाणिज्य बैंक वा नेपाल राष्ट्र बैंकका संकलन केन्द्रहरू मार्फत जम्मा हुन्छ। योगदान रकम वा कुल पारिश्रमिकको ३३% सम्म कर छुट पाइन्छ। पेन्सन सुधारलाई सहयोग गर्न र पे-एज-यु-गो प्रणाली प्रतिस्थापन गर्न डिजाइन गरिएको।",
+    "interestRate": 9,
+    "riskLevel": "Low Risk",
+    "liquidity": "Low",
+    "retirementSupport": true,
+    "medicalCoverage": false,
+    "insurance": false,
+    "gratuity": false,
+    "calculatorEnabled": true,
+    "graphEnabled": true,
+    "benefits": [
+      "Government backed scheme",
+      "Retirement support",
+      "Tax deduction benefit",
+      "Individual account transparency",
+      "Fully funded — no pension deficit risk",
+      "Collected via banks nationwide"
+    ],
+    "eligibility": [
+      "Employees in organizations that have enrolled in the scheme",
+      "Fully voluntary participation",
+      "Monthly salary deduction arrangement required",
+      "Employer must be registered with CIT for this scheme"
+    ],
+    "documents": [
+      "Enrollment application form",
+      "Citizenship certificate",
+      "Employee appointment letter",
+      "Bank account details",
+      "Salary certificate",
+      "PAN card"
+    ],
+    "loanLimit": null,
+    "pension": true,
+    "compareTags": ["savings", "retirement", "tax-benefit", "voluntary", "individual-account", "salary-deduction"]
+  },
+  {
+    "title": "Government Employees' Term Life Insurance Fund",
+    "organization": "CIT",
+    "category": "Insurance",
+    "subcategory": "Term Life Insurance",
+    "summary": "Mandatory term life insurance for all government civil servants, teachers, Nepal Army, Nepal Police, and Armed Police Force since 2062/63 BS. Employee contributes NPR 400/month and government matches with NPR 400. Provides NPR 2,00,000 sum insured for 20 years of life coverage.",
+    "nepaliSummary": "२०६२/६३ देखि सबै सरकारी कर्मचारी, शिक्षक, नेपाली सेना, नेपाल प्रहरी र सशस्त्र प्रहरी बलका लागि अनिवार्य सावधिक जीवन बीमा। कर्मचारीले ४०० रुपैयाँ र सरकारले थप ४०० रुपैयाँ मासिक प्रिमियम जम्मा गर्छन्। २० वर्षको जीवन सुरक्षाका लागि २ लाख रुपैयाँको बीमांक प्रदान गर्छ।",
+    "interestRate": null,
+    "riskLevel": "Low Risk",
+    "liquidity": "Low",
+    "retirementSupport": false,
+    "medicalCoverage": false,
+    "insurance": true,
+    "gratuity": false,
+    "calculatorEnabled": false,
+    "graphEnabled": false,
+    "benefits": [
+      "Government backed scheme",
+      "Insurance protection",
+      "Government matches contribution",
+      "NPR 2,00,000 sum insured",
+      "20-year life coverage",
+      "Mandatory — no enrollment needed",
+      "Covers civil servants, teachers, army, police"
+    ],
+    "eligibility": [
+      "All permanent government civil servants",
+      "All community school teachers",
+      "All Nepal Army personnel",
+      "All Nepal Police personnel",
+      "All Armed Police Force personnel",
+      "Mandatory — automatic enrollment on joining service"
+    ],
+    "documents": [
+      "Appointment letter (for new entrants)",
+      "Citizenship certificate",
+      "Employee ID",
+      "Nominee declaration form",
+      "Bank account details (for benefit payout)"
+    ],
+    "loanLimit": null,
+    "pension": false,
+    "compareTags": ["insurance", "term-life", "government-employees", "mandatory", "teachers", "army", "police"]
+  },
+  {
+    "title": "NARC Employees' Term Life Insurance",
+    "organization": "CIT",
+    "category": "Insurance",
+    "subcategory": "Term Life Insurance",
+    "summary": "Term life insurance scheme exclusively for permanent employees of Nepal Agricultural Research Council (NARC). Both the employee and NARC each contribute NPR 400/month as premium. Administered by CIT under the Citizens Investment Trust Act.",
+    "nepaliSummary": "राष्ट्रिय कृषि अनुसन्धान केन्द्र (NARC) का स्थायी कर्मचारीहरूका लागि मात्र सावधिक जीवन बीमा योजना। कर्मचारी र NARC दुवैले मासिक ४०० रुपैयाँ प्रिमियम जम्मा गर्छन्। नागरिक लगानी कोष ऐन अन्तर्गत CIT द्वारा सञ्चालित।",
+    "interestRate": null,
+    "riskLevel": "Low Risk",
+    "liquidity": "Low",
+    "retirementSupport": false,
+    "medicalCoverage": false,
+    "insurance": true,
+    "gratuity": false,
+    "calculatorEnabled": false,
+    "graphEnabled": false,
+    "benefits": [
+      "Government backed scheme",
+      "Insurance protection",
+      "NARC matches employee contribution",
+      "Term life coverage",
+      "Administered by CIT"
+    ],
+    "eligibility": [
+      "Permanent employees of Nepal Agricultural Research Council (NARC) only",
+      "Mandatory for all permanent NARC staff",
+      "Automatic enrollment on permanent appointment"
+    ],
+    "documents": [
+      "Permanent appointment letter",
+      "Citizenship certificate",
+      "Employee ID",
+      "Nominee declaration form",
+      "Bank account details"
+    ],
+    "loanLimit": null,
+    "pension": false,
+    "compareTags": ["insurance", "term-life", "NARC", "agriculture", "government-employees", "mandatory"]
+  },
+  {
+    "title": "Investor's Retirement Fund Scheme",
+    "organization": "CIT",
+    "category": "Investment",
+    "subcategory": "Portfolio Management",
+    "summary": "Institutional retirement and investment scheme for organizations to fund long-term liabilities beyond pension and gratuity — such as welfare funds and insurance funds. Operates under two models: (1) retirement scheme model, and (2) Portfolio Management Services (PMS). CIT charges a management fee for fund administration.",
+    "nepaliSummary": "संस्थागत अवकाश र लगानी योजना — पेन्सन र उपदान बाहेकका अन्य दीर्घकालीन दायित्व (कल्याण कोष, बीमा कोष) पूर्णरूपमा सञ्चित गर्न। दुई मोडेलमा सञ्चालित: (१) अवकाश योजना मोडेल र (२) पोर्टफोलियो व्यवस्थापन सेवा (PMS)। CIT ले कोष व्यवस्थापनमा न्यूनतम सेवा शुल्क लिन्छ।",
+    "interestRate": null,
+    "riskLevel": "Low Risk",
+    "liquidity": "Low",
+    "retirementSupport": true,
+    "medicalCoverage": false,
+    "insurance": false,
+    "gratuity": true,
+    "calculatorEnabled": false,
+    "graphEnabled": false,
+    "benefits": [
+      "Government backed scheme",
+      "Retirement support",
+      "Portfolio Management Services available",
+      "Covers welfare and insurance fund liabilities",
+      "Two flexible operating models",
+      "Professional CIT investment management",
+      "Minimum management fee"
+    ],
+    "eligibility": [
+      "Institutional investors and organizations only",
+      "Must have identifiable long-term employee liabilities",
+      "Formal agreement with CIT required",
+      "Applicable for welfare funds, insurance reserve funds, and similar"
+    ],
+    "documents": [
+      "Institutional application form",
+      "Organization registration certificate",
+      "Board resolution / authorization",
+      "Liability schedule / actuarial report",
+      "MOU with CIT",
+      "Fund transfer documentation"
+    ],
+    "loanLimit": null,
+    "pension": true,
+    "compareTags": ["investment", "portfolio-management", "institutional", "welfare-fund", "retirement", "PMS"]
+  }
+]

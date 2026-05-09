@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(cd \"C:\\\\Users\\\\jeeva\\\\Desktop\\\\zzc-app\"; $json = Get-Content \"app\\\\scripts\\\\epfDatabase.json\" -Raw | ConvertFrom-Json; Write-Output \"Total schemes: $\\($json.Count\\)\"; $json | ForEach-Object { Write-Output \"- $\\($_.title\\) [$\\($_.category\\)]\" })",
+      "PowerShell($json = Get-Content \"C:\\\\Users\\\\jeeva\\\\Desktop\\\\zzc-app\\\\cleanSchemes.json\" -Raw | ConvertFrom-Json; $cit = $json | Where-Object { $_.title -match \"नागरिक|उपदान|लगानीकर्ता\" } | Select-Object -ExpandProperty title; $cit)",
+      "PowerShell(cd \"C:\\\\Users\\\\jeeva\\\\Desktop\\\\zzc-app\"; Get-Content \"cleanSchemes.json\" -Raw | ConvertFrom-Json | Where-Object { $_.title -match \"CIT|नागरिक|Nagarik|लगानी|ekank|pension|bima|kosh\" -or $_.content -match \"CIT|नागरिक लगानी\" } | Select-Object title, sourceFile | Format-List)",
+      "PowerShell(cd \"C:\\\\Users\\\\jeeva\\\\Desktop\\\\zzc-app\"; $raw = Get-Content \"cleanSchemes.json\" -Raw | ConvertFrom-Json; Write-Output \"Total: $\\($raw.Count\\)\"; $raw | Select-Object title, sourceFile | Format-List)",
+      "PowerShell(cd \"C:\\\\Users\\\\jeeva\\\\Desktop\\\\zzc-app\"; $json = Get-Content \"app\\\\scripts\\\\citDatabase.json\" -Raw | ConvertFrom-Json; Write-Output \"Total schemes: $\\($json.Count\\)\"; $json | ForEach-Object { Write-Output \"- $\\($_.title\\) [$\\($_.category\\) / $\\($_.subcategory\\)]\" })",
+      "PowerShell(cd \"C:\\\\Users\\\\jeeva\\\\Desktop\\\\zzc-app\"; $json = Get-Content \"app\\\\scripts\\\\ssfDatabase.json\" -Raw | ConvertFrom-Json; Write-Output \"Total schemes: $\\($json.Count\\)\"; $json | ForEach-Object { Write-Output \"- $\\($_.title\\) [$\\($_.category\\) / $\\($_.subcategory\\)]\" })",
+      "PowerShell($env:PATH = [System.Environment]::GetEnvironmentVariable\\(\"PATH\", \"Machine\"\\) + \";\" + [System.Environment]::GetEnvironmentVariable\\(\"PATH\", \"User\"\\); cd C:\\\\Users\\\\jeeva\\\\Desktop\\\\zzc-app; git --version)",
+      "PowerShell(git *)"
+    ]
+  }
+}
