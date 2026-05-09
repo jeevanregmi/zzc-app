@@ -14,8 +14,52 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ZZC — Nepal Fintech Intelligence",
-  description: "Compare Nepal's top savings, pension, and investment schemes",
+  metadataBase: new URL("https://zzc.jeevanregmi.com.np"),
+  title: {
+    default: "ZZC — Zeneration Z Chautari",
+    template: "%s | ZZC — Zeneration Z Chautari",
+  },
+  description:
+    "नेपालको Gen Z को लागि EPF, CIT र SSF लगानी योजनाहरू — तुलना, क्यालकुलेटर र योग्यता जाँच एकै ठाउँमा।",
+  keywords: [
+    "EPF",
+    "CIT",
+    "SSF",
+    "नेपाल बचत",
+    "लगानी योजना",
+    "सेवानिवृत्ति",
+    "पेन्सन",
+    "Gen Z Nepal",
+    "Zeneration Z Chautari",
+    "कर्मचारी सञ्चय कोष",
+    "नागरिक लगानी कोष",
+    "सामाजिक सुरक्षा कोष",
+  ],
+  authors: [{ name: "ZZC Team" }],
+  creator: "ZZC — Zeneration Z Chautari",
+  openGraph: {
+    type: "website",
+    locale: "ne_NP",
+    url: "https://zzc.jeevanregmi.com.np",
+    siteName: "ZZC — Zeneration Z Chautari",
+    title: "ZZC — Zeneration Z Chautari",
+    description:
+      "नेपालको Gen Z को लागि EPF, CIT र SSF लगानी योजनाहरू — तुलना, क्यालकुलेटर र योग्यता जाँच।",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "ZZC — Zeneration Z Chautari",
+    description:
+      "नेपालको Gen Z को लागि EPF, CIT र SSF लगानी योजनाहरू।",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+    },
+  },
 };
 
 export default function RootLayout({
@@ -25,7 +69,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="ne"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-black text-white">
@@ -36,16 +80,16 @@ export default function RootLayout({
             </Link>
             <div className="flex items-center gap-1 text-sm font-semibold">
               <Link href="/" className="text-zinc-400 hover:text-white hover:bg-zinc-900 px-3 py-2 rounded-xl transition">
-                Schemes
+                योजनाहरू
               </Link>
               <Link href="/eligibility" className="text-zinc-400 hover:text-white hover:bg-zinc-900 px-3 py-2 rounded-xl transition">
-                Eligibility
+                योग्यता
               </Link>
               <Link href="/compare" className="text-zinc-400 hover:text-white hover:bg-zinc-900 px-3 py-2 rounded-xl transition">
-                Compare
+                तुलना
               </Link>
               <Link href="/calculator" className="text-zinc-400 hover:text-white hover:bg-zinc-900 px-3 py-2 rounded-xl transition">
-                Calculator
+                क्यालकुलेटर
               </Link>
               <Link href="/admin" className="text-zinc-600 hover:text-green-400 hover:bg-zinc-900 px-3 py-2 rounded-xl transition text-xs ml-4">
                 Admin

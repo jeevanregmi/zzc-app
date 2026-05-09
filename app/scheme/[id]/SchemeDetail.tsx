@@ -4,6 +4,12 @@ import { useEffect, useState } from "react";
 import { db } from "../../firebase";
 import { doc, getDoc } from "firebase/firestore";
 
+const orgColor: Record<string, string> = {
+  EPF: "bg-blue-600",
+  CIT: "bg-purple-600",
+  SSF: "bg-orange-600",
+};
+
 export default function SchemeDetail({ id }: { id: string }) {
 
   const [scheme, setScheme] = useState<any>(null);
@@ -42,81 +48,109 @@ export default function SchemeDetail({ id }: { id: string }) {
 
   if (loading) {
     return (
-      <main className="p-10 text-white bg-black min-h-screen">
-        <p className="text-gray-400">Loading...</p>
+      <main className="min-h-screen bg-black text-white px-6 py-12">
+        <p className="text-zinc-600">लोड हुँदैछ...</p>
       </main>
     );
   }
 
   if (!scheme) {
     return (
-      <main className="p-10 text-white bg-black min-h-screen">
-        <p className="text-zinc-500">Scheme not found.</p>
+      <main className="min-h-screen bg-black text-white px-6 py-12">
+        <a href="/" className="text-green-400 text-sm hover:underline">← सबै योजनाहरूमा फर्कनुस्</a>
+        <p className="text-zinc-500 mt-8">योजना भेटिएन।</p>
       </main>
     );
   }
 
   return (
 
-    <main className="p-10 text-white bg-black min-h-screen">
+    <main className="min-h-screen bg-black text-white px-6 py-12">
 
-      <a
-        href="/"
-        className="text-green-400 text-sm mb-8 inline-block hover:underline"
-      >
-        ← Back to all schemes
-      </a>
+      <div className="max-w-4xl mx-auto">
 
-      <h1 className="text-4xl font-bold mb-6">
-        {scheme.title}
-      </h1>
+        <a
+          href="/"
+          className="text-green-400 text-sm mb-8 inline-block hover:underline"
+        >
+          ← सबै योजनाहरूमा फर्कनुस्
+        </a>
 
-      <div className="space-y-4">
+        <div className="flex items-start justify-between gap-4 mt-6 mb-8 flex-wrap">
+          <h1 className="text-4xl font-black text-white leading-tight">
+            {scheme.title}
+          </h1>
+          {scheme.organization && (
+            <span className={`text-sm px-4 py-1.5 rounded-full text-white font-black shrink-0 ${orgColor[scheme.organization] ?? "bg-zinc-700"}`}>
+              {scheme.organization}
+            </span>
+          )}
+        </div>
 
-        <p>
-          <span className="text-gray-400">Organization:</span>
-          {" "}
-          {scheme.organization}
-        </p>
+        {/* मुख्य जानकारी */}
+        <div className="grid sm:grid-cols-2 gap-3 mb-8">
 
-        <p>
-          <span className="text-gray-400">Category:</span>
-          {" "}
-          {scheme.category}
-        </p>
+          {[
+            { label: "संस्था", value: scheme.organization },
+            { label: "श्रेणी", value: scheme.category },
+            { label: "उपश्रेणी", value: scheme.subcategory },
+            { label: "जोखिम", value: scheme.riskLevel },
+            { label: "तरलता", value: scheme.liquidity },
+            { label: "ब्याज दर", value: scheme.interestRate ? `${scheme.interestRate}%` : "N/A" },
+          ].map(({ label, value }) => value ? (
+            <div key={label} className="bg-zinc-900 border border-zinc-800 rounded-2xl px-5 py-3 flex items-center justify-between">
+              <span className="text-zinc-500 text-sm">{label}</span>
+              <span className="text-white font-semibold text-sm">{value}</span>
+            </div>
+          ) : null)}
 
-        <p>
-          <span className="text-gray-400">Subcategory:</span>
-          {" "}
-          {scheme.subcategory}
-        </p>
+        </div>
 
-        <p>
-          <span className="text-gray-400">Risk:</span>
-          {" "}
-          {scheme.riskLevel}
-        </p>
+        {/* सुविधाहरू */}
+        <div className="grid grid-cols-3 gap-3 mb-8">
 
-        <p>
-          <span className="text-gray-400">Liquidity:</span>
-          {" "}
-          {scheme.liquidity}
-        </p>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">
+            <p className="text-zinc-500 text-xs mb-1">सेवानिवृत्ति</p>
+            <p className={`font-black text-lg ${scheme.retirementSupport ? "text-green-400" : "text-zinc-700"}`}>
+              {scheme.retirementSupport ? "छ" : "छैन"}
+            </p>
+          </div>
 
-        <p>
-          <span className="text-gray-400">Interest Rate:</span>
-          {" "}
-          {scheme.interestRate || "N/A"}
-        </p>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">
+            <p className="text-zinc-500 text-xs mb-1">बीमा</p>
+            <p className={`font-black text-lg ${scheme.insurance ? "text-green-400" : "text-zinc-700"}`}>
+              {scheme.insurance ? "छ" : "छैन"}
+            </p>
+          </div>
 
+          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">
+            <p className="text-zinc-500 text-xs mb-1">स्वास्थ्य सुविधा</p>
+            <p className={`font-black text-lg ${scheme.medicalCoverage ? "text-green-400" : "text-zinc-700"}`}>
+              {scheme.medicalCoverage ? "छ" : "छैन"}
+            </p>
+          </div>
+
+        </div>
+
+        {/* सारांश */}
+        {(scheme.nepaliSummary || scheme.summary) && (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 mb-8">
+            <h2 className="text-xl font-black mb-3 text-green-400">सारांश</h2>
+            <p className="text-zinc-300 leading-relaxed">
+              {scheme.nepaliSummary || scheme.summary}
+            </p>
+          </div>
+        )}
+
+        {/* फाइदाहरू */}
         {scheme.benefits?.length > 0 && (
-          <div className="mt-4">
-            <p className="text-gray-400 mb-2">Benefits:</p>
+          <div className="mb-8">
+            <h2 className="text-xl font-black mb-4">फाइदाहरू</h2>
             <div className="flex flex-wrap gap-2">
               {scheme.benefits.map((b: string, i: number) => (
                 <span
                   key={i}
-                  className="bg-zinc-800 text-xs px-3 py-1 rounded-full"
+                  className="bg-zinc-800 text-zinc-300 text-sm px-4 py-2 rounded-full"
                 >
                   {b}
                 </span>
@@ -125,42 +159,35 @@ export default function SchemeDetail({ id }: { id: string }) {
           </div>
         )}
 
-        <div className="mt-6">
-
-          <h2 className="text-2xl font-bold mb-2">
-            Summary
-          </h2>
-
-          <p className="text-gray-300 leading-relaxed">
-            {scheme.summary}
-          </p>
-
-        </div>
-
-        <div className="grid md:grid-cols-3 gap-4 mt-8">
-
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
-            <p className="text-gray-400 text-sm mb-1">Retirement</p>
-            <p className="text-green-400 font-black text-xl">
-              {scheme.retirementSupport ? "YES" : "NO"}
-            </p>
+        {/* योग्यता */}
+        {scheme.eligibility?.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-xl font-black mb-4">योग्यता शर्तहरू</h2>
+            <ul className="space-y-2">
+              {scheme.eligibility.map((e: string, i: number) => (
+                <li key={i} className="flex items-start gap-3 text-zinc-400 text-sm">
+                  <span className="text-green-500 mt-0.5 shrink-0">✓</span>
+                  {e}
+                </li>
+              ))}
+            </ul>
           </div>
+        )}
 
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
-            <p className="text-gray-400 text-sm mb-1">Insurance</p>
-            <p className="text-green-400 font-black text-xl">
-              {scheme.insurance ? "YES" : "NO"}
-            </p>
+        {/* कागजातहरू */}
+        {scheme.documents?.length > 0 && (
+          <div className="mb-8">
+            <h2 className="text-xl font-black mb-4">आवश्यक कागजातहरू</h2>
+            <ul className="space-y-2">
+              {scheme.documents.map((d: string, i: number) => (
+                <li key={i} className="flex items-start gap-3 text-zinc-400 text-sm">
+                  <span className="text-zinc-600 mt-0.5 shrink-0">•</span>
+                  {d}
+                </li>
+              ))}
+            </ul>
           </div>
-
-          <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
-            <p className="text-gray-400 text-sm mb-1">Medical Coverage</p>
-            <p className="text-green-400 font-black text-xl">
-              {scheme.medicalCoverage ? "YES" : "NO"}
-            </p>
-          </div>
-
-        </div>
+        )}
 
       </div>
 

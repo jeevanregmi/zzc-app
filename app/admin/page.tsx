@@ -48,13 +48,13 @@ function LoginForm({ onLogin }: { onLogin: (email: string, pass: string) => Prom
       <div className="w-full max-w-sm">
 
         <h1 className="text-4xl font-black text-green-400 mb-2">ZZC Admin</h1>
-        <p className="text-zinc-500 mb-8">Sign in to continue</p>
+        <p className="text-zinc-500 mb-8">जारी राख्न साइन इन गर्नुस्</p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
 
           <input
             type="email"
-            placeholder="Email"
+            placeholder="इमेल"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
@@ -67,7 +67,7 @@ function LoginForm({ onLogin }: { onLogin: (email: string, pass: string) => Prom
 
           <input
             type="password"
-            placeholder="Password"
+            placeholder="पासवर्ड"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
@@ -93,7 +93,7 @@ function LoginForm({ onLogin }: { onLogin: (email: string, pass: string) => Prom
               text-black font-black py-3 rounded-2xl transition
             "
           >
-            {loading ? "Signing in..." : "Sign In"}
+            {loading ? "साइन इन हुँदैछ..." : "साइन इन"}
           </button>
 
         </form>
@@ -210,11 +210,11 @@ export default function AdminPage() {
 
     const items = parseInput();
     if (!items) {
-      setUploadStatus({ type: "error", message: "Invalid JSON — check your format." });
+      setUploadStatus({ type: "error", message: "अमान्य JSON — आफ्नो ढाँचा जाँच गर्नुस्।" });
       return;
     }
     if (items.length === 0) {
-      setUploadStatus({ type: "error", message: "JSON array is empty." });
+      setUploadStatus({ type: "error", message: "JSON array खाली छ।" });
       return;
     }
 
@@ -226,7 +226,7 @@ export default function AdminPage() {
     if (toUpload.length === 0) {
       setUploadStatus({
         type: "warning",
-        message: `All ${items.length} schemes already exist in Firebase. Uncheck "Skip duplicates" to overwrite.`,
+        message: `सबै ${items.length} योजनाहरू Firebase मा पहिलेदेखि छन्। अधिलेखन गर्न "Skip duplicates" हटाउनुस्।`,
       });
       return;
     }
@@ -240,17 +240,17 @@ export default function AdminPage() {
         });
       }
       const skippedMsg = duplicates.length > 0 && skipDuplicates
-        ? ` (${duplicates.length} duplicate${duplicates.length > 1 ? "s" : ""} skipped)`
+        ? ` (${duplicates.length} डुप्लिकेट छोडियो)`
         : "";
       setUploadStatus({
         type: "success",
-        message: `${toUpload.length} scheme${toUpload.length > 1 ? "s" : ""} uploaded successfully!${skippedMsg}`,
+        message: `${toUpload.length} योजना सफलतापूर्वक अपलोड भयो!${skippedMsg}`,
       });
       setJsonInput("");
       await fetchSchemes();
     } catch (err) {
       console.error(err);
-      setUploadStatus({ type: "error", message: "Upload failed — check console for details." });
+      setUploadStatus({ type: "error", message: "अपलोड असफल भयो — विस्तृत जानकारीको लागि console हेर्नुस्।" });
     } finally {
       setUploading(false);
     }
@@ -269,19 +269,19 @@ export default function AdminPage() {
         case "auth/invalid-credential":
         case "auth/user-not-found":
         case "auth/wrong-password":
-          return "Wrong email or password.";
+          return "गलत इमेल वा पासवर्ड।";
         case "auth/operation-not-allowed":
-          return "Email/Password sign-in is not enabled — go to Firebase Console → Authentication → Sign-in method and enable it.";
+          return "इमेल/पासवर्ड साइन-इन सक्रिय छैन — Firebase Console → Authentication → Sign-in method मा गएर सक्रिय गर्नुस्।";
         case "auth/too-many-requests":
-          return "Too many failed attempts. Wait a few minutes or reset your password in Firebase Console.";
+          return "धेरै असफल प्रयासहरू। केही मिनेट पर्खनुस् वा Firebase Console मा पासवर्ड रिसेट गर्नुस्।";
         case "auth/network-request-failed":
-          return "Network error — check your internet connection.";
+          return "नेटवर्क त्रुटि — आफ्नो इन्टरनेट जडान जाँच गर्नुस्।";
         case "auth/user-disabled":
-          return "This account has been disabled in Firebase Console.";
+          return "यो खाता Firebase Console मा अपाङ्ग गरिएको छ।";
         case "auth/invalid-email":
-          return "Invalid email address format.";
+          return "अमान्य इमेल ठेगाना ढाँचा।";
         default:
-          return `Sign-in failed (${code || "unknown error"}) — check browser console for details.`;
+          return `साइन-इन असफल (${code || "अज्ञात त्रुटि"}) — विस्तृत जानकारीको लागि browser console हेर्नुस्।`;
       }
     }
   };
@@ -298,7 +298,7 @@ export default function AdminPage() {
   if (authLoading) {
     return (
       <main className="min-h-screen bg-black flex items-center justify-center">
-        <p className="text-zinc-600">Loading...</p>
+        <p className="text-zinc-600">लोड हुँदैछ...</p>
       </main>
     );
   }
@@ -317,7 +317,7 @@ export default function AdminPage() {
         <div className="flex items-start justify-between mb-12 flex-wrap gap-4">
 
           <div>
-            <h1 className="text-5xl font-black text-green-400 mb-2">Admin Panel</h1>
+            <h1 className="text-5xl font-black text-green-400 mb-2">एडमिन प्यानल</h1>
             <p className="text-zinc-500">{user.email}</p>
           </div>
 
@@ -325,7 +325,7 @@ export default function AdminPage() {
             onClick={handleLogout}
             className="text-zinc-500 hover:text-white border border-zinc-700 hover:border-zinc-500 px-4 py-2 rounded-xl text-sm transition"
           >
-            Sign out
+            साइन आउट
           </button>
 
         </div>
@@ -333,17 +333,17 @@ export default function AdminPage() {
         {/* Saving indicator */}
         {saving && (
           <div className="fixed bottom-6 right-6 bg-green-500 text-black font-black px-5 py-3 rounded-2xl shadow-xl z-50 text-sm">
-            Saving...
+            सुरक्षित गर्दैछ...
           </div>
         )}
 
         {/* ── Quick Load ──────────────────────────────────────────────── */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 mb-8">
 
-          <h2 className="text-2xl font-black mb-2">Quick Load Databases</h2>
+          <h2 className="text-2xl font-black mb-2">Quick Load डेटाबेस</h2>
 
           <p className="text-zinc-500 text-sm mb-6">
-            Load a pre-built database into the upload area. Review, then upload to Firebase.
+            पूर्वनिर्मित डेटाबेस अपलोड क्षेत्रमा लोड गर्नुस्। समीक्षा गरेर Firebase मा अपलोड गर्नुस्।
           </p>
 
           <div className="flex gap-3 flex-wrap">
@@ -366,12 +366,12 @@ export default function AdminPage() {
                   <span className={`text-xs px-2 py-0.5 rounded-full text-white font-black ${db.color}`}>
                     {db.label}
                   </span>
-                  <span className="text-white font-bold">{db.data.length} schemes</span>
+                  <span className="text-white font-bold">{db.data.length} योजनाहरू</span>
                   {dupeCount > 0 && (
-                    <span className="text-xs text-yellow-500">{dupeCount} already in Firebase</span>
+                    <span className="text-xs text-yellow-500">{dupeCount} Firebase मा पहिलेदेखि छ</span>
                   )}
                   {dupeCount === 0 && schemes.length > 0 && (
-                    <span className="text-xs text-green-500">{newCount} new</span>
+                    <span className="text-xs text-green-500">{newCount} नयाँ</span>
                   )}
                 </button>
               );
@@ -383,10 +383,10 @@ export default function AdminPage() {
         {/* ── Upload Panel ────────────────────────────────────────────── */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 mb-12">
 
-          <h2 className="text-2xl font-black mb-2">Upload to Firebase</h2>
+          <h2 className="text-2xl font-black mb-2">Firebase मा अपलोड</h2>
 
           <p className="text-zinc-500 text-sm mb-6">
-            Paste JSON or use Quick Load above. Single object or array both work.
+            JSON पेस्ट गर्नुस् वा माथि Quick Load प्रयोग गर्नुस्। एकल वस्तु वा array दुवै काम गर्छ।
           </p>
 
           <textarea
@@ -395,7 +395,7 @@ export default function AdminPage() {
               setJsonInput(e.target.value);
               setUploadStatus(null);
             }}
-            placeholder={'Paste JSON here, or click a Quick Load button above...'}
+            placeholder="यहाँ JSON पेस्ट गर्नुस्, वा माथि Quick Load बटन थिच्नुस्..."
             rows={14}
             className="
               w-full bg-black border border-zinc-700 rounded-2xl
@@ -408,22 +408,22 @@ export default function AdminPage() {
           {previewItems && (
             <div className="mt-3 flex items-center gap-4 flex-wrap text-sm">
               <span className="text-zinc-400">
-                <span className="text-white font-bold">{previewItems.length}</span> schemes in JSON
+                JSON मा <span className="text-white font-bold">{previewItems.length}</span> योजनाहरू
               </span>
               {previewDuplicates.length > 0 && (
                 <span className="text-yellow-500">
-                  {previewDuplicates.length} already in Firebase
-                  {skipDuplicates ? " (will skip)" : " (will overwrite)"}
+                  {previewDuplicates.length} Firebase मा पहिलेदेखि छ
+                  {skipDuplicates ? " (छोडिनेछ)" : " (अधिलेखन गरिनेछ)"}
                 </span>
               )}
               {previewDuplicates.length === 0 && previewItems.length > 0 && (
-                <span className="text-green-500">All new — ready to upload</span>
+                <span className="text-green-500">सबै नयाँ — अपलोड गर्न तयार</span>
               )}
             </div>
           )}
 
           {jsonInput && !previewItems && (
-            <p className="text-red-400 text-sm mt-3">Invalid JSON format</p>
+            <p className="text-red-400 text-sm mt-3">अमान्य JSON ढाँचा</p>
           )}
 
           {/* Options + Actions */}
@@ -436,7 +436,7 @@ export default function AdminPage() {
                 onChange={(e) => setSkipDuplicates(e.target.checked)}
                 className="w-4 h-4 accent-green-500"
               />
-              Skip schemes already in Firebase
+              Firebase मा भएका योजनाहरू छोड्नुस्
             </label>
 
             <div className="flex items-center gap-3">
@@ -445,7 +445,7 @@ export default function AdminPage() {
                   onClick={() => { setJsonInput(""); setUploadStatus(null); }}
                   className="text-zinc-600 hover:text-white text-sm transition"
                 >
-                  Clear
+                  हटाउनुस्
                 </button>
               )}
               <button
@@ -457,7 +457,7 @@ export default function AdminPage() {
                   text-black font-black px-8 py-3 rounded-2xl text-base transition
                 "
               >
-                {uploading ? "Uploading..." : "Upload to Firebase"}
+                {uploading ? "अपलोड गर्दैछ..." : "Firebase मा अपलोड गर्नुस्"}
               </button>
             </div>
 
@@ -482,7 +482,7 @@ export default function AdminPage() {
         {/* ── Scheme Editor ────────────────────────────────────────────── */}
         <div className="flex items-center justify-between mb-6 flex-wrap gap-3">
           <h2 className="text-2xl font-black text-green-400">
-            All Schemes ({schemes.length})
+            सबै योजनाहरू ({schemes.length})
           </h2>
           <div className="flex gap-2 text-xs text-zinc-600">
             {["EPF", "CIT", "SSF"].map((org) => {
@@ -518,18 +518,18 @@ export default function AdminPage() {
                 {/* Delete */}
                 {confirmDeleteId === scheme.id ? (
                   <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-red-400 text-sm font-bold">Delete?</span>
+                    <span className="text-red-400 text-sm font-bold">मेट्ने?</span>
                     <button
                       onClick={() => deleteScheme(scheme.id)}
                       className="bg-red-600 hover:bg-red-500 text-white font-bold text-xs px-3 py-1.5 rounded-xl transition"
                     >
-                      Yes, delete
+                      हो, मेट्नुस्
                     </button>
                     <button
                       onClick={() => setConfirmDeleteId(null)}
                       className="text-zinc-500 hover:text-white text-xs px-3 py-1.5 border border-zinc-700 rounded-xl transition"
                     >
-                      Cancel
+                      रद्द गर्नुस्
                     </button>
                   </div>
                 ) : (
@@ -537,7 +537,7 @@ export default function AdminPage() {
                     onClick={() => setConfirmDeleteId(scheme.id)}
                     className="text-zinc-700 hover:text-red-400 text-xs border border-zinc-800 hover:border-red-500/50 px-3 py-1.5 rounded-xl transition shrink-0"
                   >
-                    Delete
+                    मेट्नुस्
                   </button>
                 )}
 
@@ -547,7 +547,7 @@ export default function AdminPage() {
               <div className="grid md:grid-cols-2 gap-5">
 
                 <div>
-                  <label className="block text-zinc-500 text-xs font-bold mb-1.5 uppercase tracking-wide">Organization</label>
+                  <label className="block text-zinc-500 text-xs font-bold mb-1.5 uppercase tracking-wide">संस्था</label>
                   <input
                     type="text"
                     value={scheme.organization || ""}
@@ -562,7 +562,7 @@ export default function AdminPage() {
                 </div>
 
                 <div>
-                  <label className="block text-zinc-500 text-xs font-bold mb-1.5 uppercase tracking-wide">Category</label>
+                  <label className="block text-zinc-500 text-xs font-bold mb-1.5 uppercase tracking-wide">श्रेणी</label>
                   <input
                     type="text"
                     value={scheme.category || ""}
@@ -577,7 +577,7 @@ export default function AdminPage() {
                 </div>
 
                 <div>
-                  <label className="block text-zinc-500 text-xs font-bold mb-1.5 uppercase tracking-wide">Interest Rate %</label>
+                  <label className="block text-zinc-500 text-xs font-bold mb-1.5 uppercase tracking-wide">ब्याज दर %</label>
                   <input
                     type="number"
                     value={scheme.interestRate ?? ""}
@@ -593,7 +593,7 @@ export default function AdminPage() {
                 </div>
 
                 <div>
-                  <label className="block text-zinc-500 text-xs font-bold mb-1.5 uppercase tracking-wide">Liquidity</label>
+                  <label className="block text-zinc-500 text-xs font-bold mb-1.5 uppercase tracking-wide">तरलता</label>
                   <input
                     type="text"
                     value={scheme.liquidity || ""}
@@ -610,7 +610,7 @@ export default function AdminPage() {
               </div>
 
               <div className="mt-5">
-                <label className="block text-zinc-500 text-xs font-bold mb-1.5 uppercase tracking-wide">Summary</label>
+                <label className="block text-zinc-500 text-xs font-bold mb-1.5 uppercase tracking-wide">सारांश</label>
                 <textarea
                   value={scheme.summary || ""}
                   onChange={(e) => {
@@ -626,14 +626,14 @@ export default function AdminPage() {
 
               <div className="grid grid-cols-3 gap-3 mt-5">
                 {[
-                  { label: "Retirement", key: "retirementSupport" },
-                  { label: "Insurance", key: "insurance" },
-                  { label: "Medical", key: "medicalCoverage" },
+                  { label: "सेवानिवृत्ति", key: "retirementSupport" },
+                  { label: "बीमा", key: "insurance" },
+                  { label: "स्वास्थ्य", key: "medicalCoverage" },
                 ].map(({ label, key }) => (
                   <div key={key} className="bg-black border border-zinc-800 rounded-xl p-3 text-center">
                     <p className="text-zinc-600 text-xs mb-1">{label}</p>
                     <p className={`font-black text-sm ${scheme[key] ? "text-green-400" : "text-zinc-700"}`}>
-                      {scheme[key] ? "YES" : "NO"}
+                      {scheme[key] ? "छ" : "छैन"}
                     </p>
                   </div>
                 ))}
@@ -647,8 +647,8 @@ export default function AdminPage() {
 
         {schemes.length === 0 && (
           <div className="text-center py-24 text-zinc-700">
-            <p className="text-2xl font-bold">No schemes in Firebase yet</p>
-            <p className="text-sm mt-2">Use Quick Load to upload EPF, CIT, or SSF data</p>
+            <p className="text-2xl font-bold">Firebase मा अहिलेसम्म कुनै योजना छैन</p>
+            <p className="text-sm mt-2">EPF, CIT, वा SSF डेटा अपलोड गर्न Quick Load प्रयोग गर्नुस्</p>
           </div>
         )}
 
