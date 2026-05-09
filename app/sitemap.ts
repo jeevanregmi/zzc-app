@@ -35,7 +35,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   ];
 
   try {
-    const res = await fetch(`${FIRESTORE}?pageSize=200`, { cache: "no-store" });
+    const res = await fetch(`${FIRESTORE}?pageSize=200`, { cache: "force-cache" });
     const data = await res.json();
     const documents: any[] = data.documents ?? [];
     const schemePages: MetadataRoute.Sitemap = documents.map((d) => ({

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import ComparePage from "./CompareClient";
 
+const BASE_URL = "https://zzc.jeevanregmi.com.np";
+
 export const metadata: Metadata = {
   title: "स्मार्ट तुलना",
   description:
@@ -19,10 +21,35 @@ export const metadata: Metadata = {
     title: "स्मार्ट तुलना | ZZC",
     description:
       "EPF, CIT र SSF योजनाहरू एकसाथ तुलना — ब्याज दर, जोखिम, तरलता र फाइदाहरू।",
-    url: "https://zzc.jeevanregmi.com.np/compare",
+    url: `${BASE_URL}/compare`,
+  },
+};
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebPage",
+  name: "स्मार्ट तुलना — EPF, CIT, SSF",
+  description:
+    "Side-by-side comparison of Nepal's EPF, CIT, and SSF investment schemes — interest rates, risk, liquidity, and benefits.",
+  url: `${BASE_URL}/compare`,
+  isPartOf: { "@type": "WebSite", url: BASE_URL, name: "ZZC — Zeneration Z Chautari" },
+  breadcrumb: {
+    "@type": "BreadcrumbList",
+    itemListElement: [
+      { "@type": "ListItem", position: 1, name: "गृहपृष्ठ", item: BASE_URL },
+      { "@type": "ListItem", position: 2, name: "स्मार्ट तुलना", item: `${BASE_URL}/compare` },
+    ],
   },
 };
 
 export default function Page() {
-  return <ComparePage />;
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <ComparePage />
+    </>
+  );
 }

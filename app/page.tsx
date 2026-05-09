@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import HomeClient from "./HomeClient";
 
+const BASE_URL = "https://zzc.jeevanregmi.com.np";
+
 export const metadata: Metadata = {
   title: "नेपालको Gen Z बचत तथा लगानी",
   description:
@@ -23,10 +25,40 @@ export const metadata: Metadata = {
     title: "ZZC — नेपालको Gen Z बचत तथा लगानी",
     description:
       "नेपालका EPF, CIT र SSF योजनाहरू एकै ठाउँमा — तुलना, क्यालकुलेटर र योग्यता जाँच।",
-    url: "https://zzc.jeevanregmi.com.np",
+    url: BASE_URL,
+  },
+};
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  name: "ZZC — Zeneration Z Chautari",
+  url: BASE_URL,
+  description:
+    "Nepal's Gen Z fintech education platform for EPF, CIT, and SSF investment schemes.",
+  potentialAction: {
+    "@type": "SearchAction",
+    target: {
+      "@type": "EntryPoint",
+      urlTemplate: `${BASE_URL}/?search={search_term_string}`,
+    },
+    "query-input": "required name=search_term_string",
+  },
+  publisher: {
+    "@type": "Organization",
+    name: "Zeneration Z Chautari",
+    url: BASE_URL,
   },
 };
 
 export default function Page() {
-  return <HomeClient />;
+  return (
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <HomeClient />
+    </>
+  );
 }
