@@ -1,7 +1,4 @@
-import {
-  BedrockRuntimeClient,
-  InvokeModelCommand,
-} from "@aws-sdk/client-bedrock-runtime";
+import { AwsClient } from "aws4fetch";
 
 interface Env {
   AWS_ACCESS_KEY_ID: string;
@@ -128,18 +125,18 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
 }`;
 
   try {
-    const client = new BedrockRuntimeClient({
+    const aws = new AwsClient({
+      accessKeyId: AWS_ACCESS_KEY_ID,
+      secretAccessKey: AWS_SECRET_ACCESS_KEY,
       region: AWS_REGION,
-      credentials: {
-        accessKeyId: AWS_ACCESS_KEY_ID,
-        secretAccessKey: AWS_SECRET_ACCESS_KEY,
-      },
+      service: "bedrock",
     });
 
-    const command = new InvokeModelCommand({
-      modelId: MODEL_ID,
-      contentType: "application/json",
-      accept: "application/json",
+    const bedrockUrl = `https://bedrock-runtime.${AWS_REGION}.amazonaws.com/model/${encodeURIComponent(MODEL_ID)}/invoke`;
+
+    const bedrockRes = await aws.fetch(bedrockUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         anthropic_version: "bedrock-2023-05-31",
         max_tokens: 2048,
@@ -147,10 +144,18 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
       }),
     });
 
-    const bedrockRes = await client.send(command);
-    const responseBody = JSON.parse(
-      new TextDecoder().decode(bedrockRes.body)
-    ) as { content: Array<{ type: string; text: string }> };
+    if (!bedrockRes.ok) {
+      const errText = await bedrockRes.text();
+      console.error("Bedrock error:", bedrockRes.status, errText);
+      return new Response(
+        JSON.stringify({ error: "AI सेवामा समस्या भयो। कृपया पुनः प्रयास गर्नुस्।" }),
+        { status: 502, headers: CORS_HEADERS }
+      );
+    }
+
+    const responseBody = (await bedrockRes.json()) as {
+      content: Array<{ type: string; text: string }>;
+    };
 
     const rawText = responseBody.content?.[0]?.text?.trim() ?? "";
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
@@ -164,10 +169,10 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     const result = JSON.parse(jsonMatch[0]);
     return new Response(JSON.stringify(result), { headers: CORS_HEADERS });
   } catch (err) {
-    console.error("Bedrock recommend error:", err);
+    console.error("Recommend function error:", err);
     return new Response(
-      JSON.stringify({ error: "AI सेवामा समस्या भयो। कृपया पुनः प्रयास गर्नुस्।" }),
-      { status: 502, headers: CORS_HEADERS }
+      JSON.stringify({ error: "अप्रत्याशित त्रुटि भयो। कृपया पुनः प्रयास गर्नुस्।" }),
+      { status: 500, headers: CORS_HEADERS }
     );
   }
 };
