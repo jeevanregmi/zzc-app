@@ -100,62 +100,107 @@ function logSection(title) {
 }
 
 // ─── EPF Scraper ──────────────────────────────────────────────────────────────
-// URL: https://www.epf.org.np
-// We look for the annual provident fund interest rate (currently 8.50%).
+// URL: https://epf.org.np
+// Parses `table.interest-rate tr` rows (static HTML, no JS rendering).
+// Each row has two cells: label | rate value.
+// Extracts: Provident Fund rate, Special Loan, Home Loan, Education Loan.
+
+const EPF_FALLBACKS = {
+  providentFundRate: 8.5,   // FY 2081/82
+  specialLoanRate:   5.75,
+  homeLoanRate:      7.0,
+  educationLoanRate: 7.0,
+};
+
+// Maps row-label substrings (lower-case) → result key
+const EPF_LABEL_MAP = [
+  { keys: ["provident fund", "भविष्य निधि", "sanchay kosh", "सञ्चय कोष", "pf rate", "general"],  field: "providentFundRate" },
+  { keys: ["special loan", "विशेष ऋण", "special advance"],                                          field: "specialLoanRate"   },
+  { keys: ["home loan", "house loan", "housing loan", "घर ऋण", "आवास ऋण"],                         field: "homeLoanRate"      },
+  { keys: ["education loan", "शिक्षा ऋण", "educational"],                                           field: "educationLoanRate" },
+];
+
+function matchEPFLabel(label) {
+  const lower = label.toLowerCase();
+  for (const { keys, field } of EPF_LABEL_MAP) {
+    if (keys.some((k) => lower.includes(k))) return field;
+  }
+  return null;
+}
+
+function parseRateCell(text) {
+  // Accept "7.00%", "7.00 %", "7", "७.००" (Nepali digits), etc.
+  const normalised = text
+    .replace(/[०-९]/g, (d) => String("०१२३४५६७८९".indexOf(d))) // Nepali → ASCII digits
+    .replace(/,/g, "");
+  const m = normalised.match(/(\d{1,2}(?:\.\d{1,4})?)/);
+  return m ? parseFloat(m[1]) : null;
+}
 
 async function scrapeEPF() {
   logSection("EPF — epf.org.np");
 
-  const FALLBACK_RATE = 8.5; // known rate as of FY 2081/82
   const result = {
-    providentFundRate: FALLBACK_RATE,
-    source: "https://www.epf.org.np",
+    ...EPF_FALLBACKS,
+    loans: {},
+    source: "https://epf.org.np",
     scrapedAt: now(),
     success: false,
     note: "",
   };
 
   try {
-    const html = await fetchHtml("https://www.epf.org.np");
+    const html = await fetchHtml("https://epf.org.np");
     const $ = cheerio.load(html);
 
-    const SELECTORS = [
-      "table",
-      ".interest-rate",
-      ".rate",
-      "#interest",
-      "td",
-      "p",
-      ".content",
-      "article",
-      ".entry-content",
-      "main",
-    ];
+    const rows = $("table.interest-rate tr");
+    console.log(`  Found ${rows.length} row(s) in table.interest-rate`);
 
-    const KEYWORDS = [
-      "interest rate",
-      "ब्याज दर",
-      "provident fund rate",
-      "सञ्चय कोष",
-      "interest",
-      "annual rate",
-      "PF rate",
-    ];
+    if (rows.length === 0) {
+      result.note = "table.interest-rate not found; using fallbacks";
+      console.log("⚠️   Selector table.interest-rate returned no rows — using fallbacks");
+      return result;
+    }
 
-    const scraped = extractRateFromHtml($, SELECTORS, KEYWORDS);
-    if (scraped !== null && scraped >= 5 && scraped <= 20) {
-      console.log(`✅  EPF interest rate scraped: ${scraped}%`);
-      result.providentFundRate = scraped;
+    let matched = 0;
+
+    rows.each((_, row) => {
+      const cells = $(row).find("td, th");
+      if (cells.length < 2) return; // skip header-only or empty rows
+
+      const label    = $(cells[0]).text().trim();
+      const rateText = $(cells[cells.length - 1]).text().trim(); // last cell = rate
+      const rate     = parseRateCell(rateText);
+
+      if (rate === null || rate <= 0 || rate > 30) {
+        console.log(`  ↳ skip  "${label}" → "${rateText}" (unparseable or out of range)`);
+        return;
+      }
+
+      // Store every row in the loans map for reference
+      result.loans[label] = rate;
+
+      const field = matchEPFLabel(label);
+      if (field) {
+        result[field] = rate;
+        matched++;
+        console.log(`  ✅ ${field.padEnd(20)} = ${rate}%  (from "${label}")`);
+      } else {
+        console.log(`  ↳ unmatched  "${label}" → ${rate}%`);
+      }
+    });
+
+    if (matched > 0) {
       result.success = true;
-      result.note = "Live scraped";
+      result.note = `Live scraped — ${matched} rate(s) matched`;
+      console.log(`\n✅  EPF scrape complete. Matched ${matched} field(s).`);
     } else {
-      console.log(`⚠️   Could not extract EPF rate — using fallback ${FALLBACK_RATE}%`);
-      result.success = false;
-      result.note = `Scrape returned ${scraped}; using fallback`;
+      result.note = "Rows found but no labels matched known fields; using fallbacks";
+      console.log("⚠️   No rows matched known EPF fields — using fallback rates");
     }
   } catch (err) {
     console.error(`❌  EPF fetch error: ${err.message}`);
-    result.note = `Fetch error: ${err.message}; using fallback`;
+    result.note = `Fetch error: ${err.message}; using fallbacks`;
   }
 
   return result;
@@ -340,7 +385,10 @@ async function writeToFirestore(epf, ssf, cit) {
       epfSuccess: epf.success,
       ssfSuccess: ssf.success,
       citSuccess: cit.success,
-      epfRate: epf.providentFundRate,
+      epfProvidentFundRate: epf.providentFundRate,
+      epfSpecialLoanRate:   epf.specialLoanRate,
+      epfHomeLoanRate:      epf.homeLoanRate,
+      epfEducationLoanRate: epf.educationLoanRate,
       ssfTotal: ssf.totalContribution,
       citEsgrsRate: cit.esgrsRate,
       citNav: cit.citizensUnitNav,
@@ -372,10 +420,14 @@ async function main() {
   await writeToFirestore(epfResult, ssfResult, citResult);
 
   logSection("Summary");
-  console.log(`  EPF rate:     ${epfResult.providentFundRate}%  (scraped: ${epfResult.success})`);
-  console.log(`  SSF total:    ${ssfResult.totalContribution}%  (scraped: ${ssfResult.success})`);
-  console.log(`  CIT ESGRS:    ${citResult.esgrsRate}%  (scraped: ${citResult.success})`);
-  console.log(`  CIT NAV:      ${citResult.citizensUnitNav ?? "n/a"}`);
+  console.log(`  EPF Provident Fund:   ${epfResult.providentFundRate}%`);
+  console.log(`  EPF Special Loan:     ${epfResult.specialLoanRate}%`);
+  console.log(`  EPF Home Loan:        ${epfResult.homeLoanRate}%`);
+  console.log(`  EPF Education Loan:   ${epfResult.educationLoanRate}%`);
+  console.log(`  EPF scraped:          ${epfResult.success}`);
+  console.log(`  SSF total contrib:    ${ssfResult.totalContribution}%  (scraped: ${ssfResult.success})`);
+  console.log(`  CIT ESGRS rate:       ${citResult.esgrsRate}%  (scraped: ${citResult.success})`);
+  console.log(`  CIT NAV:              ${citResult.citizensUnitNav ?? "n/a"}`);
   console.log("");
 
   await admin.app().delete();
