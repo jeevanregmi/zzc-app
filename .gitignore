@@ -44,5 +44,6 @@ next-env.d.ts
 serviceAccountKey.json
 *serviceAccount*.json
 
-# local claude settings
-.claude/
+# local claude settings (but keep shared commands)
+.claude/settings.local.json
+.claude/settings.json
