@@ -1,6 +1,6 @@
 # ZZC MASTER CONTEXT
 ## Zeneration Z Chautari — Session State Document
-Last Updated: May 10, 2026 | Session 5 In Progress
+Last Updated: May 10, 2026 | Session 5 COMPLETE — Session 6 not yet started
 
 ---
 
@@ -56,7 +56,7 @@ createdAt: timestamp
 - **Region**: `us-east-1` (N. Virginia)
 - **Target Model**: `anthropic.claude-sonnet-4-6`
 - **Use case**: Submitted to Anthropic for model access approval
-- **Status**: Awaiting Bedrock model access grant
+- **Status**: Awaiting Bedrock model access grant + IAM keys not yet created
 
 ### Cloudflare Pages Function
 - **File**: `functions/api/recommend.ts` (at project root — picked up by wrangler)
@@ -131,9 +131,25 @@ app/
 ├── PROJECT_BIBLE.md
 └── ZZC_MASTER_CONTEXT.md   (this file)
 
+lib/ (project root)
+└── schemes-data.ts         — SINGLE SOURCE OF TRUTH — 29+ schemes, TypeScript typed
+                              exports: SCHEMES, INVESTMENT_SCHEMES, LOAN_SCHEMES,
+                              INSURANCE_SCHEMES, PENSION_SCHEMES, SSF_SECTOR_RATES,
+                              getByCategory(), SSFSectors interface
+
 functions/ (project root — Cloudflare Pages Functions)
 └── api/
     └── recommend.ts        — POST /api/recommend — calls AWS Bedrock Claude Sonnet
+
+scripts/ (project root)
+└── scrape-rates.js         — Node.js cheerio scraper → Firestore market_rates
+
+.github/workflows/
+└── update-rates.yml        — daily cron 12:15 UTC (6 PM NST) → runs scrape-rates.js
+
+.claude/commands/
+├── start-memory-of-zzc.md  — /start-memory-of-zzc slash command
+└── update-memory-of-zzc.md — /update-memory-of-zzc slash command
 ```
 
 ---
@@ -171,7 +187,7 @@ functions/ (project root — Cloudflare Pages Functions)
 |-------|------|-------------|
 | `/` | HomeClient.tsx | Scheme listing, search, org/category filters |
 | `/eligibility` | EligibilityClient.tsx | Employment-type eligibility checker |
-| `/compare` | CompareClient.tsx | Side-by-side scheme comparison (up to 4) |
+| `/compare` | CompareClient.tsx | Master filterable table — all 29+ schemes, category/org filters |
 | `/calculator` | CalculatorClient.tsx | Retirement savings projection with chart |
 | `/recommend` | RecommendClient.tsx | AI-powered scheme recommendation wizard |
 | `/scheme/[id]` | SchemeDetail.tsx | Full scheme detail (26 static pages built) |
@@ -201,22 +217,55 @@ functions/ (project root — Cloudflare Pages Functions)
 ---
 
 ## NEXT PRIORITIES
-1. **Finish AI Recommendation Engine** — get IAM keys → set Cloudflare env vars → update MODEL_ID to `anthropic.claude-sonnet-4-6` once access granted → test live
-2. **Portfolio Simulator** — track hypothetical investments over time
-3. **More schemes** — NEPSE (mutual funds), Beema Samiti (insurance products)
+1. **AI Recommendation Engine go-live** — create IAM access key for `zzc-bedrock-user` → set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION=us-east-1` in Cloudflare Pages dashboard → redeploy → test at /recommend
+   - OR: simplify by switching to Anthropic API directly (no AWS needed)
+2. **Portfolio Simulator** — track hypothetical investments over time with chart
+3. **More schemes** — NEPSE mutual funds, Beema Samiti products (add to lib/schemes-data.ts)
 4. **First 100 users** — share in Nepali Facebook groups, LinkedIn
 5. **eSewa / Khalti** integration (Phase 3 consultancy payments)
+6. **Firebase security rules audit** (before June 4, 2026 — Spark plan limits)
 
 ---
 
-## SESSION 5 — May 10, 2026 (In Progress)
-- AI Recommendation Engine built: `/recommend` page + 3-step wizard UI
-- Cloudflare Pages Function: `functions/api/recommend.ts` using AWS Bedrock SDK
-- `wrangler.toml` created with `nodejs_compat` flag
-- AWS Account 190777960247 set up; IAM user `zzc-bedrock-user` created
-- Bedrock region: `us-east-1`; model access use case submitted for `anthropic.claude-sonnet-4-6`
-- "AI सिफारिस" nav link added to layout
-- Deployed to Cloudflare Pages (awaiting env var configuration to go live)
+## SESSION 5 — May 10, 2026 (COMPLETE)
+
+### Key Accomplishments:
+- **lib/schemes-data.ts** created — single source of truth for all 29+ Nepal financial schemes, fully typed TypeScript. All components now import from here.
+- **CIT rates corrected** from placeholder 9% to live scraped values: Citizens Unit 5%, ESGRS 3.75%, Pension 4.5%, Investors Retirement Fund 2.75%
+- **SSF 4-sector rates** added: Formal employee 31% (11%+20%), Informal 10.37% self, Foreign Employment 21.33% (7.48%+13.85%), Self-employment voluntary
+- **SSF loan data** updated with official figures: Home Loan 5.85%/Rs 1.5Cr/18mo; Education Rs 35L/36mo; Special Loan 80% retirement balance
+- **EPF scraper** updated: `table.interest-rate tr` selector + EPF_LABEL_MAP for field matching; Special Loan 5.75%, Home/Education Loan 7%, PF 8.5%
+- **GitHub Actions daily scraper** added: `.github/workflows/update-rates.yml` cron 12:15 UTC (6 PM NST) → runs `scripts/scrape-rates.js` → writes `market_rates/{epf,ssf,cit,meta}` to Firestore
+- **Compare page** fully rewritten: replaced 4-item picker with master filterable table — all 29+ schemes, category+org filters, sticky column, mobile responsive
+- **SchemeDetail.tsx** rewritten: category badge, Firestore→lib fallback, related schemes panel, loan limit field
+- **Custom slash commands** added: `.claude/commands/update-memory-of-zzc.md` + `.claude/commands/start-memory-of-zzc.md`
+- **AI recommend prompts** updated to use actual scheme data from lib/schemes-data (not hardcoded rates)
+
+### Files Changed This Session:
+| File | What Changed |
+|------|-------------|
+| `lib/schemes-data.ts` | Created from scratch — 29+ schemes, 4 categories, SSFSectors type |
+| `functions/api/recommend.ts` | Now imports + uses INVESTMENT/LOAN/INSURANCE/PENSION_SCHEMES |
+| `app/scheme/[id]/SchemeDetail.tsx` | Full rewrite — category badge, Firestore fallback, related schemes |
+| `app/compare/CompareClient.tsx` | Full rewrite — master table replacing side-by-side picker |
+| `app/HomeClient.tsx` | Updated to use lib/schemes-data |
+| `app/calculator/CalculatorClient.tsx` | Updated to use lib/schemes-data |
+| `app/recommend/RecommendClient.tsx` | Updated to use lib/schemes-data |
+| `.github/workflows/update-rates.yml` | Created — daily cron scraper |
+| `scripts/scrape-rates.js` | Created — EPF/SSF/CIT cheerio scraper → Firestore |
+| `.claude/commands/*.md` | Created — two custom slash commands |
+| `.gitignore` | Updated to track .claude/commands/ |
+
+### Deployed:
+- URL: https://f4e4382b.zeneration-z-chautari.pages.dev
+- Live: https://zzc.jeevanregmi.com.np
+- Last commit: `8ccb691` — Add custom slash commands
+
+### Still Pending From Session 5:
+- AWS IAM access keys NOT yet created for `zzc-bedrock-user`
+- Cloudflare env vars (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`) NOT yet set
+- AI Recommendation Engine deployed but NOT yet live (needs above vars)
+- Consider switching from AWS Bedrock → Anthropic API directly (simpler)
 
 ---
 

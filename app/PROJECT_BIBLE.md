@@ -1,6 +1,6 @@
 # ZENERATION Z CHAUTARI (ZZC)
-## Project Bible — Version 5.0
-Last Updated: May 10, 2026 | Session 5 In Progress
+## Project Bible — Version 6.0
+Last Updated: May 10, 2026 | Session 5 COMPLETE
 
 ## OWNER
 - Name: Jeevan Regmi, 27 years
@@ -16,16 +16,18 @@ Last Updated: May 10, 2026 | Session 5 In Progress
 
 ## PHASE STATUS
 - Phase 1 Education Website: COMPLETE
-- Phase 2 Investment Game: 85% complete
-- Phase 3 Consultancy: 40% complete
-- Phase 4 Launch: Planned
+- Phase 2 Investment Game: 90% complete
+- Phase 3 Consultancy: 45% complete
+- Phase 4 Launch: Active
 
 ## NEXT PRIORITIES
-- Deploy latest game.html
-- eSewa/Khalti payment integration
-- Firebase security rules (before June 4, 2026!)
-- SEO meta tags
-- First 100 users
+1. AI Recommendation Engine go-live — set AWS IAM keys in Cloudflare env vars + update MODEL_ID
+2. Switch recommend.ts from AWS Bedrock → Anthropic API directly (simpler, no AWS needed)
+3. Portfolio Simulator — track hypothetical investments over time
+4. More schemes — NEPSE mutual funds, Beema Samiti products
+5. First 100 users — share in Nepali Facebook groups, LinkedIn
+6. eSewa/Khalti payment integration (Phase 3)
+7. Firebase security rules audit (before June 4, 2026!)
 ## SESSION 4 — May 9, 2026 (MAJOR SESSION)
 
 ### Completed Today:
@@ -68,32 +70,52 @@ Last Updated: May 10, 2026 | Session 5 In Progress
 
 ---
 
-## SESSION 5 — May 10, 2026 (In Progress)
+## SESSION 5 — May 10, 2026 (COMPLETE)
 
-### AWS Bedrock Setup:
+### AWS Bedrock Setup (early session):
 - AWS Account ID: 190777960247
 - IAM User: zzc-bedrock-user (AmazonBedrockFullAccess policy)
 - Region: us-east-1 (N. Virginia)
 - Target model: anthropic.claude-sonnet-4-6
-- Use case submitted to Anthropic for model access
-- Status: Awaiting access grant + IAM key creation
+- Use case submitted; awaiting model access grant
+- Cloudflare env vars still need setting (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION)
 
-### AI Recommendation Engine Built:
-- `/recommend` page — 3-step wizard (Age → Income → Risk appetite)
-- Cloudflare Pages Function: `functions/api/recommend.ts`
-- SDK: @aws-sdk/client-bedrock-runtime (InvokeModelCommand)
-- wrangler.toml: nodejs_compat flag added
-- "AI सिफारिस" nav link added
-- Deployed — goes live once Cloudflare env vars set
+### Single Source of Truth — lib/schemes-data.ts:
+- Created `lib/schemes-data.ts` with 29+ schemes fully typed (TypeScript)
+- Exports: SCHEMES, INVESTMENT_SCHEMES, LOAN_SCHEMES, INSURANCE_SCHEMES, PENSION_SCHEMES
+- Exports: getByCategory(), SSF_SECTOR_RATES, SSFSectors interface
+- All scheme detail pages, compare page, and recommend prompts now use this file
 
-### Remaining Steps:
-1. Create access keys for zzc-bedrock-user in IAM console
-2. Set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION=us-east-1 in Cloudflare Pages dashboard
-3. Once model access approved, update MODEL_ID in functions/api/recommend.ts to anthropic.claude-sonnet-4-6
-4. Redeploy and test live at zzc.jeevanregmi.com.np/recommend
+### Scheme Data Accuracy (CIT/SSF/EPF live rates):
+- CIT rates corrected from all-9% placeholder to real scraped rates:
+  - Citizens Unit Scheme: 5% individual / 3.5% corporate
+  - ESGRS/KBB: 3.75% (loan at 5.25%)
+  - CIT Pension: 4.5%
+  - Investors Retirement Fund: 2.75%
+  - Home/Personal/Education loans: 7%, 7.25%, 7%
+- SSF 4-sector rates added: Formal 31%, Informal 10.37%, Foreign 21.33%, Self-employment voluntary
+- SSF loans updated: Home (5.85%, Rs 1.5Cr), Education (Rs 35L, 36mo), Special (80% retirement)
+- EPF rates: Special Loan 5.75%, Home/Education Loan 7%, Provident Fund 8.5%
 
-### Next Priorities:
-- Complete AI Recommendation Engine go-live
-- Portfolio Simulator
-- More schemes (NEPSE mutual funds, Beema Samiti)
-- First 100 users campaign
+### Automated Scraper:
+- `.github/workflows/update-rates.yml` — cron 12:15 UTC (6 PM NST)
+- `scripts/scrape-rates.js` — EPF + SSF + CIT using cheerio
+- Writes to Firestore: market_rates/epf, market_rates/ssf, market_rates/cit, market_rates/meta
+- Secrets: FIREBASE_SERVICE_ACCOUNT, FIREBASE_PROJECT_ID in GitHub repo
+
+### Compare Page Rewrite:
+- Replaced 2-4 item side-by-side picker with master filterable table
+- All 29+ schemes visible simultaneously (rows = schemes, columns = indicators)
+- Filter buttons: Category (Investment/Loan/Insurance/Pension) + Org (EPF/CIT/SSF/NEPSE/Beema)
+- 12 columns: योजना (sticky), श्रेणी, संस्था, दर%, जोखिम, तरलता, सेवानिवृत्ति, स्वास्थ्य, बीमा, ऋण सीमा, न्यूनतम, विवरण
+- Mobile: overflow-x-auto + min-w-[900px], color-coded rates/risk/liquidity
+
+### Custom Slash Commands:
+- `.claude/commands/update-memory-of-zzc.md` — session memory updater
+- `.claude/commands/start-memory-of-zzc.md` — CTO briefing on session start
+- .gitignore updated: allows .claude/commands/, blocks settings.local.json
+
+### Deployed:
+- Latest URL: https://f4e4382b.zeneration-z-chautari.pages.dev
+- Live: https://zzc.jeevanregmi.com.np
+- Git: all commits pushed to main (8ccb691)
