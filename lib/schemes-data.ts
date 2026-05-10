@@ -3,6 +3,37 @@ export type Org = "EPF" | "CIT" | "SSF" | "NEPSE" | "Beema";
 export type RiskLevel = "Low Risk" | "Moderate Risk" | "High Risk";
 export type Liquidity = "Low" | "Medium" | "High";
 
+export interface SSFSectors {
+  formal: {
+    nepali: string;
+    employeeRate: number;   // 11%
+    employerRate: number;   // 20%
+    totalRate: number;      // 31%
+    mandatory: boolean;
+  };
+  informal: {
+    nepali: string;
+    selfRate: number;       // 10.37% — worker pays full amount
+    totalRate: number;      // 10.37%
+    mandatory: boolean;
+  };
+  foreignEmployment: {
+    nepali: string;
+    socialInsuranceRate: number;  // 7.48%
+    personalFundRate: number;     // 13.85%
+    totalRate: number;            // 21.33%
+    advanceDiscount: number;      // 10% discount on advance withdrawal
+    mandatory: boolean;
+    description: string;
+  };
+  selfEmployment: {
+    nepali: string;
+    voluntary: true;
+    totalRate: number | null;     // no fixed rate
+    description: string;
+  };
+}
+
 export interface Scheme {
   id: string;
   title: string;
@@ -30,6 +61,7 @@ export interface Scheme {
   minContribution?: number;
   pensionAge?: number;
   pensionFormula?: string;
+  ssfSectors?: SSFSectors;
   compareTags: string[];
 }
 
@@ -600,7 +632,9 @@ export const SCHEMES: Scheme[] = [
       "Automatic — no extra premium",
     ],
     eligibility: [
-      "Active SSF contributor at time of death",
+      "Active SSF contributor at time of death (any sector)",
+      "Formal sector: covered from first contribution",
+      "Informal / foreign employment / self-employment contributors also eligible",
       "Minimum contribution period met",
       "Claimant must be legal heir, spouse, or dependent child",
     ],
@@ -641,7 +675,10 @@ export const SCHEMES: Scheme[] = [
       "Automatic — no extra premium",
     ],
     eligibility: [
-      "Active SSF contributor at time of accident",
+      "Active SSF contributor at time of accident (any sector)",
+      "Formal sector (31% contribution): full workplace + non-workplace coverage",
+      "Informal sector (10.37%): covered after enrollment",
+      "Foreign employment workers: covered under social insurance portion (7.48%)",
       "Accident reported to SSF within 7 days",
       "Minimum 3 months of SSF contributions",
     ],
@@ -682,7 +719,11 @@ export const SCHEMES: Scheme[] = [
       "Automatic — no extra premium",
     ],
     eligibility: [
-      "Active SSF contributor",
+      "Active SSF contributor (any sector)",
+      "Formal sector (31% contribution): full OPD + IPD benefit",
+      "Informal sector (10.37%): covered after enrollment",
+      "Foreign employment: covered under social insurance portion (7.48%)",
+      "Self-employment contributors: eligible once voluntarily enrolled",
       "Treatment at SSF-empanelled hospitals only",
       "Claim within 35 days of treatment",
     ],
@@ -1045,31 +1086,38 @@ export const SCHEMES: Scheme[] = [
     organization: "SSF",
     category: "Pension",
     subcategory: "Retirement",
-    summary: "SSF's core retirement scheme. Employee 11% + Employer 20% of basic salary accumulated in individual account. Monthly pension from age 60. Formula: salary × years_of_service × 1.33% per month. Lump sum if contribution < 15 years.",
-    nepaliSummary: "SSF को मुख्य अवकाश पेन्सन योजना। कर्मचारी ११% + नियोक्ता २०% आधार तलबको व्यक्तिगत खातामा। ६० वर्षमा मासिक पेन्सन। सूत्र: तलब × सेवा वर्ष × १.३३%। १५ वर्षभन्दा कम योगदानमा एकमुष्ट।",
+    summary: "SSF's core retirement scheme covering 4 sectors. Formal sector: Employee 11% + Employer 20% = 31% total. Informal sector: 10.37% self-contribution. Foreign employment: 7.48% social insurance + 13.85% personal fund = 21.33% (10% advance discount). Self-employment: voluntary. Monthly pension from age 60. Formula: salary × years × 1.33% / month. Lump sum if < 15 years.",
+    nepaliSummary: "SSF को मुख्य अवकाश पेन्सन योजना — ४ क्षेत्रका लागि। औपचारिक क्षेत्र: ११%+२०%=३१%। अनौपचारिक: १०.३७% स्वयम्। वैदेशिक रोजगार: ७.४८% सामाजिक बीमा + १३.८५% व्यक्तिगत कोष = २१.३३% (१०% अग्रिम छुट)। स्वरोजगार: ऐच्छिक। ६० वर्षमा मासिक पेन्सन। सूत्र: तलब × सेवा वर्ष × १.३३%। १५ वर्षभन्दा कम भए एकमुष्ट।",
     interestRate: null,
     annualReturn: 8.5,
     riskLevel: "Low Risk",
     liquidity: "Low",
     benefits: [
-      "31% total contribution (11% + 20%)",
+      "Formal sector: 11% employee + 20% employer = 31% total",
+      "Informal sector: 10.37% self-contribution",
+      "Foreign employment: 7.48% social insurance + 13.85% personal fund",
+      "Foreign employment: 10% advance discount on personal fund withdrawal",
+      "Self-employment: voluntary participation",
       "Monthly pension for life from age 60",
       "Individual account — your money stays yours",
-      "Pension formula: salary × years × 1.33%",
-      "Lump sum if < 15 years contribution",
+      "Pension formula: salary × years × 1.33% / month",
+      "Lump sum payout if < 15 years contribution",
     ],
     eligibility: [
-      "All formal sector employees (SSF-registered employer)",
-      "Informal / self-employed (voluntary)",
-      "Foreign employment workers (special provision)",
-      "Minimum 15 years to qualify for monthly pension",
+      "Formal sector: all employees of SSF-registered employers (mandatory)",
+      "Informal sector: workers in agriculture, construction, small trade (10.37% self)",
+      "Foreign employment: Nepali migrant workers via FEPB/embassy (21.33% total)",
+      "Self-employment: any Nepali citizen (voluntary, no fixed rate)",
+      "Minimum 15 years of contribution for monthly pension",
       "Pension age: 60 years",
+      "Lump sum available if less than 15 years contributed",
     ],
     documents: [
       "SSF registration form",
       "Citizenship certificate",
-      "Employer registration proof",
-      "Recent payslip",
+      "Employer registration proof (formal sector)",
+      "Foreign employment permit / labour agreement (foreign workers)",
+      "Recent payslip or income proof",
       "Bank account details",
       "PAN card",
     ],
@@ -1083,7 +1131,37 @@ export const SCHEMES: Scheme[] = [
     contributionEmployer: 20,
     pensionAge: 60,
     pensionFormula: "salary × years × 1.33% / month",
-    compareTags: ["pension", "retirement", "old-age", "individual-account", "mandatory", "employer-contribution"],
+    ssfSectors: {
+      formal: {
+        nepali: "औपचारिक क्षेत्र",
+        employeeRate: 11,
+        employerRate: 20,
+        totalRate: 31,
+        mandatory: true,
+      },
+      informal: {
+        nepali: "अनौपचारिक क्षेत्र",
+        selfRate: 10.37,
+        totalRate: 10.37,
+        mandatory: true,
+      },
+      foreignEmployment: {
+        nepali: "वैदेशिक रोजगार",
+        socialInsuranceRate: 7.48,
+        personalFundRate: 13.85,
+        totalRate: 21.33,
+        advanceDiscount: 10,
+        mandatory: true,
+        description: "Social insurance 7.48% + personal savings fund 13.85%. Workers may withdraw personal fund in advance with a 10% discount deducted.",
+      },
+      selfEmployment: {
+        nepali: "स्वरोजगार",
+        voluntary: true,
+        totalRate: null,
+        description: "Voluntary enrollment. Contributor sets own contribution amount. No employer match. Full social security benefits still apply once enrolled.",
+      },
+    },
+    compareTags: ["pension", "retirement", "old-age", "individual-account", "mandatory", "employer-contribution", "informal-sector", "foreign-employment", "self-employment"],
   },
 
   {
@@ -1209,6 +1287,37 @@ export const CATEGORY_META: Record<SchemeCategory, { icon: string; color: string
   Loan:       { icon: "🏠", color: "blue",   nepali: "ऋण" },
   Insurance:  { icon: "🛡️", color: "rose",   nepali: "बीमा" },
   Pension:    { icon: "🎯", color: "purple", nepali: "पेन्सन" },
+};
+
+export const SSF_SECTOR_RATES: SSFSectors = {
+  formal: {
+    nepali: "औपचारिक क्षेत्र",
+    employeeRate: 11,
+    employerRate: 20,
+    totalRate: 31,
+    mandatory: true,
+  },
+  informal: {
+    nepali: "अनौपचारिक क्षेत्र",
+    selfRate: 10.37,
+    totalRate: 10.37,
+    mandatory: true,
+  },
+  foreignEmployment: {
+    nepali: "वैदेशिक रोजगार",
+    socialInsuranceRate: 7.48,
+    personalFundRate: 13.85,
+    totalRate: 21.33,
+    advanceDiscount: 10,
+    mandatory: true,
+    description: "Social insurance 7.48% + personal savings fund 13.85%. Workers may withdraw personal fund in advance with a 10% discount deducted.",
+  },
+  selfEmployment: {
+    nepali: "स्वरोजगार",
+    voluntary: true,
+    totalRate: null,
+    description: "Voluntary enrollment. Contributor sets own contribution amount. No employer match. Full social security benefits still apply once enrolled.",
+  },
 };
 
 // ─── Calculator Helper Functions ─────────────────────────────────────────────
