@@ -2,6 +2,10 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import {
+  INVESTMENT_SCHEMES, LOAN_SCHEMES, INSURANCE_SCHEMES, PENSION_SCHEMES,
+  type Scheme, type SchemeCategory,
+} from "../../lib/schemes-data";
 
 /* ─── Types ──────────────────────────────────────────────── */
 type Category = "investment" | "loan" | "insurance" | "pension";
@@ -49,6 +53,7 @@ const CATEGORY_OPTIONS: {
   nepali: string;
   desc: string;
   schemes: string;
+  count: number;
 }[] = [
   {
     value: "investment",
@@ -56,7 +61,8 @@ const CATEGORY_OPTIONS: {
     label: "Investment",
     nepali: "लगानी",
     desc: "पैसा बढाउनुस्",
-    schemes: "EPF · CIT · NEPSE",
+    schemes: INVESTMENT_SCHEMES.map((s) => s.organization).filter((v, i, a) => a.indexOf(v) === i).join(" · "),
+    count: INVESTMENT_SCHEMES.length,
   },
   {
     value: "loan",
@@ -64,7 +70,8 @@ const CATEGORY_OPTIONS: {
     label: "Loan",
     nepali: "ऋण",
     desc: "सही ऋण छान्नुस्",
-    schemes: "EPF ऋण · गृह ऋण",
+    schemes: `EPF ${LOAN_SCHEMES.filter((s) => s.organization === "EPF").length} प्रकार · SSF ${LOAN_SCHEMES.filter((s) => s.organization === "SSF").length} प्रकार`,
+    count: LOAN_SCHEMES.length,
   },
   {
     value: "insurance",
@@ -72,7 +79,8 @@ const CATEGORY_OPTIONS: {
     label: "Insurance",
     nepali: "बीमा",
     desc: "परिवार सुरक्षित राख्नुस्",
-    schemes: "जीवन बीमा · स्वास्थ्य बीमा",
+    schemes: INSURANCE_SCHEMES.map((s) => s.organization).filter((v, i, a) => a.indexOf(v) === i).join(" · "),
+    count: INSURANCE_SCHEMES.length,
   },
   {
     value: "pension",
@@ -80,7 +88,8 @@ const CATEGORY_OPTIONS: {
     label: "Pension",
     nepali: "पेन्सन",
     desc: "सेवानिवृत्तिको तयारी",
-    schemes: "SSF · EPF पेन्सन",
+    schemes: PENSION_SCHEMES.map((s) => s.organization).filter((v, i, a) => a.indexOf(v) === i).join(" · "),
+    count: PENSION_SCHEMES.length,
   },
 ];
 
@@ -453,6 +462,7 @@ export default function RecommendClient() {
                     <div className="flex items-center gap-2">
                       <span className="font-black text-lg text-white">{cat.nepali}</span>
                       <span className="text-xs text-zinc-600 font-medium">{cat.label}</span>
+                      <span className="text-xs bg-zinc-800 text-zinc-500 px-2 py-0.5 rounded-full">{cat.count} योजना</span>
                     </div>
                     <p className="text-zinc-500 text-sm">{cat.desc}</p>
                     <p className="text-zinc-700 text-xs mt-0.5">{cat.schemes}</p>
@@ -750,6 +760,50 @@ export default function RecommendClient() {
                 <p className="text-zinc-200 text-sm leading-relaxed">{result.samgraSalah}</p>
               </div>
             )}
+
+            {/* Related schemes from data file */}
+            {(() => {
+              const catMap: Record<Category, Scheme[]> = {
+                investment: INVESTMENT_SCHEMES,
+                loan:       LOAN_SCHEMES,
+                insurance:  INSURANCE_SCHEMES,
+                pension:    PENSION_SCHEMES,
+              };
+              const schemes = catMap[result.category];
+              if (!schemes.length) return null;
+              return (
+                <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
+                  <p className="text-xs text-zinc-500 font-semibold uppercase tracking-wider mb-4">
+                    📋 उपलब्ध {result.category === "investment" ? "लगानी" : result.category === "loan" ? "ऋण" : result.category === "insurance" ? "बीमा" : "पेन्सन"} योजनाहरू
+                  </p>
+                  <div className="space-y-3">
+                    {schemes.map((s) => (
+                      <div key={s.id} className="flex items-start gap-3 py-2 border-b border-zinc-800 last:border-0">
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 mt-0.5 ${
+                          s.organization === "EPF"   ? "bg-blue-900/60 text-blue-300"
+                          : s.organization === "CIT" ? "bg-purple-900/60 text-purple-300"
+                          : s.organization === "SSF" ? "bg-orange-900/60 text-orange-300"
+                          : s.organization === "NEPSE" ? "bg-green-900/60 text-green-300"
+                          : "bg-rose-900/60 text-rose-300"
+                        }`}>
+                          {s.organization}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-zinc-200 font-semibold text-sm">{s.titleNepali}</p>
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            <span className="text-zinc-600 text-xs">{s.riskLevel}</span>
+                            {s.interestRate && <span className="text-zinc-600 text-xs">· {s.interestRate}% ब्याज</span>}
+                            {s.loanLimit && <span className="text-zinc-600 text-xs">· {s.loanLimit.split(" ")[2] ?? s.loanLimit}</span>}
+                            {s.pensionFormula && <span className="text-zinc-600 text-xs">· {s.pensionFormula}</span>}
+                          </div>
+                        </div>
+                        <span className="text-xs text-zinc-700 font-medium shrink-0">{s.liquidity}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 flex flex-col sm:flex-row gap-3">
               <Link href="/" className="flex-1 text-center bg-green-500 hover:bg-green-400 text-black font-black py-3 rounded-xl transition-colors text-sm">

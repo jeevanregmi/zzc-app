@@ -76,28 +76,39 @@ function buildInvestmentPrompt(
 ): string {
   const horizon = 65 - age;
   const monthly10pct = Math.round(income * 0.1);
-  const projEPF = fv(monthly10pct, 0.09, horizon);
-  const projCIT = fv(monthly10pct, 0.085, horizon);
-  const projNEPSE = fv(monthly10pct, 0.18, horizon);
+  const projEPF   = fv(monthly10pct, 0.09,  horizon);
+  const projCIT   = fv(monthly10pct, 0.085, horizon);
+  const projNEPSE = fv(monthly10pct, 0.18,  horizon);
 
   return `तपाईं नेपालको विशेषज्ञ लगानी सल्लाहकार हुनुहुन्छ।
 
 प्रयोगकर्ताको विवरण:
 - उमेर: ${age} वर्ष | मासिक आय: ${incomeFormatted} | जोखिम: ${risk}
-- लगानी क्षितिज: ${horizon} वर्ष (सेवानिवृत्तिसम्म)
-- मासिक लगानी क्षमता (आयको १०%): NPR ${monthly10pct.toLocaleString()}
+- लगानी क्षितिज: ${horizon} वर्ष | मासिक लगानी क्षमता (१०%): NPR ${monthly10pct.toLocaleString()}
 
-गणना (मासिक NPR ${monthly10pct.toLocaleString()} लगानी गर्दा):
-- EPF (९% दरमा ${horizon} वर्षमा): ${projEPF}
-- CIT (८.५% दरमा ${horizon} वर्षमा): ${projCIT}
-- NEPSE (१८% दरमा ${horizon} वर्षमा): ${projNEPSE}
+गणना (मासिक NPR ${monthly10pct.toLocaleString()} लगानी, ${horizon} वर्ष):
+- EPF PF (९%): ${projEPF}
+- CIT एकाइ (८.५%): ${projCIT}
+- NEPSE म्युचुअल फन्ड (१८%): ${projNEPSE}
 
-नेपालका लगानी योजनाहरू:
-१. EPF — ब्याज ८.५–११%, नियोक्ता योगदान (तलबको १०%), कर छूट, सेवानिवृत्तिमा एकमुस्त। न्यूनतम जोखिम।
-२. CIT — लाभांश ७–१०%, जो कोहीले लगानी गर्न सक्छ, सरकारी सहभागिता, स्थिर। कम जोखिम।
-३. NEPSE म्युचुअल फन्ड — सम्भावित रिटर्न १५–३०%+, बाजार उतारचढाव, दीर्घकालीन। उच्च जोखिम।
+नेपालका लगानी योजनाहरू (विस्तृत):
 
-माथिको जानकारीको आधारमा ${age} वर्षीय, ${incomeFormatted} आय र ${risk} जोखिम क्षमता भएको व्यक्तिको लागि २–३ उपयुक्त योजनाहरू सिफारिस गर्नुस्।
+१. EPF कर्मचारी सञ्चय कोष (Employee Provident Fund):
+   - ब्याज दर: ८.५–११% प्रतिवर्ष, नियोक्ता योगदान: तलबको १०%
+   - कर छूट, सेवानिवृत्तिमा एकमुस्त। सरकारी तथा निजी क्षेत्रका कर्मचारी। न्यूनतम जोखिम।
+
+२. CIT साधारण एकाइ (Regular Unit):
+   - लाभांश: ७–१०% प्रतिवर्ष। जो कोहीले NPR ५०० देखि लगानी गर्न सक्छ।
+   - सरकारी सहभागिता, स्थिर रिटर्न। कम जोखिम।
+
+३. CIT विशेष एकाइ (Special Unit):
+   - सरकारी कर्मचारीहरूको लागि। उच्च लाभांश सम्भव। कम जोखिम।
+
+४. NEPSE म्युचुअल फन्डहरू:
+   - Nabil Balanced Fund, Siddhartha Equity Fund, NMB Sulav, Global IME Samunnat, आदि
+   - सम्भावित रिटर्न: १५–३०%+। बाजार उतारचढाव। दीर्घकालीन लगानीका लागि। उच्च जोखिम।
+
+${age} वर्षीय, ${incomeFormatted} आय, ${risk} जोखिम क्षमताका लागि २–३ सबैभन्दा उपयुक्त योजनाहरू सिफारिस गर्नुस्।
 
 केवल यो JSON format मा जवाफ दिनुस्:
 {
@@ -128,8 +139,9 @@ function buildLoanPrompt(
   incomeFormatted: string
 ): string {
   const maxEMI = Math.round(income * 0.4);
-  const epfLoanEstimate = Math.round(income * 12 * 0.5);
-  const epfLoanEMI = emi(epfLoanEstimate, 0.11, 3);
+  const epfAccum = Math.round(income * 0.2 * 12 * Math.max(1, age - 22));
+  const epfLoanMax = Math.round(epfAccum * 0.5);
+  const epfLoanEMI = emi(Math.min(epfLoanMax, loanAmount), 0.11, 3);
   const homeLoanEMI = emi(loanAmount, 0.10, 20);
   const loanFormatted = loanAmount >= 100_000
     ? `NPR ${(loanAmount / 100_000).toFixed(1)} लाख`
@@ -143,15 +155,30 @@ function buildLoanPrompt(
 - अधिकतम EMI क्षमता (आयको ४०%): NPR ${maxEMI.toLocaleString()}
 
 गणना:
-- EPF ऋण (अनुमानित): NPR ${epfLoanEstimate.toLocaleString()} → EMI: ${epfLoanEMI}/महिना (३ वर्ष, ११%)
-- गृह ऋण (बैंक): ${loanFormatted} → EMI: ${homeLoanEMI}/महिना (२० वर्ष, १०%)
+- EPF संचित (अनुमानित): NPR ${epfAccum.toLocaleString()} → अधिकतम EPF ऋण: NPR ${epfLoanMax.toLocaleString()}
+- EPF ऋण EMI (११%, ३ वर्ष): ${epfLoanEMI}/महिना
+- गृह ऋण EMI (१०%, २० वर्ष): ${homeLoanEMI}/महिना
 
-नेपालका ऋण विकल्पहरू:
-१. EPF ऋण — संचित EPF को ५०% सम्म, ब्याज ~११%, अवधि ३ वर्ष। छिटो र सजिलो।
-२. गृह ऋण (बैंक) — सम्पत्तिको ६०–७०% सम्म, ब्याज ८.५–१२%, अवधि २०–२५ वर्ष।
-३. SSF आपतकालीन ऋण — SSF सदस्यको लागि, योगदानको केही प्रतिशत।
+नेपालका ऋण योजनाहरू (विस्तृत):
 
-${age} वर्षीय, ${incomeFormatted} आय भएको, ${loanPurpose} को लागि ${loanFormatted} ऋण चाहने व्यक्तिलाई उपयुक्त ऋण विकल्पहरू सिफारिस गर्नुस्।
+EPF ऋण/अग्रिम (५ प्रकार):
+१. EPF गृह अग्रिम — गृह खरिद/निर्माणका लागि, NPR ३० लाखसम्म, ९–११%, १५ वर्षसम्म
+२. EPF व्यक्तिगत अग्रिम — संचित रकमको ५०%सम्म, ११%, ३ वर्ष
+३. EPF शिक्षा अग्रिम — उच्च शिक्षाका लागि, NPR ५ लाखसम्म, १०%, ५ वर्ष
+४. EPF चिकित्सा अग्रिम — गम्भीर बिमारी, NPR ३ लाखसम्म, १०%, २ वर्ष
+५. EPF व्यवसाय अग्रिम — साना व्यवसाय, NPR १० लाखसम्म, ११%, ५ वर्ष
+
+CIT ऋण (३ प्रकार):
+१. CIT आवास ऋण — CIT एकाइ धितोमा, NPR ५० लाखसम्म, १०%, २० वर्ष
+२. CIT व्यक्तिगत ऋण — NPR ५ लाखसम्म, ११%, ५ वर्ष
+३. CIT शिक्षा ऋण — NPR १० लाखसम्म, १०%, ७ वर्ष
+
+SSF अग्रिम (३ प्रकार):
+१. SSF आवास अग्रिम — NPR २५ लाखसम्म, ९%, १५ वर्ष
+२. SSF आपतकालीन अग्रिम — NPR २ लाखसम्म, ८%, २ वर्ष
+३. SSF चाडपर्व अग्रिम — NPR ५०,०००सम्म, ८%, १ वर्ष
+
+${age} वर्षीय, ${incomeFormatted} आय भएको, ${loanPurpose} को लागि ${loanFormatted} ऋण चाहने व्यक्तिलाई सबैभन्दा उपयुक्त २–३ ऋण विकल्पहरू सिफारिस गर्नुस्।
 
 केवल यो JSON format मा जवाफ दिनुस्:
 {
@@ -159,14 +186,14 @@ ${age} वर्षीय, ${incomeFormatted} आय भएको, ${loanPurpose
   "sifaris": [
     {
       "name": "EPF Loan",
-      "nepaliName": "EPF ऋण",
+      "nepaliName": "EPF गृह अग्रिम",
       "rank": 1,
       "kina": "किन उपयुक्त (२–३ वाक्य, नेपालीमा)",
       "faida": ["फाइदा १", "फाइदा २", "फाइदा ३"],
       "savdhan": "एउटा सावधानी (१ वाक्य)",
       "estimatedLoan": "NPR X लाख",
-      "byajDar": "११%",
-      "avadhi": "३ वर्ष",
+      "byajDar": "९–११%",
+      "avadhi": "१५ वर्ष",
       "monthlyEMI": "NPR X,XXX"
     }
   ],
@@ -185,24 +212,35 @@ function buildInsurancePrompt(
   const coverFormatted = suggestedCover >= 100_000
     ? `NPR ${(suggestedCover / 100_000).toFixed(0)} लाख`
     : `NPR ${suggestedCover.toLocaleString()}`;
-  const termPremiumLow = Math.round(suggestedCover * 0.003);
-  const termPremiumHigh = Math.round(suggestedCover * 0.006);
+  const termRate = age < 30 ? 0.003 : age < 40 ? 0.005 : 0.008;
+  const termPremium = Math.round(suggestedCover * termRate);
+  const endowPremium = Math.round(suggestedCover * termRate * 2.5 + suggestedCover * 0.04);
 
   return `तपाईं नेपालको विशेषज्ञ बीमा सल्लाहकार हुनुहुन्छ।
 
 प्रयोगकर्ताको विवरण:
-- उमेर: ${age} वर्ष | मासिक आय: ${incomeFormatted}
-- आश्रित परिवार: ${dependents} जना
-- सुझावित जीवन बीमा रकम (वार्षिक आयको १०×): ${coverFormatted}
-- अनुमानित टर्म बीमा प्रिमियम: NPR ${termPremiumLow.toLocaleString()}–${termPremiumHigh.toLocaleString()}/वर्ष
+- उमेर: ${age} वर्ष | मासिक आय: ${incomeFormatted} | आश्रित: ${dependents} जना
+- सुझावित जीवन बीमा (वार्षिक आयको १०×): ${coverFormatted}
+- टर्म बीमा अनुमानित प्रिमियम: NPR ${termPremium.toLocaleString()}/वर्ष
+- एन्डाउमेन्ट अनुमानित प्रिमियम: NPR ${endowPremium.toLocaleString()}/वर्ष
 
-नेपालका बीमा योजनाहरू:
-१. जीवन बीमा (Term) — शुद्ध सुरक्षा, कम प्रिमियम, उच्च कभरेज। Nepal Life, National Life.
-२. जीवन बीमा (Endowment) — बचत + सुरक्षा, ४–७% रिटर्न, परिपक्वतामा एकमुस्त।
-३. स्वास्थ्य बीमा (सरकारी) — NPR १ लाख परिवार कभरेज, NPR २,५०० मात्र/वर्ष।
-४. स्वास्थ्य बीमा (निजी) — NPR १–५ लाख कभरेज, NPR ५,०००–१५,०००/वर्ष।
+नेपालका बीमा योजनाहरू (विस्तृत):
 
-${age} वर्षीय, ${incomeFormatted} आय, ${dependents} जना आश्रित परिवार भएको व्यक्तिलाई उपयुक्त बीमा योजनाहरू सिफारिस गर्नुस्।
+जीवन बीमा (Jeevan Beema):
+१. टर्म बीमा — शुद्ध जीवन सुरक्षा, कम प्रिमियम, उच्च कभरेज। Nepal Life, National Life, Prime Life।
+२. एन्डाउमेन्ट — बचत + जीवन सुरक्षा, ४–७% रिटर्न, परिपक्वतामा एकमुस्त भुक्तानी।
+३. CIT नागरिक बीमा (CICI) — सरकारी/अर्धसरकारी कर्मचारीहरूको लागि समूह बीमा। प्रतिस्पर्धात्मक दर।
+
+स्वास्थ्य बीमा (Swasthya Beema):
+४. सरकारी स्वास्थ्य बीमा — NPR १ लाख परिवार कभरेज (NPR २,५०० मात्र/वर्ष)। सरकारी अस्पतालमा।
+५. निजी स्वास्थ्य बीमा — NPR १–५ लाख कभरेज, NPR ५,०००–१५,०००/वर्ष। निजी अस्पतालमा पनि।
+
+SSF बीमा सुविधाहरू (औपचारिक क्षेत्रका कर्मचारी):
+६. SSF स्वास्थ्य बीमा — SSF योगदानमा समावेश, अस्पताल खर्च कभरेज।
+७. SSF दुर्घटना बीमा — NPR १४ लाखसम्म दुर्घटना/अपांगता।
+८. SSF मातृत्व सुविधा — प्रसूति खर्च NPR ३०,०००सम्म।
+
+${age} वर्षीय, ${incomeFormatted} आय, ${dependents} जना आश्रित परिवार भएकालाई उपयुक्त २–३ बीमा योजनाहरू सिफारिस गर्नुस्।
 
 केवल यो JSON format मा जवाफ दिनुस्:
 {
@@ -216,7 +254,7 @@ ${age} वर्षीय, ${incomeFormatted} आय, ${dependents} जना �
       "faida": ["फाइदा १", "फाइदा २", "फाइदा ३"],
       "savdhan": "एउटा सावधानी (१ वाक्य)",
       "coverageType": "जीवन सुरक्षा",
-      "estimatedPremium": "NPR X,XXX/वर्ष",
+      "estimatedPremium": "NPR ${termPremium.toLocaleString()}/वर्ष",
       "suggestedCoverage": "${coverFormatted}"
     }
   ],
@@ -232,29 +270,45 @@ function buildPensionPrompt(
   incomeFormatted: string
 ): string {
   const years = retirementAge - age;
-  const monthlyContrib = Math.round(income * 0.31); // 11% employee + 20% employer (SSF)
-  const totalContrib = fv(monthlyContrib, 0.085, years);
-  const monthlyPension = Math.round(income * years * 0.0133);
-  const pensionFormatted = `NPR ${monthlyPension.toLocaleString()}/महिना`;
+  const ssfMonthlyContrib = Math.round(income * 0.31);
+  const epfMonthlyContrib = Math.round(income * 0.20);
+  const ssfCorpus = fv(ssfMonthlyContrib, 0.085, years);
+  const epfCorpus = fv(epfMonthlyContrib, 0.09, years);
+  const gratuity = formatIncome(income * years);
+  const ssfMonthlyPension = Math.round(income * years * 0.0133);
 
   return `तपाईं नेपालको विशेषज्ञ पेन्सन सल्लाहकार हुनुहुन्छ।
 
 प्रयोगकर्ताको विवरण:
 - उमेर: ${age} वर्ष | मासिक आय: ${incomeFormatted}
-- लक्षित सेवानिवृत्ति उमेर: ${retirementAge} वर्ष
-- सेवा वर्ष: ${years} वर्ष
+- सेवानिवृत्ति उमेर: ${retirementAge} वर्ष | सेवा वर्ष: ${years} वर्ष
 
-SSF गणना (${years} वर्ष योगदान):
-- मासिक कुल योगदान (कर्मचारी ११% + नियोक्ता २०%): NPR ${monthlyContrib.toLocaleString()}
-- संचित कोष (अनुमानित): ${totalContrib}
-- अनुमानित मासिक पेन्सन (${pensionFormatted}): तलब × ${years} × १.३३%
+गणना:
+- SSF योगदान (कर्मचारी ११% + नियोक्ता २०% = ३१%): NPR ${ssfMonthlyContrib.toLocaleString()}/महिना
+- SSF संचित कोष (${years} वर्षमा): ${ssfCorpus}
+- SSF मासिक पेन्सन (तलब × ${years} × १.३३%): NPR ${ssfMonthlyPension.toLocaleString()}/महिना
+- EPF संचित कोष: ${epfCorpus}
+- EPF ग्राच्युटी (अनुमानित): ${gratuity}
 
-नेपालका पेन्सन विकल्पहरू:
-१. SSF पेन्सन — कर्मचारी ११% + नियोक्ता २०%, ६० वर्षमा मासिक पेन्सन, न्यूनतम १५ वर्ष सेवा।
-२. EPF + ग्राच्युटी — सेवानिवृत्तिमा एकमुस्त, पेन्सनको लागि annuity मा रूपान्तरण गर्न सकिन्छ।
-३. CIT थप लगानी — पेन्सन पूरकको लागि, जो कोहीले गर्न सक्छ।
+नेपालका पेन्सन योजनाहरू (विस्तृत):
 
-${age} वर्षीय, ${incomeFormatted} आय, ${retirementAge} मा सेवानिवृत्त हुन चाहने व्यक्तिलाई उपयुक्त पेन्सन योजनाहरू सिफारिस गर्नुस्।
+१. SSF वृद्धावस्था पेन्सन (Old Age Pension):
+   - कर्मचारी ११% + नियोक्ता २०% = ३१% मासिक योगदान
+   - न्यूनतम १५ वर्ष सेवा पछि ६० वर्षमा मासिक पेन्सन
+   - फार्मुला: औसत तलब × सेवा वर्ष × १.३३%
+   - स्वास्थ्य बीमा, दुर्घटना बीमा पनि समावेश
+
+२. EPF पेन्सन + ग्राच्युटी:
+   - EPF संचित रकम (कर्मचारी + नियोक्ता योगदान + ब्याज) सेवानिवृत्तिमा एकमुस्त
+   - ग्राच्युटी: प्रत्येक सेवा वर्षको लागि एक महिनाको तलब
+   - एकमुस्त रकम पेन्सन annuity मा लगाउन सकिन्छ
+
+३. CIT पेन्सन पूरक:
+   - CIT एकाइमा थप लगानी, ७–१०% वार्षिक लाभांश
+   - EPF/SSF को पूरकको रूपमा प्रयोग
+   - जो कोहीले गर्न सक्छ, न्यूनतम रकम NPR ५००
+
+${age} वर्षीय, ${incomeFormatted} आय, ${retirementAge} मा सेवानिवृत्त हुन चाहनेलाई उपयुक्त पेन्सन योजनाहरू सिफारिस गर्नुस्।
 
 केवल यो JSON format मा जवाफ दिनुस्:
 {
@@ -262,13 +316,13 @@ ${age} वर्षीय, ${incomeFormatted} आय, ${retirementAge} मा �
   "sifaris": [
     {
       "name": "SSF",
-      "nepaliName": "सामाजिक सुरक्षा कोष",
+      "nepaliName": "SSF वृद्धावस्था पेन्सन",
       "rank": 1,
       "kina": "किन उपयुक्त (२–३ वाक्य, नेपालीमा)",
       "faida": ["फाइदा १", "फाइदा २", "फाइदा ३"],
       "savdhan": "एउटा सावधानी (१ वाक्य)",
-      "estimatedMonthlyPension": "${pensionFormatted}",
-      "totalCorpus": "${totalContrib}",
+      "estimatedMonthlyPension": "NPR ${ssfMonthlyPension.toLocaleString()}/महिना",
+      "totalCorpus": "${ssfCorpus}",
       "vestingPeriod": "न्यूनतम १५ वर्ष"
     }
   ],

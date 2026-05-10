@@ -5,15 +5,16 @@ import { db } from "./firebase";
 import { collection, getDocs } from "firebase/firestore";
 
 type OrgFilter = "सबै" | "EPF" | "CIT" | "SSF";
-type CategoryFilter = "सबै" | "Investment" | "Pension" | "Insurance";
+type CategoryFilter = "सबै" | "Investment" | "Loan" | "Insurance" | "Pension";
 
 const ORG_FILTERS: OrgFilter[] = ["सबै", "EPF", "CIT", "SSF"];
 
-const CATEGORY_FILTERS: { value: CategoryFilter; label: string }[] = [
-  { value: "सबै", label: "सबै" },
-  { value: "Investment", label: "लगानी" },
-  { value: "Pension", label: "पेन्सन" },
-  { value: "Insurance", label: "बीमा" },
+const CATEGORY_FILTERS: { value: CategoryFilter; label: string; icon: string }[] = [
+  { value: "सबै",       label: "सबै",    icon: "🏛️" },
+  { value: "Investment", label: "लगानी",  icon: "📈" },
+  { value: "Loan",       label: "ऋण",    icon: "🏠" },
+  { value: "Insurance",  label: "बीमा",  icon: "🛡️" },
+  { value: "Pension",    label: "पेन्सन", icon: "🎯" },
 ];
 
 export default function Home() {
@@ -158,12 +159,7 @@ export default function Home() {
               key={cat.value}
               onClick={() => setCategoryFilter(cat.value)}
               className={`
-                px-4
-                py-1.5
-                rounded-full
-                text-xs
-                font-semibold
-                transition
+                flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-semibold transition
                 ${
                   categoryFilter === cat.value
                     ? "bg-zinc-200 text-black"
@@ -171,6 +167,7 @@ export default function Home() {
                 }
               `}
             >
+              <span>{cat.icon}</span>
               {cat.label}
             </button>
           ))}
@@ -290,7 +287,23 @@ export default function Home() {
 
         </div>
 
-        {!loading && filtered.length === 0 && (
+        {!loading && filtered.length === 0 && categoryFilter === "Loan" && (
+          <div className="text-center py-16 max-w-md mx-auto">
+            <div className="text-6xl mb-4">🏠</div>
+            <p className="text-2xl font-bold text-white mb-2">ऋण योजनाहरू</p>
+            <p className="text-zinc-500 text-sm mb-6 leading-relaxed">
+              EPF ऋण (५ प्रकार), CIT ऋण (३ प्रकार) र SSF ऋण (३ प्रकार) — Admin प्यानलबाट थप्न सकिन्छ।
+              अहिलेको लागि AI सिफारिस प्रयोग गर्नुस्।
+            </p>
+            <a
+              href="/recommend"
+              className="inline-flex items-center gap-2 bg-green-500 hover:bg-green-400 text-black font-black px-6 py-3 rounded-2xl transition-colors"
+            >
+              🤖 AI ऋण सिफारिस पाउनुस् →
+            </a>
+          </div>
+        )}
+        {!loading && filtered.length === 0 && categoryFilter !== "Loan" && (
           <div className="text-center py-24 text-zinc-600">
             <p className="text-2xl font-bold mb-2">कुनै योजना भेटिएन</p>
             <p className="text-sm">खोज वा फिल्टर परिवर्तन गर्नुस्</p>
