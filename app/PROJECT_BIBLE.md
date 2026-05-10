@@ -1,6 +1,6 @@
 # ZENERATION Z CHAUTARI (ZZC)
-## Project Bible — Version 4.0
-Last Updated: May 5, 2026 | Session 3 Complete
+## Project Bible — Version 5.0
+Last Updated: May 10, 2026 | Session 5 In Progress
 
 ## OWNER
 - Name: Jeevan Regmi, 27 years
@@ -50,7 +50,8 @@ Last Updated: May 5, 2026 | Session 3 Complete
 - Database: Firebase Firestore (zeneration-z-chautari)
 - Auth: Firebase Email/Password
 - Domain: zzc.jeevanregmi.com.np
-- Deploy command: npx wrangler pages deploy out --project-name=zeneration-z-chautari
+- AI: AWS Bedrock — Claude Sonnet (anthropic.claude-sonnet-4-6)
+- Deploy command: npx wrangler pages deploy out --project-name=zeneration-z-chautari --commit-dirty=true --commit-message="..."
 
 ### Phase Status Update:
 - Phase 1 Education Website: 100% COMPLETE
@@ -58,9 +59,41 @@ Last Updated: May 5, 2026 | Session 3 Complete
 - Phase 3 Consultancy: 40% complete
 - Phase 4 Launch: In progress
 
-### Next Priorities:
-- Scheme detail page ID bug fix
-- AI Recommendation Engine
+### Next Priorities (after Session 4):
+- Scheme detail page ID bug fix ✓
+- AI Recommendation Engine — built, pending AWS credential setup
 - Portfolio Simulator
 - More schemes add (NEPSE, Beema)
 - GitHub repo connect for auto-deploy
+
+---
+
+## SESSION 5 — May 10, 2026 (In Progress)
+
+### AWS Bedrock Setup:
+- AWS Account ID: 190777960247
+- IAM User: zzc-bedrock-user (AmazonBedrockFullAccess policy)
+- Region: us-east-1 (N. Virginia)
+- Target model: anthropic.claude-sonnet-4-6
+- Use case submitted to Anthropic for model access
+- Status: Awaiting access grant + IAM key creation
+
+### AI Recommendation Engine Built:
+- `/recommend` page — 3-step wizard (Age → Income → Risk appetite)
+- Cloudflare Pages Function: `functions/api/recommend.ts`
+- SDK: @aws-sdk/client-bedrock-runtime (InvokeModelCommand)
+- wrangler.toml: nodejs_compat flag added
+- "AI सिफारिस" nav link added
+- Deployed — goes live once Cloudflare env vars set
+
+### Remaining Steps:
+1. Create access keys for zzc-bedrock-user in IAM console
+2. Set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION=us-east-1 in Cloudflare Pages dashboard
+3. Once model access approved, update MODEL_ID in functions/api/recommend.ts to anthropic.claude-sonnet-4-6
+4. Redeploy and test live at zzc.jeevanregmi.com.np/recommend
+
+### Next Priorities:
+- Complete AI Recommendation Engine go-live
+- Portfolio Simulator
+- More schemes (NEPSE mutual funds, Beema Samiti)
+- First 100 users campaign

@@ -1,6 +1,6 @@
 # ZZC MASTER CONTEXT
 ## Zeneration Z Chautari — Session State Document
-Last Updated: May 9, 2026 | Session 4 Complete
+Last Updated: May 10, 2026 | Session 5 In Progress
 
 ---
 
@@ -48,6 +48,45 @@ createdAt: timestamp
 
 ---
 
+## AI RECOMMENDATION ENGINE
+
+### AWS Bedrock Setup (Session 5 — May 10, 2026)
+- **AWS Account ID**: 190777960247
+- **IAM User**: `zzc-bedrock-user` (created, policy: `AmazonBedrockFullAccess`)
+- **Region**: `us-east-1` (N. Virginia)
+- **Target Model**: `anthropic.claude-sonnet-4-6`
+- **Use case**: Submitted to Anthropic for model access approval
+- **Status**: Awaiting Bedrock model access grant
+
+### Cloudflare Pages Function
+- **File**: `functions/api/recommend.ts` (at project root — picked up by wrangler)
+- **Endpoint**: `POST /api/recommend`
+- **SDK**: `@aws-sdk/client-bedrock-runtime` (InvokeModelCommand)
+- **Current MODEL_ID**: `anthropic.claude-3-5-sonnet-20241022-v2:0` (fallback until claude-sonnet-4-6 access granted)
+- **nodejs_compat**: enabled via `wrangler.toml` (required for AWS SDK in Workers)
+
+### Required Cloudflare Env Vars (set in dashboard → Settings → Environment variables)
+| Variable | Value |
+|---|---|
+| `AWS_ACCESS_KEY_ID` | IAM access key for zzc-bedrock-user |
+| `AWS_SECRET_ACCESS_KEY` | IAM secret key |
+| `AWS_REGION` | `us-east-1` |
+
+### /recommend Page
+- **Route**: `/recommend`
+- **Server wrapper**: `app/recommend/page.tsx` (SEO metadata + JSON-LD)
+- **UI**: `app/recommend/RecommendClient.tsx` ("use client" 3-step wizard)
+- **Wizard**: Age slider → Income preset → Risk (Low/Medium/High)
+- **Output**: Ranked scheme cards (EPF, CIT, SSF, NEPSE, Beema) in Nepali
+
+### Remaining Steps
+1. Get IAM access key + secret for `zzc-bedrock-user`
+2. Set `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` in Cloudflare Pages dashboard
+3. Once `anthropic.claude-sonnet-4-6` access is granted, update `MODEL_ID` in `functions/api/recommend.ts`
+4. Redeploy: `npx wrangler pages deploy out --project-name=zeneration-z-chautari --commit-dirty=true --commit-message="..."`
+
+---
+
 ## TECH STACK
 - **Framework**: Next.js 16.2.6 (Turbopack), App Router
 - **Output**: `output: "export"` + `trailingSlash: true` (static export for Cloudflare Pages)
@@ -82,12 +121,19 @@ app/
 │   └── SchemeDetail.tsx    — "use client" scheme detail view
 ├── admin/
 │   └── page.tsx            — "use client", Firebase auth gate + upload panel
+├── recommend/
+│   ├── page.tsx            — server wrapper, exports metadata + JSON-LD
+│   └── RecommendClient.tsx — "use client" 3-step AI recommendation wizard
 ├── scripts/
 │   ├── epfDatabase.json    — 10 EPF schemes
 │   ├── citDatabase.json    — 7 CIT schemes
 │   └── ssfDatabase.json    — 9 SSF schemes
 ├── PROJECT_BIBLE.md
 └── ZZC_MASTER_CONTEXT.md   (this file)
+
+functions/ (project root — Cloudflare Pages Functions)
+└── api/
+    └── recommend.ts        — POST /api/recommend — calls AWS Bedrock Claude Sonnet
 ```
 
 ---
@@ -127,6 +173,7 @@ app/
 | `/eligibility` | EligibilityClient.tsx | Employment-type eligibility checker |
 | `/compare` | CompareClient.tsx | Side-by-side scheme comparison (up to 4) |
 | `/calculator` | CalculatorClient.tsx | Retirement savings projection with chart |
+| `/recommend` | RecommendClient.tsx | AI-powered scheme recommendation wizard |
 | `/scheme/[id]` | SchemeDetail.tsx | Full scheme detail (26 static pages built) |
 | `/admin` | admin/page.tsx | Auth-gated upload/edit panel |
 | `/sitemap.xml` | sitemap.ts | Auto-generated from Firestore |
@@ -154,12 +201,22 @@ app/
 ---
 
 ## NEXT PRIORITIES
-1. **Connect GitHub → Cloudflare Pages auto-deploy** (settings → Git integration)
-2. **AI Recommendation Engine** — "Which scheme is best for me?" quiz flow
-3. **Portfolio Simulator** — track hypothetical investments over time
-4. **More schemes** — NEPSE (mutual funds), Beema Samiti (insurance products)
-5. **First 100 users** — share in Nepali Facebook groups, LinkedIn
-6. **eSewa / Khalti** integration (Phase 3 consultancy payments)
+1. **Finish AI Recommendation Engine** — get IAM keys → set Cloudflare env vars → update MODEL_ID to `anthropic.claude-sonnet-4-6` once access granted → test live
+2. **Portfolio Simulator** — track hypothetical investments over time
+3. **More schemes** — NEPSE (mutual funds), Beema Samiti (insurance products)
+4. **First 100 users** — share in Nepali Facebook groups, LinkedIn
+5. **eSewa / Khalti** integration (Phase 3 consultancy payments)
+
+---
+
+## SESSION 5 — May 10, 2026 (In Progress)
+- AI Recommendation Engine built: `/recommend` page + 3-step wizard UI
+- Cloudflare Pages Function: `functions/api/recommend.ts` using AWS Bedrock SDK
+- `wrangler.toml` created with `nodejs_compat` flag
+- AWS Account 190777960247 set up; IAM user `zzc-bedrock-user` created
+- Bedrock region: `us-east-1`; model access use case submitted for `anthropic.claude-sonnet-4-6`
+- "AI सिफारिस" nav link added to layout
+- Deployed to Cloudflare Pages (awaiting env var configuration to go live)
 
 ---
 
