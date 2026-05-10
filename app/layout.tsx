@@ -91,6 +91,9 @@ export default function RootLayout({
               <Link href="/calculator" className="text-zinc-400 hover:text-white hover:bg-zinc-900 px-3 py-2 rounded-xl transition">
                 क्यालकुलेटर
               </Link>
+              <Link href="/recommend" className="text-green-400 hover:text-white hover:bg-green-900/30 px-3 py-2 rounded-xl transition">
+                AI सिफारिस
+              </Link>
               <Link href="/admin" className="text-zinc-600 hover:text-green-400 hover:bg-zinc-900 px-3 py-2 rounded-xl transition text-xs ml-4">
                 Admin
               </Link>
