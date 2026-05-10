@@ -1,5 +1,12 @@
+import {
+  BedrockRuntimeClient,
+  InvokeModelCommand,
+} from "@aws-sdk/client-bedrock-runtime";
+
 interface Env {
-  ANTHROPIC_API_KEY: string;
+  AWS_ACCESS_KEY_ID: string;
+  AWS_SECRET_ACCESS_KEY: string;
+  AWS_REGION: string;
 }
 
 interface PagesContext {
@@ -19,15 +26,18 @@ const CORS_HEADERS: Record<string, string> = {
   "Content-Type": "application/json",
 };
 
+const MODEL_ID = "anthropic.claude-3-5-sonnet-20241022-v2:0";
+
 export const onRequestOptions = async (): Promise<Response> => {
   return new Response(null, { status: 204, headers: CORS_HEADERS });
 };
 
 export const onRequestPost = async (context: PagesContext): Promise<Response> => {
-  const apiKey = context.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
+  const { AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION } = context.env;
+
+  if (!AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY || !AWS_REGION) {
     return new Response(
-      JSON.stringify({ error: "API key राखिएको छैन।" }),
+      JSON.stringify({ error: "AWS credentials राखिएको छैन।" }),
       { status: 500, headers: CORS_HEADERS }
     );
   }
@@ -118,34 +128,31 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
 }`;
 
   try {
-    const apiRes = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
+    const client = new BedrockRuntimeClient({
+      region: AWS_REGION,
+      credentials: {
+        accessKeyId: AWS_ACCESS_KEY_ID,
+        secretAccessKey: AWS_SECRET_ACCESS_KEY,
       },
+    });
+
+    const command = new InvokeModelCommand({
+      modelId: MODEL_ID,
+      contentType: "application/json",
+      accept: "application/json",
       body: JSON.stringify({
-        model: "claude-haiku-4-5",
+        anthropic_version: "bedrock-2023-05-31",
         max_tokens: 2048,
         messages: [{ role: "user", content: prompt }],
       }),
     });
 
-    if (!apiRes.ok) {
-      const errText = await apiRes.text();
-      console.error("Claude API error:", errText);
-      return new Response(
-        JSON.stringify({ error: "AI सेवामा समस्या भयो। कृपया पुनः प्रयास गर्नुस्।" }),
-        { status: 502, headers: CORS_HEADERS }
-      );
-    }
+    const bedrockRes = await client.send(command);
+    const responseBody = JSON.parse(
+      new TextDecoder().decode(bedrockRes.body)
+    ) as { content: Array<{ type: string; text: string }> };
 
-    const apiData = (await apiRes.json()) as {
-      content: Array<{ type: string; text: string }>;
-    };
-
-    const rawText = apiData.content?.[0]?.text?.trim() ?? "";
+    const rawText = responseBody.content?.[0]?.text?.trim() ?? "";
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       return new Response(
@@ -157,10 +164,10 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     const result = JSON.parse(jsonMatch[0]);
     return new Response(JSON.stringify(result), { headers: CORS_HEADERS });
   } catch (err) {
-    console.error("Recommend function error:", err);
+    console.error("Bedrock recommend error:", err);
     return new Response(
-      JSON.stringify({ error: "अप्रत्याशित त्रुटि भयो। कृपया पुनः प्रयास गर्नुस्।" }),
-      { status: 500, headers: CORS_HEADERS }
+      JSON.stringify({ error: "AI सेवामा समस्या भयो। कृपया पुनः प्रयास गर्नुस्।" }),
+      { status: 502, headers: CORS_HEADERS }
     );
   }
 };
