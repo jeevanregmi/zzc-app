@@ -73,12 +73,13 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-black text-white">
-        <nav className="sticky top-0 z-50 bg-black/95 backdrop-blur border-b border-zinc-800 px-6 py-4">
-          <div className="max-w-7xl mx-auto flex items-center justify-between">
-            <Link href="/" className="text-2xl font-black text-green-400 tracking-tight">
+        <nav className="sticky top-0 z-50 bg-black/95 backdrop-blur border-b border-zinc-800 px-4 sm:px-6 py-3">
+          <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
+            <Link href="/" className="text-xl sm:text-2xl font-black text-green-400 tracking-tight shrink-0">
               ZZC
             </Link>
-            <div className="flex items-center gap-1 text-sm font-semibold">
+            {/* Desktop nav */}
+            <div className="hidden sm:flex items-center gap-1 text-sm font-semibold">
               <Link href="/" className="text-zinc-400 hover:text-white hover:bg-zinc-900 px-3 py-2 rounded-xl transition">
                 योजनाहरू
               </Link>
@@ -96,6 +97,21 @@ export default function RootLayout({
               </Link>
               <Link href="/admin" className="text-zinc-600 hover:text-green-400 hover:bg-zinc-900 px-3 py-2 rounded-xl transition text-xs ml-4">
                 Admin
+              </Link>
+            </div>
+            {/* Mobile nav — key actions only */}
+            <div className="flex sm:hidden items-center gap-1 text-xs font-semibold overflow-x-auto scrollbar-none">
+              <Link href="/" className="text-zinc-400 hover:text-white px-2 py-1.5 rounded-lg transition shrink-0">
+                योजना
+              </Link>
+              <Link href="/calculator" className="text-zinc-400 hover:text-white px-2 py-1.5 rounded-lg transition shrink-0">
+                Calculator
+              </Link>
+              <Link href="/recommend" className="text-green-400 bg-green-900/20 hover:bg-green-900/40 px-2 py-1.5 rounded-lg transition shrink-0">
+                AI
+              </Link>
+              <Link href="/compare" className="text-zinc-500 hover:text-white px-2 py-1.5 rounded-lg transition shrink-0">
+                Compare
               </Link>
             </div>
           </div>

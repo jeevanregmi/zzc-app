@@ -108,15 +108,15 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-black text-white px-6 py-10">
+    <main className="min-h-screen bg-black text-white px-4 sm:px-6 py-6 sm:py-10">
       <div className="max-w-7xl mx-auto">
 
         {/* Hero */}
-        <div className="mb-10">
-          <h1 className="text-5xl font-extrabold mb-3 text-white">
+        <div className="mb-6 sm:mb-10">
+          <h1 className="text-2xl sm:text-4xl lg:text-5xl font-extrabold mb-2 sm:mb-3 text-white leading-tight">
             ZZC — Zeneration Z Chautari
           </h1>
-          <p className="text-zinc-400 text-lg">
+          <p className="text-zinc-400 text-sm sm:text-lg">
             Nepal ko Gen Z — Paisa Sikau, Bhavishya Banau
           </p>
         </div>
@@ -210,12 +210,12 @@ export default function Home() {
         {loading && <p className="text-zinc-600 mb-8">योजनाहरू लोड हुँदैछ...</p>}
 
         {/* Grid */}
-        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-6">
+        <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-6">
           {filtered.map((scheme) => (
             <a
               href={`/scheme/${scheme.id}`}
               key={scheme.id}
-              className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 hover:border-green-600 hover:scale-[1.01] transition duration-200 shadow-xl block group"
+              className="bg-zinc-900 border border-zinc-800 rounded-2xl sm:rounded-3xl p-4 sm:p-6 hover:border-green-600 hover:scale-[1.01] transition duration-200 shadow-xl block group"
             >
               <div className="flex items-start justify-between gap-3 mb-4">
                 <h2 className="text-xl font-bold leading-snug group-hover:text-green-400 transition">
