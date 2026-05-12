@@ -38,6 +38,9 @@ export interface IntelligenceDocument {
   translationNe?:      string;
   confidence?:         number;     // 0-1
   sourceCredibility?:  "high" | "medium" | "low" | "unverified";
+  // Flywheel connector fields — feed into Content Pipeline
+  detectedTopics?:     string[];   // e.g. ["EPF", "housing loan", "interest rate"]
+  contentIdeas?:       string[];   // AI-proposed content titles/concepts from this doc
   // Optional metadata
   pageCount?:          number;
   language?:           string;

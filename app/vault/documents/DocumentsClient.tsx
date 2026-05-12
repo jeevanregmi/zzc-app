@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useVaultAuth } from "../../../hooks/vault/useVaultAuth";
 import { useIntelligenceDocs } from "../../../hooks/vault/useIntelligenceDocs";
 import { useDocumentUpload } from "../../../hooks/vault/useDocumentUpload";
-import { deleteIntelligenceDoc } from "../../../lib/vault/firestore";
+import { deleteIntelligenceDoc, updateIntelligenceDoc } from "../../../lib/vault/firestore";
 import { deleteStorageFile } from "../../../lib/vault/storage";
 import { DocumentCard } from "../../../components/vault/documents/DocumentCard";
 import { DocumentUploadModal } from "../../../components/vault/documents/DocumentUploadModal";
@@ -30,15 +30,21 @@ export default function DocumentsClient() {
   const { docs, loading } = useIntelligenceDocs(user?.uid ?? null);
   const { tasks, uploadDoc, clearDone } = useDocumentUpload(user?.uid ?? "");
 
-  const [search,     setSearch]     = useState("");
-  const [filter,     setFilter]     = useState<FilterCategory>("all");
-  const [showUpload, setShowUpload] = useState(false);
-  const [viewing,    setViewing]    = useState<IntelligenceDocument | null>(null);
+  const [search,       setSearch]      = useState("");
+  const [filter,       setFilter]      = useState<FilterCategory>("all");
+  const [showUpload,   setShowUpload]  = useState(false);
+  const [viewing,      setViewing]     = useState<IntelligenceDocument | null>(null);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+  const [processError, setProcessError] = useState<string | null>(null);
 
   const filtered = docs.filter(d => {
-    const matchCat   = filter === "all" || d.category === filter;
-    const q          = search.toLowerCase();
-    const matchSearch = !q || d.title.toLowerCase().includes(q) || d.fileName.toLowerCase().includes(q) || d.tags.some(t => t.toLowerCase().includes(q));
+    const matchCat    = filter === "all" || d.category === filter;
+    const q           = search.toLowerCase();
+    const matchSearch = !q
+      || d.title.toLowerCase().includes(q)
+      || d.fileName.toLowerCase().includes(q)
+      || d.tags.some(t => t.toLowerCase().includes(q))
+      || d.detectedTopics?.some(t => t.toLowerCase().includes(q));
     return matchCat && matchSearch;
   });
 
@@ -50,7 +56,62 @@ export default function DocumentsClient() {
     ]);
   };
 
-  const aiReadyCount = docs.filter(d => d.processingStatus === "ai_ready").length;
+  const handleProcess = async (doc: IntelligenceDocument) => {
+    setProcessingId(doc.id);
+    setProcessError(null);
+
+    // Optimistic update: show "Analyzing…" badge immediately
+    await updateIntelligenceDoc(doc.id, { processingStatus: "processing_ai" });
+
+    try {
+      const res = await fetch("/api/process-document", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          docId:       doc.id,
+          downloadUrl: doc.downloadUrl,
+          mimeType:    doc.mimeType,
+          fileName:    doc.fileName,
+        }),
+      });
+
+      const data = await res.json() as {
+        ok?:             boolean;
+        error?:          string;
+        aiSummary?:      string;
+        aiKeyInsights?:  string[];
+        detectedTopics?: string[];
+        contentIdeas?:   string[];
+        language?:       string;
+        confidence?:     number;
+      };
+
+      if (!res.ok || data.error) {
+        await updateIntelligenceDoc(doc.id, { processingStatus: "error" });
+        setProcessError(data.error ?? "Processing failed. Try again.");
+        return;
+      }
+
+      await updateIntelligenceDoc(doc.id, {
+        processingStatus: "ai_ready",
+        aiSummary:        data.aiSummary,
+        aiKeyInsights:    data.aiKeyInsights,
+        detectedTopics:   data.detectedTopics,
+        contentIdeas:     data.contentIdeas,
+        language:         data.language,
+        confidence:       data.confidence,
+      });
+
+    } catch (err) {
+      await updateIntelligenceDoc(doc.id, { processingStatus: "error" });
+      setProcessError(`Network error: ${String(err)}`);
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const aiReadyCount  = docs.filter(d => d.processingStatus === "ai_ready").length;
+  const readyCount    = docs.filter(d => d.processingStatus === "ready").length;
 
   return (
     <>
@@ -78,6 +139,7 @@ export default function DocumentsClient() {
             <p className="text-zinc-500 text-sm mt-1">
               {docs.length} document{docs.length !== 1 ? "s" : ""}
               {aiReadyCount > 0 && <span className="text-green-400 ml-2">· {aiReadyCount} AI-ready</span>}
+              {readyCount > 0 && <span className="text-zinc-500 ml-2">· {readyCount} awaiting analysis</span>}
             </p>
           </div>
           <button
@@ -88,14 +150,22 @@ export default function DocumentsClient() {
           </button>
         </div>
 
+        {/* Process error banner */}
+        {processError && (
+          <div className="mb-6 bg-red-950 border border-red-800 rounded-2xl px-5 py-3 flex items-center justify-between gap-4">
+            <p className="text-red-400 text-sm">{processError}</p>
+            <button onClick={() => setProcessError(null)} className="text-red-600 hover:text-red-400 text-lg leading-none shrink-0">×</button>
+          </div>
+        )}
+
         {/* Stats row */}
         {docs.length > 0 && (
           <div className="grid grid-cols-4 gap-3 mb-8">
             {[
-              { label: "Total Docs",   value: docs.length },
-              { label: "AI Ready",     value: aiReadyCount },
-              { label: "Processing",   value: docs.filter(d => d.processingStatus === "processing_ai").length },
-              { label: "Categories",   value: new Set(docs.map(d => d.category)).size },
+              { label: "Total Docs",  value: docs.length },
+              { label: "AI Ready",    value: aiReadyCount },
+              { label: "Awaiting AI", value: readyCount },
+              { label: "Categories",  value: new Set(docs.map(d => d.category)).size },
             ].map(stat => (
               <div key={stat.label} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">
                 <p className="text-2xl font-black text-white">{stat.value}</p>
@@ -109,7 +179,7 @@ export default function DocumentsClient() {
         <div className="flex flex-col sm:flex-row gap-3 mb-6">
           <input
             type="text"
-            placeholder="Search documents, tags…"
+            placeholder="Search titles, tags, topics…"
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-600"
@@ -142,7 +212,7 @@ export default function DocumentsClient() {
               <>
                 <span className="text-6xl">📄</span>
                 <p className="text-zinc-500 text-sm">No documents yet.</p>
-                <p className="text-zinc-600 text-xs">Upload PDFs, strategy docs, research files, or images.</p>
+                <p className="text-zinc-600 text-xs">Upload NRB circulars, EPF policy docs, research files, or images.</p>
                 <button
                   onClick={() => setShowUpload(true)}
                   className="mt-2 text-green-400 hover:text-green-300 text-sm font-semibold"
@@ -153,7 +223,10 @@ export default function DocumentsClient() {
             ) : (
               <>
                 <p className="text-zinc-500 text-sm">No documents match your search.</p>
-                <button onClick={() => { setSearch(""); setFilter("all"); }} className="text-zinc-600 text-xs hover:text-zinc-400">
+                <button
+                  onClick={() => { setSearch(""); setFilter("all"); }}
+                  className="text-zinc-600 text-xs hover:text-zinc-400"
+                >
                   Clear filters
                 </button>
               </>
@@ -165,20 +238,34 @@ export default function DocumentsClient() {
               <DocumentCard
                 key={doc.id}
                 doc={doc}
+                isProcessing={processingId === doc.id}
                 onView={setViewing}
+                onProcess={handleProcess}
                 onDelete={handleDelete}
               />
             ))}
           </div>
         )}
 
-        {/* AI processing notice */}
-        {docs.length > 0 && docs.some(d => d.processingStatus === "ready") && (
-          <div className="mt-8 bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-            <h3 className="text-white font-semibold text-sm mb-1">AI Processing</h3>
-            <p className="text-zinc-500 text-xs">
-              Documents marked "Ready" are queued for AI analysis — summarization, key insight extraction, and translation. Processing will run automatically when the AI Pipeline worker is active.
-            </p>
+        {/* Content ideas summary — flywheel banner */}
+        {docs.some(d => d.contentIdeas && d.contentIdeas.length > 0) && (
+          <div className="mt-8 bg-zinc-900 border border-cyan-900 rounded-2xl p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-cyan-400 font-semibold text-sm">Content Pipeline</span>
+              <span className="text-zinc-600 text-xs">— ideas surfaced from your intelligence</span>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              {docs
+                .filter(d => d.contentIdeas && d.contentIdeas.length > 0)
+                .flatMap(d => d.contentIdeas!)
+                .slice(0, 6)
+                .map((idea, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <span className="text-cyan-700 text-xs mt-0.5 shrink-0">→</span>
+                    <p className="text-zinc-400 text-xs">{idea}</p>
+                  </div>
+                ))}
+            </div>
           </div>
         )}
       </div>
