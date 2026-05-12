@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import type { IntelligenceDocument } from "../../../lib/types/documents";
 
 const FILE_ICONS: Record<string, string> = {
@@ -38,12 +39,13 @@ function formatSize(bytes: number): string {
 interface Props {
   doc:          IntelligenceDocument;
   isProcessing: boolean;
+  queueCount?:  number;
   onView:       (doc: IntelligenceDocument) => void;
   onProcess:    (doc: IntelligenceDocument) => void;
   onDelete:     (doc: IntelligenceDocument) => void;
 }
 
-export function DocumentCard({ doc, isProcessing, onView, onProcess, onDelete }: Props) {
+export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete }: Props) {
   const displayStatus = isProcessing ? "processing_ai" : doc.processingStatus;
   const status        = STATUS_BADGE[displayStatus] ?? STATUS_BADGE.ready;
   const border        = CAT_COLORS[doc.category] ?? "border-zinc-800";
@@ -92,17 +94,32 @@ export function DocumentCard({ doc, isProcessing, onView, onProcess, onDelete }:
         </ul>
       )}
 
-      {/* Content Ideas — flywheel connector */}
+      {/* Content Ideas — flywheel connector with queue traceability */}
       {doc.contentIdeas && doc.contentIdeas.length > 0 && (
         <div className="border-t border-zinc-800 pt-3">
-          <p className="text-zinc-500 text-xs font-semibold mb-2">Content Ideas</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-zinc-500 text-xs font-semibold">Content Ideas</p>
+            {queueCount > 0 ? (
+              <Link
+                href="/vault/content/queue"
+                className="text-xs text-cyan-400 hover:text-cyan-300 font-semibold transition-colors"
+              >
+                {queueCount} in queue →
+              </Link>
+            ) : (
+              <span className="text-xs text-zinc-700">{doc.contentIdeas.length} generated</span>
+            )}
+          </div>
           <div className="flex flex-col gap-1">
-            {doc.contentIdeas.map((idea, i) => (
+            {doc.contentIdeas.slice(0, 3).map((idea, i) => (
               <div key={i} className="flex items-start gap-1.5">
                 <span className="text-zinc-600 text-xs shrink-0 mt-0.5">→</span>
                 <p className="text-zinc-400 text-xs line-clamp-2">{idea}</p>
               </div>
             ))}
+            {doc.contentIdeas.length > 3 && (
+              <p className="text-zinc-600 text-xs pl-3">+{doc.contentIdeas.length - 3} more</p>
+            )}
           </div>
         </div>
       )}
@@ -128,9 +145,30 @@ export function DocumentCard({ doc, isProcessing, onView, onProcess, onDelete }:
         </div>
       )}
 
+      {/* Source metadata — traceability footer */}
+      <div className="flex items-center gap-3 text-xs text-zinc-700">
+        <span>{formatSize(doc.fileSize)}</span>
+        <span>·</span>
+        <span>{doc.category}</span>
+        {doc.confidence !== undefined && (
+          <>
+            <span>·</span>
+            <span className={doc.confidence >= 0.7 ? "text-green-700" : doc.confidence >= 0.4 ? "text-yellow-700" : "text-red-700"}>
+              {Math.round(doc.confidence * 100)}% confidence
+            </span>
+          </>
+        )}
+        {doc.language && doc.language !== "English" && (
+          <>
+            <span>·</span>
+            <span>{doc.language}</span>
+          </>
+        )}
+      </div>
+
       {/* Footer actions */}
       <div className="flex items-center justify-between mt-auto pt-2 border-t border-zinc-800">
-        <span className="text-zinc-600 text-xs">{formatSize(doc.fileSize)}</span>
+        <span className="text-zinc-600 text-xs">{new Date(doc.uploadedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
         <div className="flex items-center gap-2">
           {canProcess && (
             <button

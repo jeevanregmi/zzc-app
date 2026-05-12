@@ -1,9 +1,23 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo } from "react";
 import { useVaultAuth } from "../../hooks/vault/useVaultAuth";
 import { useIntelligenceDocs } from "../../hooks/vault/useIntelligenceDocs";
 import { useQueueItems } from "../../hooks/vault/useQueueItems";
+import type { IntelligenceDocument } from "../../lib/types/documents";
+import type { QueueItem } from "../../lib/types/queue";
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
+
+function timeAgo(iso: string): string {
+  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
+  if (m < 1)  return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
 
 // ─── Pipeline status config (static + live below) ────────────────────────────
 
@@ -114,6 +128,109 @@ function FlywheelBar({
         </div>
       )}
     </div>
+  );
+}
+
+// ─── Activity feed ────────────────────────────────────────────────────────────
+
+type ActivityEntry = {
+  time: string; icon: string; color: string; label: string; detail: string; href: string;
+};
+
+function buildActivityFeed(docs: IntelligenceDocument[], queue: QueueItem[]): ActivityEntry[] {
+  const entries: ActivityEntry[] = [];
+
+  docs.forEach(doc => {
+    entries.push({
+      time:   doc.uploadedAt,
+      icon:   "📤",
+      color:  "text-zinc-500",
+      label:  "Uploaded",
+      detail: doc.fileName,
+      href:   "/vault/documents",
+    });
+    if (doc.processingStatus === "ai_ready") {
+      entries.push({
+        time:   doc.updatedAt,
+        icon:   "🤖",
+        color:  "text-green-500",
+        label:  "AI analyzed",
+        detail: doc.title,
+        href:   "/vault/documents",
+      });
+    }
+    if (doc.processingStatus === "processing_ai") {
+      entries.push({
+        time:   doc.updatedAt,
+        icon:   "⚙",
+        color:  "text-amber-500",
+        label:  "Analyzing…",
+        detail: doc.title,
+        href:   "/vault/documents",
+      });
+    }
+  });
+
+  queue.forEach(item => {
+    entries.push({
+      time:   item.createdAt,
+      icon:   "💡",
+      color:  "text-cyan-500",
+      label:  "Idea queued",
+      detail: item.aiTitle,
+      href:   "/vault/content/queue",
+    });
+    if (item.approvedAt) {
+      entries.push({
+        time:   item.approvedAt,
+        icon:   "✓",
+        color:  "text-green-400",
+        label:  "Approved",
+        detail: item.aiTitle,
+        href:   `/vault/content/ai-studio?queueId=${item.id}&title=${encodeURIComponent(item.aiTitle)}`,
+      });
+    }
+    if (item.status === "in_production") {
+      entries.push({
+        time:   item.updatedAt,
+        icon:   "🚀",
+        color:  "text-emerald-400",
+        label:  "In production",
+        detail: item.aiTitle,
+        href:   "/vault/content/queue",
+      });
+    }
+  });
+
+  return entries.sort((a, b) => b.time.localeCompare(a.time)).slice(0, 8);
+}
+
+function ActivityFeed({ docs, queue }: { docs: IntelligenceDocument[]; queue: QueueItem[] }) {
+  const entries = useMemo(() => buildActivityFeed(docs, queue), [docs, queue]);
+
+  if (entries.length === 0) return null;
+
+  return (
+    <section className="mb-8">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Recent Activity</h2>
+        <span className="text-xs text-zinc-700">last {entries.length} events</span>
+      </div>
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+        {entries.map((e, i) => (
+          <Link
+            key={`${e.time}-${i}`}
+            href={e.href}
+            className="flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-800/60 transition-colors border-b border-zinc-800/60 last:border-b-0 group"
+          >
+            <span className={`text-sm w-5 text-center shrink-0 ${e.color}`}>{e.icon}</span>
+            <span className="text-xs text-zinc-500 w-20 shrink-0">{e.label}</span>
+            <span className="text-xs text-zinc-300 flex-1 truncate group-hover:text-white transition-colors">{e.detail}</span>
+            <span className="text-xs text-zinc-600 shrink-0 tabular-nums">{timeAgo(e.time)}</span>
+          </Link>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -307,6 +424,9 @@ export default function VaultClient() {
         queuePending={queuePending}
         inProduction={inProduction}
       />
+
+      {/* Recent Activity Feed */}
+      <ActivityFeed docs={docs} queue={queue} />
 
       {/* Quick actions */}
       <section className="mb-8">

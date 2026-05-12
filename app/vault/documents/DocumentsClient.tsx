@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useVaultAuth } from "../../../hooks/vault/useVaultAuth";
 import { useIntelligenceDocs } from "../../../hooks/vault/useIntelligenceDocs";
 import { useDocumentUpload } from "../../../hooks/vault/useDocumentUpload";
 import { deleteIntelligenceDoc, updateIntelligenceDoc, createQueueItem } from "../../../lib/vault/firestore";
+import { useQueueItems } from "../../../hooks/vault/useQueueItems";
 import { deleteStorageFile } from "../../../lib/vault/storage";
 import { DocumentCard } from "../../../components/vault/documents/DocumentCard";
 import { DocumentUploadModal } from "../../../components/vault/documents/DocumentUploadModal";
@@ -48,6 +49,18 @@ export default function DocumentsClient() {
   const { user } = useVaultAuth();
   const { docs, loading } = useIntelligenceDocs(user?.uid ?? null);
   const { tasks, uploadDoc, clearDone } = useDocumentUpload(user?.uid ?? "");
+  const { items: allQueueItems } = useQueueItems(user?.uid ?? null, "all");
+
+  // Source traceability: map docId → count of queue items it generated
+  const queueCountByDoc = useMemo(() => {
+    const map: Record<string, number> = {};
+    allQueueItems.forEach(item => {
+      if (item.sourceDocId) {
+        map[item.sourceDocId] = (map[item.sourceDocId] ?? 0) + 1;
+      }
+    });
+    return map;
+  }, [allQueueItems]);
 
   const [search,       setSearch]      = useState("");
   const [filter,       setFilter]      = useState<FilterCategory>("all");
@@ -288,6 +301,7 @@ export default function DocumentsClient() {
                 key={doc.id}
                 doc={doc}
                 isProcessing={processingId === doc.id}
+                queueCount={queueCountByDoc[doc.id] ?? 0}
                 onView={setViewing}
                 onProcess={handleProcess}
                 onDelete={handleDelete}

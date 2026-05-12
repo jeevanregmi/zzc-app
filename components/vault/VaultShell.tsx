@@ -5,6 +5,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "firebase/auth";
 import { auth } from "../../app/firebase";
+import { useVaultAuth } from "../../hooks/vault/useVaultAuth";
+import { useIntelligenceDocs } from "../../hooks/vault/useIntelligenceDocs";
+import { useQueueItems } from "../../hooks/vault/useQueueItems";
 
 const NAV_GROUPS = [
   {
@@ -48,11 +51,25 @@ export function VaultShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  const { user } = useVaultAuth();
+  const { docs }         = useIntelligenceDocs(user?.uid ?? null);
+  const { items: queue } = useQueueItems(user?.uid ?? null, "all");
+
+  const queuePending = queue.filter(i => i.status === "pending").length;
+  const awaitingAI   = docs.filter(d => d.processingStatus === "ready").length;
+
+  function navBadge(href: string): number | undefined {
+    if (href === "/vault/content/queue" && queuePending > 0) return queuePending;
+    if (href === "/vault/documents"     && awaitingAI   > 0) return awaitingAI;
+    return undefined;
+  }
+
   function isActive(href: string) {
     return pathname === href || (href !== "/vault" && pathname.startsWith(href));
   }
 
   function NavItem({ href, icon, label, onClick }: { href: string; icon: string; label: string; onClick?: () => void }) {
+    const badge = navBadge(href);
     return (
       <Link
         href={href}
@@ -65,7 +82,12 @@ export function VaultShell({ children }: { children: React.ReactNode }) {
         }
       >
         <span className="text-sm w-4 text-center shrink-0">{icon}</span>
-        <span className="truncate">{label}</span>
+        <span className="truncate flex-1">{label}</span>
+        {badge !== undefined && (
+          <span className="ml-1 text-xs font-bold leading-none px-1.5 py-0.5 rounded-full bg-cyan-950 text-cyan-400 shrink-0">
+            {badge}
+          </span>
+        )}
       </Link>
     );
   }
