@@ -233,6 +233,9 @@ Firebase setup, 26 schemes uploaded, Nepali UI, SEO, custom domain live.
 Architecture transition: two-sided platform decision. VaultShell rewrite (grouped OS nav), new vault stubs (analytics/tasks/calendar/finance/deploy/ai-queue), public nav updated, HomeClient + SchemeDetail `<a>` → `<Link>`, deployment checklist, 5 architecture docs.
 
 ### Session 7 (May 12, 2026 — ACTIVE)
+
+**ANTHROPIC_API_KEY set in Cloudflare Pages production secrets — AI pipeline now live.**
+
 Phase 1 Intelligence Documents Library built:
 - `lib/types/documents.ts` — IntelligenceDocument type with AI-ready fields
 - `lib/vault/firestore.ts` + `storage.ts` — intelligence doc CRUD
@@ -244,21 +247,46 @@ Phase 1 Intelligence Documents Library built:
 
 ---
 
+## COMPLETED PHASES
+
+### Phase 1 — Intelligence Documents Library (COMPLETE)
+- Upload PDFs, DOCX, images, TXT, MD to Firebase Storage + Firestore
+- Real-time grid UI with search, category filter, stats row
+- `vault_intelligence_docs` collection, 3 composite indexes deployed
+
+### Phase 2 — AI Document Processing (COMPLETE)
+- `functions/api/process-document.ts` — Anthropic API (NOT Bedrock; PDF support requires `pdfs-2024-09-25` beta)
+- "Analyze with AI" button on DocumentCard — extracts summary, insights, topics, content ideas
+- Results written to Firestore; `processingStatus` transitions: `ready → processing_ai → ai_ready`
+
+### Phase 3 — Admin Validation Queue (COMPLETE)
+- `/vault/content/queue` — full approve/reject/archive workflow
+- Source traceability as schema-level constraint on every `QueueItem`
+- 7-day auto-expiry; status tabs; "View Source" links; inline notes
+- Every `contentIdea` from AI processing creates a traceable `QueueItem` automatically
+
+---
+
 ## PENDING TASKS
 
 ### Immediate
 1. **AWS IAM keys** — Create access key for `zzc-bedrock-user` → set in Cloudflare Pages env vars → AI recommend goes live
 2. **Cloudflare custom domain** — Pages → zeneration-z-chautari → Custom Domains → Add `zzc.jeevanregmi.com.np`
-3. **Firestore indexes deployment** — `firebase deploy --only firestore:indexes`
+3. **Firestore indexes deployment** — `firebase deploy --only firestore:indexes` (vault_intelligence_docs + vault_content_queue)
 
-### Phase 2 — AI Processing Worker
-- Build `functions/api/process-document.ts` — Claude summarizes uploaded intelligence docs
-- Trigger: manual "Process with AI" button on DocumentCard
-- Updates `processingStatus: "ai_ready"`, populates `aiSummary`, `aiKeyInsights`
+### Phase 4 — AI Studio Integration (NEXT)
+- `/vault/content/ai-studio` should read `?queueId=&title=` URL params from approved queue items
+- Pre-fill Script Generator with the queue item's `aiTitle` and source context
+- Closes the loop: NRB document → AI insights → Queue approval → Script generation
 
-### Phase 3 — AI Content Intelligence Engine
-See `docs/ai-content-intelligence-architecture.md` for full design.
-Short version: Source Collection → Intelligence Analysis → Content Ideas → Admin Review → Publishing
+### Phase 5 — Public Growth Features
+- Email capture banner on homepage (`audience_leads` Firestore collection)
+- Live Nepal market data widget (NRB rates, NEPSE weekly) as daily return-visit hook
+- NEPSE mutual funds added to `lib/schemes-data.ts`
+
+### Phase 6 — Source Monitoring (Future)
+- Cloudflare Workers cron to auto-fetch NRB RSS, EPF PDFs, NEPSE data
+- `source_signals` Firestore collection; auto-trigger intelligence processing
 
 ---
 
