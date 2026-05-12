@@ -21,12 +21,14 @@ import {
 } from "firebase/firestore";
 import { db } from "../../app/firebase";
 import type { VaultMedia, VaultFolder, VaultDocument } from "./types";
+import type { IntelligenceDocument } from "../types/documents";
 
 // ─── Collection names ────────────────────────────────────────────────────────
 
-const COL_MEDIA     = "vault_media";
-const COL_FOLDERS   = "vault_folders";
-const COL_DOCUMENTS = "vault_documents";
+const COL_MEDIA        = "vault_media";
+const COL_FOLDERS      = "vault_folders";
+const COL_DOCUMENTS    = "vault_documents";
+const COL_INTEL_DOCS   = "vault_intelligence_docs";
 
 // ─── Timestamp helpers ───────────────────────────────────────────────────────
 
@@ -151,6 +153,53 @@ export function subscribeDocuments(
       createdAt: d.data().createdAt?.toDate?.()?.toISOString() ?? now(),
       updatedAt: d.data().updatedAt?.toDate?.()?.toISOString() ?? now(),
     }) as VaultDocument);
+    onChange(docs);
+  });
+}
+
+// ─── IntelligenceDocument ────────────────────────────────────────────────────
+
+export async function createIntelligenceDoc(
+  data: Omit<IntelligenceDocument, "id">,
+): Promise<string> {
+  const ref = await addDoc(collection(db, COL_INTEL_DOCS), {
+    ...data,
+    uploadedAt: Timestamp.now(),
+    updatedAt:  Timestamp.now(),
+  });
+  return ref.id;
+}
+
+export async function updateIntelligenceDoc(
+  id: string,
+  patch: Partial<IntelligenceDocument>,
+): Promise<void> {
+  await updateDoc(doc(db, COL_INTEL_DOCS, id), { ...patch, updatedAt: Timestamp.now() });
+}
+
+export async function deleteIntelligenceDoc(id: string): Promise<void> {
+  await deleteDoc(doc(db, COL_INTEL_DOCS, id));
+}
+
+export function subscribeIntelligenceDocs(
+  ownerId: string,
+  onChange: (docs: IntelligenceDocument[]) => void,
+): Unsubscribe {
+  const q = query(
+    collection(db, COL_INTEL_DOCS),
+    where("ownerId", "==", ownerId),
+    orderBy("uploadedAt", "desc"),
+  );
+  return onSnapshot(q, snap => {
+    const docs = snap.docs.map(d => {
+      const data = d.data();
+      return {
+        ...data,
+        id:         d.id,
+        uploadedAt: data.uploadedAt?.toDate?.()?.toISOString() ?? now(),
+        updatedAt:  data.updatedAt?.toDate?.()?.toISOString() ?? now(),
+      } as IntelligenceDocument;
+    });
     onChange(docs);
   });
 }

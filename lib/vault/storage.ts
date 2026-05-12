@@ -73,6 +73,33 @@ export async function deleteStorageFile(storagePath: string): Promise<void> {
   await deleteObject(ref(storage, storagePath));
 }
 
+export function uploadIntelligenceDoc(
+  uid:        string,
+  file:       File,
+  folder:     string,
+  onProgress: (pct: number) => void,
+): Promise<UploadResult> {
+  return new Promise((resolve, reject) => {
+    const safeName    = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+    const storagePath = `vault/${uid}/intelligence-docs/${folder ? folder + "/" : ""}${safeName}`;
+    const storageRef  = ref(storage, storagePath);
+    const task        = uploadBytesResumable(storageRef, file, { contentType: file.type });
+
+    task.on(
+      "state_changed",
+      snap => {
+        const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+        onProgress(pct);
+      },
+      error => reject(error),
+      async () => {
+        const downloadUrl = await getDownloadURL(task.snapshot.ref);
+        resolve({ storagePath, downloadUrl, size: file.size });
+      },
+    );
+  });
+}
+
 /**
  * Extract first frame of a video file as a JPEG blob (client-side).
  * Returns null if the browser cannot process the video.

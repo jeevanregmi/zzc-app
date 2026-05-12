@@ -98,6 +98,32 @@
         { "fieldPath": "eventType",  "order": "ASCENDING"  },
         { "fieldPath": "occurredAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "vault_intelligence_docs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",    "order": "ASCENDING"  },
+        { "fieldPath": "uploadedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "vault_intelligence_docs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",          "order": "ASCENDING"  },
+        { "fieldPath": "category",         "order": "ASCENDING"  },
+        { "fieldPath": "uploadedAt",       "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "vault_intelligence_docs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",           "order": "ASCENDING"  },
+        { "fieldPath": "processingStatus",  "order": "ASCENDING"  },
+        { "fieldPath": "uploadedAt",        "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
