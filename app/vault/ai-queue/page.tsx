@@ -1,9 +1,20 @@
+import { VaultStub } from "../../../components/vault/VaultStub";
+
 export default function AIQueuePage() {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
-      <div className="text-4xl mb-4">⚡</div>
-      <h1 className="text-xl font-bold text-white mb-2">AI Queue</h1>
-      <p className="text-zinc-500 text-sm">Content pipeline, generation jobs, and publish queue — coming soon.</p>
-    </div>
+    <VaultStub
+      icon="🤖"
+      title="AI Queue"
+      description="AI job orchestration hub — schedule and monitor content generation jobs, batch script creation, thumbnail prompt batches, and automated data ingestion pipelines."
+      roadmap={[
+        { label: "Job queue viewer — pending / running / completed / failed", status: "soon" },
+        { label: "Batch script generation — generate 5 scripts in one trigger", status: "soon" },
+        { label: "Scheduled generation — auto-generate weekly content briefs", status: "planned" },
+        { label: "Job retry and error inspection UI", status: "planned" },
+        { label: "Token usage per job — cost visibility", status: "planned" },
+        { label: "Cron trigger management — view/edit scheduled workers", status: "planned" },
+        { label: "Data ingestion jobs — NRB rates, scheme updates", status: "blocked" },
+      ]}
+    />
   );
 }

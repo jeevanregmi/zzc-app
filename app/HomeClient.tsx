@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { db } from "./firebase";
 import { collection, getDocs } from "firebase/firestore";
 import {
@@ -212,7 +213,7 @@ export default function Home() {
         {/* Grid */}
         <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-6">
           {filtered.map((scheme) => (
-            <a
+            <Link
               href={`/scheme/${scheme.id}`}
               key={scheme.id}
               className="bg-zinc-900 border border-zinc-800 rounded-2xl sm:rounded-3xl p-4 sm:p-6 hover:border-green-600 hover:scale-[1.01] transition duration-200 shadow-xl block group"
@@ -242,7 +243,7 @@ export default function Home() {
               <p className="mt-4 text-zinc-500 text-sm leading-relaxed line-clamp-2">
                 {scheme.nepaliSummary || scheme.summary}
               </p>
-            </a>
+            </Link>
           ))}
         </div>
 
@@ -266,12 +267,12 @@ export default function Home() {
                 </div>
               ))}
             </div>
-            <a
+            <Link
               href="/recommend"
               className="inline-flex items-center gap-2 bg-green-500 hover:bg-green-400 text-black font-black px-6 py-3 rounded-2xl transition-colors"
             >
               🤖 AI ऋण सिफारिस पाउनुस् →
-            </a>
+            </Link>
           </div>
         )}
 
@@ -284,12 +285,12 @@ export default function Home() {
             <p className="text-zinc-500 text-sm mb-6">
               Admin प्यानलबाट थप्नुस् वा AI सिफारिस प्रयोग गर्नुस्।
             </p>
-            <a
+            <Link
               href="/recommend"
               className="inline-flex items-center gap-2 bg-green-500 hover:bg-green-400 text-black font-black px-6 py-3 rounded-2xl transition-colors"
             >
               🤖 AI सिफारिस →
-            </a>
+            </Link>
           </div>
         )}
 

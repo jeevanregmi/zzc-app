@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { db } from "../../firebase";
 import { doc, getDoc } from "firebase/firestore";
 import { SCHEMES, getByCategory } from "../../../lib/schemes-data";
@@ -59,7 +60,7 @@ export default function SchemeDetail({ id }: { id: string }) {
   if (!scheme) {
     return (
       <main className="min-h-screen bg-black text-white px-6 py-12">
-        <a href="/" className="text-green-400 text-sm hover:underline">← सबै योजनाहरूमा फर्कनुस्</a>
+        <Link href="/" className="text-green-400 text-sm hover:underline">← सबै योजनाहरूमा फर्कनुस्</Link>
         <p className="text-zinc-500 mt-8">योजना भेटिएन।</p>
       </main>
     );
@@ -75,9 +76,9 @@ export default function SchemeDetail({ id }: { id: string }) {
     <main className="min-h-screen bg-black text-white px-6 py-12">
       <div className="max-w-4xl mx-auto">
 
-        <a href="/" className="text-green-400 text-sm mb-8 inline-block hover:underline">
+        <Link href="/" className="text-green-400 text-sm mb-8 inline-block hover:underline">
           ← सबै योजनाहरूमा फर्कनुस्
-        </a>
+        </Link>
 
         {/* Category badge */}
         {catMeta && (
@@ -193,18 +194,18 @@ export default function SchemeDetail({ id }: { id: string }) {
 
         {/* CTA */}
         <div className="flex gap-3 flex-wrap mb-10">
-          <a
+          <Link
             href="/calculator"
             className="inline-flex items-center gap-2 bg-green-500 hover:bg-green-400 text-black font-black px-6 py-3 rounded-2xl transition-colors"
           >
             🧮 क्याल्कुलेटर
-          </a>
-          <a
+          </Link>
+          <Link
             href="/recommend"
             className="inline-flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white font-bold px-6 py-3 rounded-2xl border border-zinc-700 transition-colors"
           >
             🤖 AI सिफारिस
-          </a>
+          </Link>
         </div>
 
         {/* Related schemes */}
@@ -216,7 +217,7 @@ export default function SchemeDetail({ id }: { id: string }) {
             </h2>
             <div className="grid sm:grid-cols-2 gap-4">
               {related.map((s: Scheme) => (
-                <a
+                <Link
                   key={s.id}
                   href={`/scheme/${s.id}`}
                   className="bg-zinc-900 border border-zinc-800 hover:border-zinc-600 rounded-2xl p-4 block transition"
@@ -228,7 +229,7 @@ export default function SchemeDetail({ id }: { id: string }) {
                     </span>
                   </div>
                   <p className="text-zinc-500 text-xs line-clamp-2">{s.nepaliSummary}</p>
-                </a>
+                </Link>
               ))}
             </div>
           </div>

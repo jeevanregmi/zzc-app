@@ -1,9 +1,20 @@
+import { VaultStub } from "../../../components/vault/VaultStub";
+
 export default function DocumentsPage() {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
-      <div className="text-4xl mb-4">📄</div>
-      <h1 className="text-xl font-bold text-white mb-2">Documents</h1>
-      <p className="text-zinc-500 text-sm">Notes, strategy docs, and AI journal — coming soon.</p>
-    </div>
+    <VaultStub
+      icon="📄"
+      title="Documents"
+      description="Secure document vault — contracts, legal agreements, strategy docs, AI research notes, and founder journal. All in one private, searchable archive."
+      roadmap={[
+        { label: "Document upload (PDF, DOCX, MD) to Firebase Storage", status: "soon" },
+        { label: "Document viewer with full-text display", status: "soon" },
+        { label: "Categories: Legal / Strategy / Finance / Content / Research", status: "soon" },
+        { label: "Founder journal — private notes with AI search", status: "planned" },
+        { label: "AI-powered document summary on upload", status: "planned" },
+        { label: "Version history — compare doc revisions", status: "planned" },
+        { label: "Tag system for cross-document discovery", status: "planned" },
+      ]}
+    />
   );
 }
