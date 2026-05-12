@@ -22,13 +22,15 @@ import {
 import { db } from "../../app/firebase";
 import type { VaultMedia, VaultFolder, VaultDocument } from "./types";
 import type { IntelligenceDocument } from "../types/documents";
+import type { QueueItem } from "../types/queue";
 
 // ─── Collection names ────────────────────────────────────────────────────────
 
-const COL_MEDIA        = "vault_media";
-const COL_FOLDERS      = "vault_folders";
-const COL_DOCUMENTS    = "vault_documents";
-const COL_INTEL_DOCS   = "vault_intelligence_docs";
+const COL_MEDIA         = "vault_media";
+const COL_FOLDERS       = "vault_folders";
+const COL_DOCUMENTS     = "vault_documents";
+const COL_INTEL_DOCS    = "vault_intelligence_docs";
+const COL_CONTENT_QUEUE = "vault_content_queue";
 
 // ─── Timestamp helpers ───────────────────────────────────────────────────────
 
@@ -201,5 +203,61 @@ export function subscribeIntelligenceDocs(
       } as IntelligenceDocument;
     });
     onChange(docs);
+  });
+}
+
+// ─── Content Queue ────────────────────────────────────────────────────────────
+
+export async function createQueueItem(
+  data: Omit<QueueItem, "id">,
+): Promise<string> {
+  const ref = await addDoc(collection(db, COL_CONTENT_QUEUE), {
+    ...data,
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+  });
+  return ref.id;
+}
+
+export async function updateQueueItem(
+  id: string,
+  patch: Partial<QueueItem>,
+): Promise<void> {
+  await updateDoc(doc(db, COL_CONTENT_QUEUE, id), { ...patch, updatedAt: Timestamp.now() });
+}
+
+export async function deleteQueueItem(id: string): Promise<void> {
+  await deleteDoc(doc(db, COL_CONTENT_QUEUE, id));
+}
+
+export function subscribeQueueItems(
+  ownerId: string,
+  status: QueueItem["status"] | "all",
+  onChange: (items: QueueItem[]) => void,
+): Unsubscribe {
+  const q = status === "all"
+    ? query(
+        collection(db, COL_CONTENT_QUEUE),
+        where("ownerId", "==", ownerId),
+        orderBy("createdAt", "desc"),
+      )
+    : query(
+        collection(db, COL_CONTENT_QUEUE),
+        where("ownerId", "==", ownerId),
+        where("status",  "==", status),
+        orderBy("createdAt", "desc"),
+      );
+
+  return onSnapshot(q, snap => {
+    const items = snap.docs.map(d => {
+      const data = d.data();
+      return {
+        ...data,
+        id:        d.id,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() ?? now(),
+        updatedAt: data.updatedAt?.toDate?.()?.toISOString() ?? now(),
+      } as QueueItem;
+    });
+    onChange(items);
   });
 }

@@ -17,6 +17,7 @@ const NAV_GROUPS = [
     label: "Content",
     items: [
       { href: "/vault/content",               icon: "🎬", label: "Content Pipeline" },
+      { href: "/vault/content/queue",         icon: "📥", label: "Queue" },
       { href: "/vault/content/ai-studio",     icon: "⚡", label: "AI Studio" },
       { href: "/vault/media",                 icon: "🎞", label: "Media" },
     ],

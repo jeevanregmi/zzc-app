@@ -4,12 +4,31 @@ import { useState } from "react";
 import { useVaultAuth } from "../../../hooks/vault/useVaultAuth";
 import { useIntelligenceDocs } from "../../../hooks/vault/useIntelligenceDocs";
 import { useDocumentUpload } from "../../../hooks/vault/useDocumentUpload";
-import { deleteIntelligenceDoc, updateIntelligenceDoc } from "../../../lib/vault/firestore";
+import { deleteIntelligenceDoc, updateIntelligenceDoc, createQueueItem } from "../../../lib/vault/firestore";
 import { deleteStorageFile } from "../../../lib/vault/storage";
 import { DocumentCard } from "../../../components/vault/documents/DocumentCard";
 import { DocumentUploadModal } from "../../../components/vault/documents/DocumentUploadModal";
 import { DocumentViewer } from "../../../components/vault/documents/DocumentViewer";
-import type { IntelligenceDocument, DocCategory } from "../../../lib/types/documents";
+import type { IntelligenceDocument } from "../../../lib/types/documents";
+import type { QueueContentType, QueuePlatform } from "../../../lib/types/queue";
+
+function inferContentType(idea: string): QueueContentType {
+  const l = idea.toLowerCase();
+  if (l.startsWith("youtube:"))   return "youtube-long";
+  if (l.startsWith("short:") || l.startsWith("reel:"))   return "shorts";
+  if (l.startsWith("post:") || l.startsWith("facebook:")) return "facebook-post";
+  if (l.startsWith("carousel:"))  return "carousel";
+  if (l.startsWith("explainer:")) return "explainer";
+  return "other";
+}
+
+function inferPlatform(idea: string): QueuePlatform {
+  const l = idea.toLowerCase();
+  if (l.startsWith("youtube:"))  return "youtube";
+  if (l.startsWith("short:") || l.startsWith("reel:") || l.startsWith("carousel:")) return "instagram";
+  if (l.startsWith("post:") || l.startsWith("facebook:")) return "facebook";
+  return "all";
+}
 
 const ALL_CATEGORIES = ["all", "research", "strategy", "legal", "finance", "content", "intelligence", "other"] as const;
 type FilterCategory = typeof ALL_CATEGORIES[number];
@@ -101,6 +120,36 @@ export default function DocumentsClient() {
         language:         data.language,
         confidence:       data.confidence,
       });
+
+      // Create queue items with full source traceability
+      const ideas    = data.contentIdeas ?? [];
+      const insights = data.aiKeyInsights ?? [];
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+      await Promise.all(ideas.map(idea =>
+        createQueueItem({
+          ownerId:           user!.uid,
+          aiTitle:           idea.replace(/^(YouTube|Short|Post|Reel|Carousel|Explainer):\s*/i, ""),
+          contentType:       inferContentType(idea),
+          platform:          inferPlatform(idea),
+          // Source traceability — every item links back to originating document
+          sourceDocId:       doc.id,
+          sourceDocTitle:    doc.title,
+          sourceDocUrl:      doc.downloadUrl,
+          sourceDocFileName: doc.fileName,
+          sourceInsights:    insights,
+          sourceUploadedAt:  doc.uploadedAt,
+          // Intelligence scores
+          confidence:        data.confidence ?? 0.5,
+          language:          data.language ?? "English",
+          // Admin workflow
+          status:            "pending",
+          adminNotes:        "",
+          expiresAt,
+          createdAt:         new Date().toISOString(),
+          updatedAt:         new Date().toISOString(),
+        })
+      ));
 
     } catch (err) {
       await updateIntelligenceDoc(doc.id, { processingStatus: "error" });

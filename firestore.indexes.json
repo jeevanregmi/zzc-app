@@ -124,6 +124,32 @@
         { "fieldPath": "processingStatus",  "order": "ASCENDING"  },
         { "fieldPath": "uploadedAt",        "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "vault_content_queue",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",    "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "vault_content_queue",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",    "order": "ASCENDING"  },
+        { "fieldPath": "status",     "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "vault_content_queue",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",    "order": "ASCENDING"  },
+        { "fieldPath": "status",     "order": "ASCENDING"  },
+        { "fieldPath": "expiresAt",  "order": "ASCENDING"  }
+      ]
     }
   ],
   "fieldOverrides": []
