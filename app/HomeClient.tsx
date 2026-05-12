@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { db } from "./firebase";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, addDoc } from "firebase/firestore";
 import {
   INVESTMENT_SCHEMES, LOAN_SCHEMES, INSURANCE_SCHEMES, PENSION_SCHEMES,
 } from "../lib/schemes-data";
+import { useMarketRates } from "../hooks/useMarketRates";
 
 type OrgFilter = "सबै" | "EPF" | "CIT" | "SSF";
 type CategoryFilter = "सबै" | "Investment" | "Loan" | "Insurance" | "Pension";
@@ -70,6 +71,10 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [orgFilter, setOrgFilter] = useState<OrgFilter>("सबै");
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("सबै");
+  const [email, setEmail] = useState("");
+  const [emailStatus, setEmailStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
+
+  const { rates, isFallback } = useMarketRates();
 
   useEffect(() => {
     const fetchSchemes = async () => {
@@ -102,6 +107,24 @@ export default function Home() {
     return matchesSearch && matchesOrg && matchesCategory;
   });
 
+  async function handleEmailSubscribe(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
+    setEmailStatus("submitting");
+    try {
+      await addDoc(collection(db, "audience_leads"), {
+        email:        email.toLowerCase().trim(),
+        subscribedAt: new Date().toISOString(),
+        source:       "homepage",
+        subscribed:   true,
+      });
+      setEmailStatus("success");
+      setEmail("");
+    } catch {
+      setEmailStatus("error");
+    }
+  }
+
   const handleCategoryCard = (cat: "Investment" | "Loan" | "Insurance" | "Pension") => {
     setCategoryFilter((prev) => (prev === cat ? "सबै" : cat));
     setSearch("");
@@ -120,6 +143,31 @@ export default function Home() {
           <p className="text-zinc-400 text-sm sm:text-lg">
             Nepal ko Gen Z — Paisa Sikau, Bhavishya Banau
           </p>
+        </div>
+
+        {/* Live Market Rates */}
+        <div className="mb-8 -mx-1 overflow-x-auto pb-1">
+          <div className="flex items-center gap-2 min-w-max px-1">
+            <div className="flex items-center gap-1.5 text-xs text-zinc-500 mr-1 shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+              <span>आजका दरहरू</span>
+            </div>
+            {([
+              { label: "EPF",    value: `${rates.epfRate}%`,          color: "text-blue-400"   },
+              { label: "SSF",    value: `${rates.ssfRate}%`,          color: "text-orange-400" },
+              { label: "FD",     value: `${rates.fdRate}%`,           color: "text-green-400"  },
+              { label: "NEPSE",  value: `~${rates.nepseAvgReturn}%`,  color: "text-purple-400" },
+              { label: "USD/NPR",value: `रु${rates.usdToNprRate}`,    color: "text-zinc-300"   },
+            ] as const).map(r => (
+              <div key={r.label} className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-full px-3 py-1 text-xs shrink-0">
+                <span className="text-zinc-500">{r.label}</span>
+                <span className={`font-bold ${r.color}`}>{r.value}</span>
+              </div>
+            ))}
+            {!isFallback && (
+              <span className="text-zinc-700 text-xs ml-1 shrink-0">· {rates.updatedAt}</span>
+            )}
+          </div>
         </div>
 
         {/* ── 4 Category Cards ── */}
@@ -300,6 +348,43 @@ export default function Home() {
             <p className="text-sm">खोज वा फिल्टर परिवर्तन गर्नुस्</p>
           </div>
         )}
+
+        {/* Email Capture */}
+        <div className="mt-20 border-t border-zinc-800 pt-16 max-w-lg mx-auto text-center">
+          <p className="text-zinc-600 text-xs uppercase tracking-widest font-semibold mb-3">ZZC अपडेट</p>
+          <h3 className="text-2xl font-black text-white mb-2">Nepal Finance को खबर पाउनुस्</h3>
+          <p className="text-zinc-500 text-sm mb-8 leading-relaxed">
+            नयाँ scheme, calculator updates, NRB circulars, र AI insights — सिधै email मा।
+          </p>
+          {emailStatus === "success" ? (
+            <div className="bg-green-950/40 border border-green-800 rounded-2xl px-6 py-5">
+              <p className="text-green-400 font-bold text-lg">✓ Subscribed!</p>
+              <p className="text-zinc-500 text-sm mt-1">हामी तपाईंलाई जानकारी दिनेछौं।</p>
+            </div>
+          ) : (
+            <form onSubmit={handleEmailSubscribe} className="flex gap-3">
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="tapainko@email.com"
+                className="flex-1 bg-zinc-900 border border-zinc-700 rounded-2xl px-5 py-3.5 text-white placeholder-zinc-600 focus:outline-none focus:border-green-500 text-sm"
+                disabled={emailStatus === "submitting"}
+              />
+              <button
+                type="submit"
+                disabled={!email || emailStatus === "submitting"}
+                className="bg-green-500 hover:bg-green-400 disabled:bg-zinc-800 disabled:text-zinc-600 text-black font-black px-6 py-3.5 rounded-2xl transition-colors text-sm shrink-0"
+              >
+                {emailStatus === "submitting" ? "..." : "Subscribe"}
+              </button>
+            </form>
+          )}
+          {emailStatus === "error" && (
+            <p className="text-red-400 text-xs mt-3">केही गल्ती भयो। फेरि प्रयास गर्नुस्।</p>
+          )}
+          <p className="text-zinc-700 text-xs mt-4">Spam छैन। जुनसुकै बेला unsubscribe गर्न सकिन्छ।</p>
+        </div>
 
       </div>
     </main>
