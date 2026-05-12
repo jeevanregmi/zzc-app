@@ -114,9 +114,5 @@ function MediaInner() {
 }
 
 export default function MediaClient() {
-  return (
-    <VaultGate>
-      <MediaInner />
-    </VaultGate>
-  );
+  return <MediaInner />;
 }

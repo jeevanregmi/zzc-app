@@ -2,16 +2,177 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // structuredSchemes — public read, authenticated write
-    match /structuredSchemes/{schemeId} {
-      allow read: if true;
-      allow create, update, delete: if request.auth != null;
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isOwner(ownerId) {
+      return isSignedIn() && request.auth.uid == ownerId;
+    }
+    function isCreatingAsOwner() {
+      return isSignedIn() && request.auth.uid == request.resource.data.ownerId;
+    }
+    // Prevents ownerId field from being changed after creation
+    function ownerUnchanged() {
+      return !("ownerId" in request.resource.data)
+          || request.resource.data.ownerId == resource.data.ownerId;
     }
 
-    // Block everything else by default
+    // ── PUBLIC: read-only static data ────────────────────────────────────────
+    match /structuredSchemes/{doc} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /market_rates/{doc} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // ── VAULT: media metadata ────────────────────────────────────────────────
+    match /vault_media/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+
+    // ── VAULT: folder hierarchy ──────────────────────────────────────────────
+    match /vault_folders/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+
+    // ── VAULT: document intelligence ────────────────────────────────────────
+    match /vault_documents/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+
+    // ── VAULT: AI generation queue ───────────────────────────────────────────
+    match /vault_ai_queue/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+
+    // ── BUSINESS INTELLIGENCE: all collections ───────────────────────────────
+    match /business_revenue/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+    match /business_expenses/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+    match /business_ai_costs/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+    match /business_youtube/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+    match /business_playstore/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+    match /business_analytics/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+    match /business_content/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+    match /business_affiliates/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+    match /business_goals/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+    match /business_subscriptions/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+
+    // ── EVENT BUS: append-only audit log ────────────────────────────────────
+    match /domain_events/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      // No update or delete — events are immutable once written
+      allow update, delete: if false;
+    }
+
+    // ── AUDIENCE: leads + recommendation signals ─────────────────────────────
+    match /audience_leads/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+    match /recommendation_signals/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+
+    // ── INTELLIGENCE: founder briefings + generation logs ────────────────────
+    match /founder_intelligence/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if false;              // briefings are read-only after creation
+    }
+    match /ai_generation_logs/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if false;              // generation logs are immutable (audit trail)
+    }
+
+    // ── CONTENT: assets + topics ─────────────────────────────────────────────
+    match /business_content_assets/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+    match /financial_topics/{docId} {
+      allow read:   if true;               // topics are semi-public reference data
+      allow write:  if isSignedIn() && request.auth.uid != null;
+    }
+
+    // ── Deny all other paths (catch-all) ─────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
     }
-
   }
 }

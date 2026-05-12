@@ -1,0 +1,156 @@
+/**
+ * Vault Firestore Adapter
+ *
+ * Boundary: FIREBASE SDK ← here → domain hooks
+ *
+ * All functions take/return canonical domain types (lib/vault/types.ts).
+ * Firebase SDK details (Timestamp, DocumentSnapshot, etc.) never leak
+ * past this file. This keeps hooks and components free of SDK coupling.
+ *
+ * TECHNICAL DEBT RISK:
+ *   Firestore real-time listeners (onSnapshot) are opened here but must
+ *   be unsubscribed in the hook's useEffect cleanup. If a hook forgets
+ *   to call the returned unsubscribe function, you leak memory + Firestore
+ *   connections. Pattern: always return the unsubscribe fn, always call it.
+ */
+
+import {
+  collection, doc, addDoc, updateDoc, deleteDoc,
+  onSnapshot, query, where, orderBy, Timestamp,
+  type Unsubscribe,
+} from "firebase/firestore";
+import { db } from "../../app/firebase";
+import type { VaultMedia, VaultFolder, VaultDocument } from "./types";
+
+// ─── Collection names ────────────────────────────────────────────────────────
+
+const COL_MEDIA     = "vault_media";
+const COL_FOLDERS   = "vault_folders";
+const COL_DOCUMENTS = "vault_documents";
+
+// ─── Timestamp helpers ───────────────────────────────────────────────────────
+
+function now(): string { return new Date().toISOString(); }
+
+// ─── VaultMedia ──────────────────────────────────────────────────────────────
+
+export async function createMedia(data: Omit<VaultMedia, "id" | "createdAt" | "updatedAt">): Promise<string> {
+  const ref = await addDoc(collection(db, COL_MEDIA), {
+    ...data,
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+  });
+  return ref.id;
+}
+
+export async function updateMedia(id: string, patch: Partial<VaultMedia>): Promise<void> {
+  await updateDoc(doc(db, COL_MEDIA, id), { ...patch, updatedAt: Timestamp.now() });
+}
+
+export async function deleteMedia(id: string): Promise<void> {
+  await deleteDoc(doc(db, COL_MEDIA, id));
+}
+
+export function subscribeMedia(
+  ownerId: string,
+  folder: string | null,
+  onChange: (items: VaultMedia[]) => void,
+): Unsubscribe {
+  let q = query(
+    collection(db, COL_MEDIA),
+    where("ownerId", "==", ownerId),
+    orderBy("createdAt", "desc"),
+  );
+  if (folder) {
+    q = query(
+      collection(db, COL_MEDIA),
+      where("ownerId", "==", ownerId),
+      where("folder", "==", folder),
+      orderBy("createdAt", "desc"),
+    );
+  }
+  return onSnapshot(q, snap => {
+    const items = snap.docs.map(d => {
+      const data = d.data();
+      return {
+        ...data,
+        id:        d.id,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() ?? now(),
+        updatedAt: data.updatedAt?.toDate?.()?.toISOString() ?? now(),
+      } as VaultMedia;
+    });
+    onChange(items);
+  });
+}
+
+// ─── VaultFolder ─────────────────────────────────────────────────────────────
+
+export async function createFolder(data: Omit<VaultFolder, "id" | "createdAt">): Promise<string> {
+  const ref = await addDoc(collection(db, COL_FOLDERS), {
+    ...data,
+    createdAt: Timestamp.now(),
+  });
+  return ref.id;
+}
+
+export async function deleteFolder(id: string): Promise<void> {
+  await deleteDoc(doc(db, COL_FOLDERS, id));
+}
+
+export function subscribeFolders(
+  ownerId: string,
+  onChange: (folders: VaultFolder[]) => void,
+): Unsubscribe {
+  const q = query(
+    collection(db, COL_FOLDERS),
+    where("ownerId", "==", ownerId),
+    orderBy("path"),
+  );
+  return onSnapshot(q, snap => {
+    const folders = snap.docs.map(d => ({
+      ...d.data(),
+      id:        d.id,
+      createdAt: d.data().createdAt?.toDate?.()?.toISOString() ?? now(),
+    }) as VaultFolder);
+    onChange(folders);
+  });
+}
+
+// ─── VaultDocument ───────────────────────────────────────────────────────────
+
+export async function createDocument(data: Omit<VaultDocument, "id" | "createdAt" | "updatedAt">): Promise<string> {
+  const ref = await addDoc(collection(db, COL_DOCUMENTS), {
+    ...data,
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+  });
+  return ref.id;
+}
+
+export async function updateDocument(id: string, patch: Partial<VaultDocument>): Promise<void> {
+  await updateDoc(doc(db, COL_DOCUMENTS, id), { ...patch, updatedAt: Timestamp.now() });
+}
+
+export async function deleteDocument(id: string): Promise<void> {
+  await deleteDoc(doc(db, COL_DOCUMENTS, id));
+}
+
+export function subscribeDocuments(
+  ownerId: string,
+  onChange: (docs: VaultDocument[]) => void,
+): Unsubscribe {
+  const q = query(
+    collection(db, COL_DOCUMENTS),
+    where("ownerId", "==", ownerId),
+    orderBy("updatedAt", "desc"),
+  );
+  return onSnapshot(q, snap => {
+    const docs = snap.docs.map(d => ({
+      ...d.data(),
+      id:        d.id,
+      createdAt: d.data().createdAt?.toDate?.()?.toISOString() ?? now(),
+      updatedAt: d.data().updatedAt?.toDate?.()?.toISOString() ?? now(),
+    }) as VaultDocument);
+    onChange(docs);
+  });
+}

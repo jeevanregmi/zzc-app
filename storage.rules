@@ -1,0 +1,41 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isVaultOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+    function isAllowedMimeType() {
+      return request.resource.contentType.matches('image/.*')
+          || request.resource.contentType.matches('video/.*')
+          || request.resource.contentType.matches('audio/.*')
+          || request.resource.contentType == 'application/pdf'
+          || request.resource.contentType == 'text/plain';
+    }
+    // 500 MB cap per upload
+    function isUnderSizeLimit() {
+      return request.resource.size <= 500 * 1024 * 1024;
+    }
+
+    // ── VAULT: all media under /vault/{userId}/ ───────────────────────────────
+    match /vault/{userId}/{allPaths=**} {
+      allow read:   if isVaultOwner(userId);
+      allow create: if isVaultOwner(userId)
+                    && isAllowedMimeType()
+                    && isUnderSizeLimit();
+      allow update: if isVaultOwner(userId)
+                    && isAllowedMimeType()
+                    && isUnderSizeLimit();
+      allow delete: if isVaultOwner(userId);
+    }
+
+    // ── Deny everything else ─────────────────────────────────────────────────
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

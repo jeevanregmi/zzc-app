@@ -1,4 +1,104 @@
 {
-  "indexes": [],
+  "indexes": [
+    {
+      "collectionGroup": "vault_media",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",     "order": "ASCENDING"  },
+        { "fieldPath": "usageStatus", "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",   "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "vault_media",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",   "order": "ASCENDING"  },
+        { "fieldPath": "folder",    "order": "ASCENDING"  },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "vault_media",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",    "order": "ASCENDING"  },
+        { "fieldPath": "sourceType", "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "business_content",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",     "order": "ASCENDING"  },
+        { "fieldPath": "status",      "order": "ASCENDING"  },
+        { "fieldPath": "publishedAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "business_content",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",   "order": "ASCENDING"  },
+        { "fieldPath": "platform",  "order": "ASCENDING"  },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "business_revenue",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId", "order": "ASCENDING"  },
+        { "fieldPath": "source",  "order": "ASCENDING"  },
+        { "fieldPath": "date",    "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "business_expenses",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",         "order": "ASCENDING"  },
+        { "fieldPath": "classification",  "order": "ASCENDING"  },
+        { "fieldPath": "date",            "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "business_ai_costs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",   "order": "ASCENDING"  },
+        { "fieldPath": "provider",  "order": "ASCENDING"  },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "audience_leads",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",    "order": "ASCENDING"  },
+        { "fieldPath": "subscribed", "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "recommendation_signals",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",    "order": "ASCENDING"  },
+        { "fieldPath": "subjectId",  "order": "ASCENDING"  },
+        { "fieldPath": "expiresAt",  "order": "ASCENDING"  }
+      ]
+    },
+    {
+      "collectionGroup": "domain_events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",    "order": "ASCENDING"  },
+        { "fieldPath": "eventType",  "order": "ASCENDING"  },
+        { "fieldPath": "occurredAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
   "fieldOverrides": []
 }

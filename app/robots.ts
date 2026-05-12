@@ -8,7 +8,7 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: "*",
         allow: "/",
-        disallow: "/admin",
+        disallow: ["/admin", "/vault"],
       },
     ],
     sitemap: "https://zzc.jeevanregmi.com.np/sitemap.xml",
