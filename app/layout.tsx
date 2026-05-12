@@ -95,8 +95,8 @@ export default function RootLayout({
               <Link href="/recommend" className="text-green-400 hover:text-white hover:bg-green-900/30 px-3 py-2 rounded-xl transition">
                 AI सिफारिस
               </Link>
-              <Link href="/admin" className="text-zinc-600 hover:text-green-400 hover:bg-zinc-900 px-3 py-2 rounded-xl transition text-xs ml-4">
-                Admin
+              <Link href="/vault" className="text-zinc-500 hover:text-white border border-zinc-800 hover:border-zinc-600 px-3 py-2 rounded-xl transition text-xs ml-4">
+                Dashboard →
               </Link>
             </div>
             {/* Mobile nav — key actions only */}
@@ -112,6 +112,9 @@ export default function RootLayout({
               </Link>
               <Link href="/compare" className="text-zinc-500 hover:text-white px-2 py-1.5 rounded-lg transition shrink-0">
                 Compare
+              </Link>
+              <Link href="/vault" className="text-zinc-600 hover:text-white border border-zinc-800 px-2 py-1.5 rounded-lg transition shrink-0 text-xs">
+                Vault
               </Link>
             </div>
           </div>
