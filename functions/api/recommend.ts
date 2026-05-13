@@ -1,4 +1,3 @@
-import { AwsClient } from "aws4fetch";
 import {
   INVESTMENT_SCHEMES, LOAN_SCHEMES, INSURANCE_SCHEMES, PENSION_SCHEMES,
 } from "../../lib/schemes-data";
@@ -7,9 +6,7 @@ import {
 type Category = "investment" | "loan" | "insurance" | "pension";
 
 interface Env {
-  AWS_ACCESS_KEY_ID: string;
-  AWS_SECRET_ACCESS_KEY: string;
-  AWS_REGION: string;
+  ANTHROPIC_API_KEY: string;
 }
 
 interface PagesContext {
@@ -45,7 +42,7 @@ const CORS_HEADERS: Record<string, string> = {
   "Content-Type": "application/json",
 };
 
-const MODEL_ID = "anthropic.claude-3-5-sonnet-20241022-v2:0";
+const MODEL_ID = "claude-opus-4-7";
 
 /* ─── Helpers ────────────────────────────────────────────── */
 function formatIncome(income: number): string {
@@ -321,11 +318,11 @@ export const onRequestOptions = async (): Promise<Response> => {
 };
 
 export const onRequestPost = async (context: PagesContext): Promise<Response> => {
-  const { AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION } = context.env;
+  const ANTHROPIC_API_KEY = context.env.ANTHROPIC_API_KEY?.trim();
 
-  if (!AWS_ACCESS_KEY_ID || !AWS_SECRET_ACCESS_KEY || !AWS_REGION) {
+  if (!ANTHROPIC_API_KEY) {
     return new Response(
-      JSON.stringify({ error: "AWS credentials राखिएको छैन।" }),
+      JSON.stringify({ error: "API key राखिएको छैन।" }),
       { status: 500, headers: CORS_HEADERS }
     );
   }
@@ -393,35 +390,30 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
   }
 
   try {
-    const aws = new AwsClient({
-      accessKeyId: AWS_ACCESS_KEY_ID,
-      secretAccessKey: AWS_SECRET_ACCESS_KEY,
-      region: AWS_REGION,
-      service: "bedrock",
-    });
-
-    const bedrockUrl = `https://bedrock-runtime.${AWS_REGION}.amazonaws.com/model/${encodeURIComponent(MODEL_ID)}/invoke`;
-
-    const bedrockRes = await aws.fetch(bedrockUrl, {
+    const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
-        anthropic_version: "bedrock-2023-05-31",
+        model: MODEL_ID,
         max_tokens: 2048,
         messages: [{ role: "user", content: prompt }],
       }),
     });
 
-    if (!bedrockRes.ok) {
-      const errText = await bedrockRes.text();
-      console.error("Bedrock error:", bedrockRes.status, errText);
+    if (!anthropicRes.ok) {
+      const errText = await anthropicRes.text();
+      console.error("Anthropic error:", anthropicRes.status, errText);
       return new Response(
         JSON.stringify({ error: "AI सेवामा समस्या भयो। कृपया पुनः प्रयास गर्नुस्।" }),
-        { status: 502, headers: CORS_HEADERS }
+        { status: 500, headers: CORS_HEADERS }
       );
     }
 
-    const responseBody = (await bedrockRes.json()) as {
+    const responseBody = (await anthropicRes.json()) as {
       content: Array<{ type: string; text: string }>;
     };
 
