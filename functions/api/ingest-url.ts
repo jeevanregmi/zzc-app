@@ -15,6 +15,8 @@
  * Required Cloudflare Pages env var: ANTHROPIC_API_KEY
  */
 
+import { matchTopics, matchSectors, taxonomySummaryForPrompt } from "../../lib/data/taxonomy";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Env {
@@ -37,13 +39,16 @@ interface IngestRequest {
 interface IngestResult {
   title:          string;
   summary:        string;
-  body:           string;           // truncated extracted text
+  body:           string;
   publishedAt?:   string;
-  relevanceScore: number;           // 0-1 relevance to Nepal finance
+  relevanceScore: number;
   credibility:    "high" | "medium" | "low" | "unverified";
   aiInsights:     string[];
   contentIdeas:   string[];
   detectedTopics: string[];
+  // Taxonomy classification (from lib/data/taxonomy.ts)
+  taxonomyTags:   { topicId: string; sectorId: string; score: number }[];
+  primarySectorId?: string;
   model:          string;
 }
 
@@ -157,13 +162,15 @@ function buildPrompt(
   title:      string,
   topicList:  string[],
 ): string {
-  const topicsSection = topicList.length
-    ? `\nKnown tracked topics (match against these if relevant): ${topicList.join(", ")}`
+  const userTopicsSection = topicList.length
+    ? `\nAdmin-configured tracked topics: ${topicList.join(", ")}`
     : "";
+
+  const taxonomySection = taxonomySummaryForPrompt();
 
   return `You are an intelligence analyst for ZZC — Nepal's AI-native fintech platform for Gen Z investors (age 18–35, salary NPR 30k–150k/month).
 
-Source: "${sourceName}" (${url})${topicsSection}
+Source: "${sourceName}" (${url})${userTopicsSection}
 
 CONTENT TO ANALYZE:
 Title: ${title || "(no title extracted)"}
@@ -172,15 +179,13 @@ ${text}
 
 ---
 
-Your task: Extract actionable finance intelligence relevant to young Nepali workers and investors.
+ZZC FINANCIAL INTELLIGENCE TAXONOMY (canonical topic IDs for classification):
 
-Focus areas (in order of priority):
-1. Interest rate changes: EPF (8.5%), SSF, CIT, NRB policy rate, bank base rates
-2. Policy changes affecting savings/retirement: EPF/SSF/CIT regulations, tax slabs
-3. Nepal government budget: tax, savings, investment rule changes
-4. NEPSE/IPO/mutual fund updates relevant to first-time investors
-5. NRB monetary policy and its personal finance impact
-6. Loan limits and EMI changes
+${taxonomySection}
+
+---
+
+Your task: Extract actionable finance intelligence relevant to young Nepali workers and investors, and classify it using the taxonomy above.
 
 Return ONLY valid JSON (no markdown fences, no text before or after):
 {
@@ -199,17 +204,19 @@ Return ONLY valid JSON (no markdown fences, no text before or after):
     "Post: [Facebook/Instagram explainer concept]"
   ],
   "detectedTopics": ["EPF", "interest rate"],
+  "taxonomyTopicIds": ["epf", "bank-interest-rates"],
   "publishedAt": "ISO date string if found, else null"
 }
 
 Rules:
 - relevanceScore: 0.9 = directly affects EPF/SSF/NRB/NEPSE/loans for Nepali workers; 0.5 = useful context; 0.1 = no finance relevance
 - credibility: "high" only for official NRB/EPF/SSF/SEBON/MoF sources
-- aiInsights must contain specific numbers, names, dates from the content — never generic
-- contentIdeas must be specific to THIS signal's actual data, not generic Nepal finance
-- detectedTopics: list only topics actually present in the content
-- If not finance-relevant, set relevanceScore ≤ 0.2 and explain in summary
-- publishedAt: ISO 8601 string if you can determine it, otherwise null`;
+- aiInsights: specific numbers, names, dates from the content — never generic statements
+- contentIdeas: specific to THIS signal's actual data, not generic Nepal finance
+- taxonomyTopicIds: pick 1-5 canonical IDs from the taxonomy above that this content actually covers
+- detectedTopics: human-readable topic names (can differ from taxonomy IDs)
+- If not finance-relevant, set relevanceScore ≤ 0.2, taxonomyTopicIds = []
+- publishedAt: ISO 8601 string if determinable, else null`;
 }
 
 // ─── Request handlers ─────────────────────────────────────────────────────────
@@ -369,14 +376,15 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
   }
 
   let ai: {
-    title?:         string;
-    summary?:       string;
-    relevanceScore?:number;
-    credibility?:   string;
-    aiInsights?:    string[];
-    contentIdeas?:  string[];
-    detectedTopics?:string[];
-    publishedAt?:   string | null;
+    title?:            string;
+    summary?:          string;
+    relevanceScore?:   number;
+    credibility?:      string;
+    aiInsights?:       string[];
+    contentIdeas?:     string[];
+    detectedTopics?:   string[];
+    taxonomyTopicIds?: string[];
+    publishedAt?:      string | null;
   };
 
   try {
@@ -388,9 +396,38 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     );
   }
 
-  // ── Merge + validate result ────────────────────────────────────────────────
+  // ── Taxonomy classification ────────────────────────────────────────────────
 
-  // Resolve credibility: domain-known high credibility can override AI "unverified"
+  // 1. Local keyword matching against extracted text (deterministic, fast)
+  const localMatches = matchTopics(clauceText, 8);
+
+  // 2. Validate Claude's taxonomy IDs and merge (Claude may hallucinate IDs)
+  const aiTopicIds: string[] = (ai.taxonomyTopicIds ?? []).filter(
+    id => localMatches.some(m => m.topic.id === id) || matchTopics(id, 1).length > 0,
+  );
+
+  // 3. Build final taxonomy tags — union of local + AI, deduped, sorted by score
+  const tagMap = new Map<string, { topicId: string; sectorId: string; score: number }>();
+  for (const m of localMatches) {
+    tagMap.set(m.topic.id, { topicId: m.topic.id, sectorId: m.topic.sectorId, score: m.score });
+  }
+  for (const id of aiTopicIds) {
+    if (!tagMap.has(id)) {
+      const existing = localMatches.find(m => m.topic.id === id);
+      if (existing) {
+        tagMap.set(id, { topicId: id, sectorId: existing.topic.sectorId, score: existing.score });
+      }
+    }
+  }
+  const taxonomyTags = Array.from(tagMap.values())
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 6);
+
+  // 4. Derive primary sector from highest-scoring tags
+  const sectorRouting = matchSectors(taxonomyTags.map(t => t.topicId));
+  const primarySectorId = sectorRouting[0]?.sector.id;
+
+  // ── Credibility resolution ─────────────────────────────────────────────────
   const resolvedCredibility = ((): IngestResult["credibility"] => {
     const aiCred = ai.credibility ?? "unverified";
     if (domainCred === "high") return "high";
@@ -400,25 +437,27 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     return "unverified";
   })();
 
-  // Merge detected topics with any user-supplied topics that appear in content
+  // Merge detected topics with admin-tracked topics that appear in content
   const allTopics = Array.from(new Set([
     ...(ai.detectedTopics ?? []),
-    ...topics.filter(t => extractedText.toLowerCase().includes(t.toLowerCase())),
+    ...topics.filter(t => clauceText.toLowerCase().includes(t.toLowerCase())),
   ]));
 
   const result: IngestResult = {
-    title:          ai.title        || extractedTitle || url,
-    summary:        ai.summary      || "",
-    body:           clauceText.slice(0, 8_000),  // store first 8k chars
-    publishedAt:    ai.publishedAt  || extractedDate || undefined,
-    relevanceScore: typeof ai.relevanceScore === "number"
-                    ? Math.max(0, Math.min(1, ai.relevanceScore))
-                    : 0.5,
-    credibility:    resolvedCredibility,
-    aiInsights:     ai.aiInsights   ?? [],
-    contentIdeas:   ai.contentIdeas ?? [],
-    detectedTopics: allTopics,
-    model:          MODEL,
+    title:           ai.title        || extractedTitle || url,
+    summary:         ai.summary      || "",
+    body:            clauceText.slice(0, 8_000),
+    publishedAt:     ai.publishedAt  || extractedDate || undefined,
+    relevanceScore:  typeof ai.relevanceScore === "number"
+                     ? Math.max(0, Math.min(1, ai.relevanceScore))
+                     : 0.5,
+    credibility:     resolvedCredibility,
+    aiInsights:      ai.aiInsights   ?? [],
+    contentIdeas:    ai.contentIdeas ?? [],
+    detectedTopics:  allTopics,
+    taxonomyTags,
+    primarySectorId,
+    model:           MODEL,
   };
 
   return new Response(JSON.stringify({ ok: true, ...result }), { headers: CORS });

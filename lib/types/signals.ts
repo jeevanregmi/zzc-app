@@ -28,6 +28,9 @@ export interface SourceSignal {
   summary:      string;          // AI 1-2 sentence summary
   body?:        string;          // full extracted text
   publishedAt?: string;
+  // Taxonomy classification (populated by ingest worker via lib/data/taxonomy.ts)
+  sectorId?:    string;          // primary sector (e.g. "nbfi", "capital-markets")
+  taxonomyTags?: { topicId: string; sectorId: string; score: number }[];
   // Classification
   status:       SignalStatus;
   topics:       string[];        // IntelligenceTopic names matched

@@ -271,7 +271,7 @@ function TopicsAndSources({
           topics:     topics.map(t => t.name),
         }),
       });
-      const data = await res.json() as { ok?: boolean; error?: string; title?: string; summary?: string; relevanceScore?: number; credibility?: string; aiInsights?: string[]; contentIdeas?: string[]; detectedTopics?: string[]; body?: string; publishedAt?: string; model?: string };
+      const data = await res.json() as { ok?: boolean; error?: string; title?: string; summary?: string; relevanceScore?: number; credibility?: string; aiInsights?: string[]; contentIdeas?: string[]; detectedTopics?: string[]; body?: string; publishedAt?: string; taxonomyTags?: { topicId: string; sectorId: string; score: number }[]; primarySectorId?: string; model?: string };
       if (!res.ok || !data.ok) {
         setIngestStatus("error");
         setIngestMsg(data.error ?? "Ingest failed");
@@ -293,6 +293,8 @@ function TopicsAndSources({
         credibility:   data.credibility as SourceSignal["credibility"],
         aiInsights:    data.aiInsights,
         contentIdeas:  data.contentIdeas,
+        taxonomyTags:  data.taxonomyTags,
+        sectorId:      data.primarySectorId,
         createdAt:     new Date().toISOString(),
         updatedAt:     new Date().toISOString(),
       });
