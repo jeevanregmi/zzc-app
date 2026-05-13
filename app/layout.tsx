@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import Link from "next/link";
+import NavBar from "../components/NavBar";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -72,53 +72,8 @@ export default function RootLayout({
       lang="ne"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-black text-white">
-        <nav className="sticky top-0 z-50 bg-black/95 backdrop-blur border-b border-zinc-800 px-4 sm:px-6 py-3">
-          <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
-            <Link href="/" className="text-xl sm:text-2xl font-black text-green-400 tracking-tight shrink-0">
-              ZZC
-            </Link>
-            {/* Desktop nav */}
-            <div className="hidden sm:flex items-center gap-1 text-sm font-semibold">
-              <Link href="/" className="text-zinc-400 hover:text-white hover:bg-zinc-900 px-3 py-2 rounded-xl transition">
-                योजनाहरू
-              </Link>
-              <Link href="/eligibility" className="text-zinc-400 hover:text-white hover:bg-zinc-900 px-3 py-2 rounded-xl transition">
-                योग्यता
-              </Link>
-              <Link href="/compare" className="text-zinc-400 hover:text-white hover:bg-zinc-900 px-3 py-2 rounded-xl transition">
-                तुलना
-              </Link>
-              <Link href="/calculator" className="text-zinc-400 hover:text-white hover:bg-zinc-900 px-3 py-2 rounded-xl transition">
-                क्यालकुलेटर
-              </Link>
-              <Link href="/recommend" className="text-green-400 hover:text-white hover:bg-green-900/30 px-3 py-2 rounded-xl transition">
-                AI सिफारिस
-              </Link>
-              <Link href="/vault" className="text-zinc-500 hover:text-white border border-zinc-800 hover:border-zinc-600 px-3 py-2 rounded-xl transition text-xs ml-4">
-                Dashboard →
-              </Link>
-            </div>
-            {/* Mobile nav — key actions only */}
-            <div className="flex sm:hidden items-center gap-1 text-xs font-semibold overflow-x-auto scrollbar-none">
-              <Link href="/" className="text-zinc-400 hover:text-white px-2 py-1.5 rounded-lg transition shrink-0">
-                योजना
-              </Link>
-              <Link href="/calculator" className="text-zinc-400 hover:text-white px-2 py-1.5 rounded-lg transition shrink-0">
-                Calculator
-              </Link>
-              <Link href="/recommend" className="text-green-400 bg-green-900/20 hover:bg-green-900/40 px-2 py-1.5 rounded-lg transition shrink-0">
-                AI
-              </Link>
-              <Link href="/compare" className="text-zinc-500 hover:text-white px-2 py-1.5 rounded-lg transition shrink-0">
-                Compare
-              </Link>
-              <Link href="/vault" className="text-zinc-600 hover:text-white border border-zinc-800 px-2 py-1.5 rounded-lg transition shrink-0 text-xs">
-                Vault
-              </Link>
-            </div>
-          </div>
-        </nav>
+      <body className="min-h-full flex flex-col bg-black text-white pb-16 sm:pb-0">
+        <NavBar />
         {children}
       </body>
     </html>
