@@ -8,6 +8,7 @@ import { useIntelligenceTopics }from "../../../../hooks/vault/useIntelligenceTop
 import {
   updateSourceSignal,
   deleteSourceSignal,
+  createSourceSignal,
   createMonitoredSource,
   deleteMonitoredSource,
   createIntelligenceTopic,
@@ -251,7 +252,58 @@ function TopicsAndSources({
   const [newTopic, setNewTopic]   = useState("");
   const [newUrl,   setNewUrl]     = useState("");
   const [newName,  setNewName]    = useState("");
+  const [ingestUrl, setIngestUrl] = useState("");
+  const [ingestStatus, setIngestStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
+  const [ingestMsg, setIngestMsg] = useState("");
   const [busy, setBusy]           = useState(false);
+
+  async function runIngest() {
+    if (!ingestUrl.trim()) return;
+    setIngestStatus("loading");
+    setIngestMsg("");
+    try {
+      const res = await fetch("/api/ingest-url", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          url:        ingestUrl.trim(),
+          sourceName: new URL(ingestUrl.trim()).hostname.replace(/^www\./, ""),
+          topics:     topics.map(t => t.name),
+        }),
+      });
+      const data = await res.json() as { ok?: boolean; error?: string; title?: string; summary?: string; relevanceScore?: number; credibility?: string; aiInsights?: string[]; contentIdeas?: string[]; detectedTopics?: string[]; body?: string; publishedAt?: string; model?: string };
+      if (!res.ok || !data.ok) {
+        setIngestStatus("error");
+        setIngestMsg(data.error ?? "Ingest failed");
+        return;
+      }
+      await createSourceSignal({
+        ownerId,
+        sourceUrl:     ingestUrl.trim(),
+        sourceType:    "url",
+        sourceName:    new URL(ingestUrl.trim()).hostname.replace(/^www\./, ""),
+        title:         data.title ?? "",
+        summary:       data.summary ?? "",
+        body:          data.body,
+        publishedAt:   data.publishedAt,
+        status:        "raw",
+        topics:        data.detectedTopics ?? [],
+        tags:          [],
+        relevanceScore:data.relevanceScore,
+        credibility:   data.credibility as SourceSignal["credibility"],
+        aiInsights:    data.aiInsights,
+        contentIdeas:  data.contentIdeas,
+        createdAt:     new Date().toISOString(),
+        updatedAt:     new Date().toISOString(),
+      });
+      setIngestStatus("ok");
+      setIngestMsg(`Signal added: "${(data.title ?? "").slice(0, 60)}"`);
+      setIngestUrl("");
+    } catch (err) {
+      setIngestStatus("error");
+      setIngestMsg(String(err));
+    }
+  }
 
   async function addTopic() {
     if (!newTopic.trim()) return;
@@ -279,6 +331,32 @@ function TopicsAndSources({
 
   return (
     <div className="h-full overflow-y-auto p-4 space-y-6">
+
+      {/* Quick Ingest */}
+      <div>
+        <div className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-3">Quick Ingest URL</div>
+        <div className="flex gap-2 mb-2">
+          <input
+            value={ingestUrl}
+            onChange={e => { setIngestUrl(e.target.value); setIngestStatus("idle"); }}
+            onKeyDown={e => e.key === "Enter" && runIngest()}
+            placeholder="https://nrb.org.np/..."
+            className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-green-600"
+          />
+          <button
+            onClick={runIngest}
+            disabled={ingestStatus === "loading" || !ingestUrl.trim()}
+            className="px-3 py-2 bg-green-600 hover:bg-green-500 text-black text-sm font-bold rounded-lg transition-all disabled:opacity-40 whitespace-nowrap"
+          >
+            {ingestStatus === "loading" ? "…" : "⚡ Ingest"}
+          </button>
+        </div>
+        {ingestMsg && (
+          <div className={`text-[11px] px-2 py-1 rounded ${ingestStatus === "ok" ? "text-green-400 bg-green-950/30" : "text-red-400 bg-red-950/30"}`}>
+            {ingestMsg}
+          </div>
+        )}
+      </div>
 
       {/* Topics */}
       <div>
