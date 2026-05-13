@@ -8,6 +8,7 @@ import { auth } from "../../app/firebase";
 import { useVaultAuth } from "../../hooks/vault/useVaultAuth";
 import { useIntelligenceDocs } from "../../hooks/vault/useIntelligenceDocs";
 import { useQueueItems } from "../../hooks/vault/useQueueItems";
+import { useSourceSignals } from "../../hooks/vault/useSourceSignals";
 
 const NAV_GROUPS = [
   {
@@ -22,6 +23,7 @@ const NAV_GROUPS = [
       { href: "/vault/content",               icon: "🎬", label: "Content Pipeline" },
       { href: "/vault/content/queue",         icon: "📥", label: "Queue" },
       { href: "/vault/content/ai-studio",     icon: "⚡", label: "AI Studio" },
+      { href: "/vault/content/intelligence",  icon: "🧠", label: "Intelligence" },
       { href: "/vault/media",                 icon: "🎞", label: "Media" },
     ],
   },
@@ -52,15 +54,18 @@ export function VaultShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const { user } = useVaultAuth();
-  const { docs }         = useIntelligenceDocs(user?.uid ?? null);
-  const { items: queue } = useQueueItems(user?.uid ?? null, "all");
+  const { docs }           = useIntelligenceDocs(user?.uid ?? null);
+  const { items: queue }   = useQueueItems(user?.uid ?? null, "all");
+  const { signals }        = useSourceSignals(user?.uid ?? null, "raw");
 
-  const queuePending = queue.filter(i => i.status === "pending").length;
-  const awaitingAI   = docs.filter(d => d.processingStatus === "ready").length;
+  const queuePending  = queue.filter(i => i.status === "pending").length;
+  const awaitingAI    = docs.filter(d => d.processingStatus === "ready").length;
+  const rawSignalCount = signals.length;
 
   function navBadge(href: string): number | undefined {
-    if (href === "/vault/content/queue" && queuePending > 0) return queuePending;
-    if (href === "/vault/documents"     && awaitingAI   > 0) return awaitingAI;
+    if (href === "/vault/content/queue"         && queuePending    > 0) return queuePending;
+    if (href === "/vault/documents"             && awaitingAI      > 0) return awaitingAI;
+    if (href === "/vault/content/intelligence"  && rawSignalCount  > 0) return rawSignalCount;
     return undefined;
   }
 

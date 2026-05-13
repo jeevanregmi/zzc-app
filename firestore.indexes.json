@@ -151,6 +151,58 @@
         { "fieldPath": "expiresAt",  "order": "ASCENDING"  }
       ]
     }
+    ,
+    {
+      "collectionGroup": "source_signals",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",    "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "source_signals",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",    "order": "ASCENDING"  },
+        { "fieldPath": "status",     "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "monitored_sources",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",    "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "monitored_sources",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",    "order": "ASCENDING"  },
+        { "fieldPath": "status",     "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "intelligence_topics",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",    "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",  "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "intelligence_topics",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "ownerId",    "order": "ASCENDING"  },
+        { "fieldPath": "priority",   "order": "ASCENDING"  },
+        { "fieldPath": "createdAt",  "order": "DESCENDING" }
+      ]
+    }
   ],
   "fieldOverrides": []
 }

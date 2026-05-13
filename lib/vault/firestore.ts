@@ -23,14 +23,18 @@ import { db } from "../../app/firebase";
 import type { VaultMedia, VaultFolder, VaultDocument } from "./types";
 import type { IntelligenceDocument } from "../types/documents";
 import type { QueueItem } from "../types/queue";
+import type { SourceSignal, MonitoredSource, IntelligenceTopic } from "../types/signals";
 
 // ─── Collection names ────────────────────────────────────────────────────────
 
-const COL_MEDIA         = "vault_media";
-const COL_FOLDERS       = "vault_folders";
-const COL_DOCUMENTS     = "vault_documents";
-const COL_INTEL_DOCS    = "vault_intelligence_docs";
-const COL_CONTENT_QUEUE = "vault_content_queue";
+const COL_MEDIA           = "vault_media";
+const COL_FOLDERS         = "vault_folders";
+const COL_DOCUMENTS       = "vault_documents";
+const COL_INTEL_DOCS      = "vault_intelligence_docs";
+const COL_CONTENT_QUEUE   = "vault_content_queue";
+const COL_SOURCE_SIGNALS  = "source_signals";
+const COL_MONITORED_SRCS  = "monitored_sources";
+const COL_INTEL_TOPICS    = "intelligence_topics";
 
 // ─── Timestamp helpers ───────────────────────────────────────────────────────
 
@@ -257,6 +261,156 @@ export function subscribeQueueItems(
         createdAt: data.createdAt?.toDate?.()?.toISOString() ?? now(),
         updatedAt: data.updatedAt?.toDate?.()?.toISOString() ?? now(),
       } as QueueItem;
+    });
+    onChange(items);
+  });
+}
+
+// ─── SourceSignal ─────────────────────────────────────────────────────────────
+
+export async function createSourceSignal(
+  data: Omit<SourceSignal, "id">,
+): Promise<string> {
+  const ref = await addDoc(collection(db, COL_SOURCE_SIGNALS), {
+    ...data,
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+  });
+  return ref.id;
+}
+
+export async function updateSourceSignal(
+  id: string,
+  patch: Partial<SourceSignal>,
+): Promise<void> {
+  await updateDoc(doc(db, COL_SOURCE_SIGNALS, id), { ...patch, updatedAt: Timestamp.now() });
+}
+
+export async function deleteSourceSignal(id: string): Promise<void> {
+  await deleteDoc(doc(db, COL_SOURCE_SIGNALS, id));
+}
+
+export function subscribeSourceSignals(
+  ownerId: string,
+  status: SourceSignal["status"] | "all",
+  onChange: (items: SourceSignal[]) => void,
+): Unsubscribe {
+  const q = status === "all"
+    ? query(
+        collection(db, COL_SOURCE_SIGNALS),
+        where("ownerId", "==", ownerId),
+        orderBy("createdAt", "desc"),
+      )
+    : query(
+        collection(db, COL_SOURCE_SIGNALS),
+        where("ownerId", "==", ownerId),
+        where("status",  "==", status),
+        orderBy("createdAt", "desc"),
+      );
+
+  return onSnapshot(q, snap => {
+    const items = snap.docs.map(d => {
+      const data = d.data();
+      return {
+        ...data,
+        id:        d.id,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() ?? now(),
+        updatedAt: data.updatedAt?.toDate?.()?.toISOString() ?? now(),
+      } as SourceSignal;
+    });
+    onChange(items);
+  });
+}
+
+// ─── MonitoredSource ──────────────────────────────────────────────────────────
+
+export async function createMonitoredSource(
+  data: Omit<MonitoredSource, "id">,
+): Promise<string> {
+  const ref = await addDoc(collection(db, COL_MONITORED_SRCS), {
+    ...data,
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+  });
+  return ref.id;
+}
+
+export async function updateMonitoredSource(
+  id: string,
+  patch: Partial<MonitoredSource>,
+): Promise<void> {
+  await updateDoc(doc(db, COL_MONITORED_SRCS, id), { ...patch, updatedAt: Timestamp.now() });
+}
+
+export async function deleteMonitoredSource(id: string): Promise<void> {
+  await deleteDoc(doc(db, COL_MONITORED_SRCS, id));
+}
+
+export function subscribeMonitoredSources(
+  ownerId: string,
+  onChange: (items: MonitoredSource[]) => void,
+): Unsubscribe {
+  const q = query(
+    collection(db, COL_MONITORED_SRCS),
+    where("ownerId", "==", ownerId),
+    orderBy("createdAt", "desc"),
+  );
+  return onSnapshot(q, snap => {
+    const items = snap.docs.map(d => {
+      const data = d.data();
+      return {
+        ...data,
+        id:        d.id,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() ?? now(),
+        updatedAt: data.updatedAt?.toDate?.()?.toISOString() ?? now(),
+      } as MonitoredSource;
+    });
+    onChange(items);
+  });
+}
+
+// ─── IntelligenceTopic ────────────────────────────────────────────────────────
+
+export async function createIntelligenceTopic(
+  data: Omit<IntelligenceTopic, "id">,
+): Promise<string> {
+  const ref = await addDoc(collection(db, COL_INTEL_TOPICS), {
+    ...data,
+    createdAt: Timestamp.now(),
+    updatedAt: Timestamp.now(),
+  });
+  return ref.id;
+}
+
+export async function updateIntelligenceTopic(
+  id: string,
+  patch: Partial<IntelligenceTopic>,
+): Promise<void> {
+  await updateDoc(doc(db, COL_INTEL_TOPICS, id), { ...patch, updatedAt: Timestamp.now() });
+}
+
+export async function deleteIntelligenceTopic(id: string): Promise<void> {
+  await deleteDoc(doc(db, COL_INTEL_TOPICS, id));
+}
+
+export function subscribeIntelligenceTopics(
+  ownerId: string,
+  onChange: (items: IntelligenceTopic[]) => void,
+): Unsubscribe {
+  const q = query(
+    collection(db, COL_INTEL_TOPICS),
+    where("ownerId", "==", ownerId),
+    orderBy("createdAt", "desc"),
+  );
+  return onSnapshot(q, snap => {
+    const items = snap.docs.map(d => {
+      const data = d.data();
+      return {
+        ...data,
+        id:        d.id,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() ?? now(),
+        updatedAt: data.updatedAt?.toDate?.()?.toISOString() ?? now(),
+      } as IntelligenceTopic;
     });
     onChange(items);
   });
