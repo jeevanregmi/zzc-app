@@ -40,11 +40,13 @@ function confidenceBadge(c: number) {
   return          { label: "LOW",         cls: "bg-red-900  text-red-400   border-red-800"   };
 }
 
-function isExpiringSoon(expiresAt: string): boolean {
+function isExpiringSoon(expiresAt: string | undefined): boolean {
+  if (!expiresAt) return false;
   return new Date(expiresAt).getTime() - Date.now() < 24 * 60 * 60 * 1000;
 }
 
-function isExpired(expiresAt: string): boolean {
+function isExpired(expiresAt: string | undefined): boolean {
+  if (!expiresAt) return false;
   return new Date(expiresAt).getTime() < Date.now();
 }
 
@@ -119,40 +121,57 @@ function QueueCard({
         </div>
       </div>
 
-      {/* Source traceability panel */}
-      <div className="bg-zinc-800/50 rounded-xl p-3 border border-zinc-700 flex flex-col gap-2">
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-zinc-500 text-xs shrink-0">📄</span>
-            <div className="min-w-0">
-              <p className="text-zinc-300 text-xs font-semibold truncate">{item.sourceDocTitle}</p>
-              <p className="text-zinc-600 text-xs">{item.sourceDocFileName} · {formatRelative(item.sourceUploadedAt)}</p>
+      {/* Source traceability panel — document-sourced items only */}
+      {item.sourceDocId && (
+        <div className="bg-zinc-800/50 rounded-xl p-3 border border-zinc-700 flex flex-col gap-2">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-zinc-500 text-xs shrink-0">📄</span>
+              <div className="min-w-0">
+                <p className="text-zinc-300 text-xs font-semibold truncate">{item.sourceDocTitle}</p>
+                <p className="text-zinc-600 text-xs">{item.sourceDocFileName} · {item.sourceUploadedAt ? formatRelative(item.sourceUploadedAt) : ""}</p>
+              </div>
             </div>
-          </div>
-          <a
-            href={item.sourceDocUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="text-xs text-green-400 hover:text-green-300 font-semibold shrink-0 transition-colors"
-          >
-            View Source →
-          </a>
-        </div>
-
-        {item.sourceInsights.length > 0 && (
-          <ul className="space-y-1 mt-1">
-            {item.sourceInsights.slice(0, 3).map((insight, i) => (
-              <li key={i} className="flex items-start gap-1.5 text-xs text-zinc-500">
-                <span className="text-zinc-700 shrink-0 mt-0.5">•</span>
-                <span className="line-clamp-2">{insight}</span>
-              </li>
-            ))}
-            {item.sourceInsights.length > 3 && (
-              <li className="text-xs text-zinc-700 pl-3">+{item.sourceInsights.length - 3} more</li>
+            {item.sourceDocUrl && (
+              <a
+                href={item.sourceDocUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-green-400 hover:text-green-300 font-semibold shrink-0 transition-colors"
+              >
+                View Source →
+              </a>
             )}
-          </ul>
-        )}
-      </div>
+          </div>
+
+          {(item.sourceInsights ?? []).length > 0 && (
+            <ul className="space-y-1 mt-1">
+              {(item.sourceInsights ?? []).slice(0, 3).map((insight, i) => (
+                <li key={i} className="flex items-start gap-1.5 text-xs text-zinc-500">
+                  <span className="text-zinc-700 shrink-0 mt-0.5">•</span>
+                  <span className="line-clamp-2">{insight}</span>
+                </li>
+              ))}
+              {(item.sourceInsights ?? []).length > 3 && (
+                <li className="text-xs text-zinc-700 pl-3">+{(item.sourceInsights ?? []).length - 3} more</li>
+              )}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {/* Source traceability panel — signal-sourced items */}
+      {item.sourceSignalId && !item.sourceDocId && (
+        <div className="bg-zinc-800/50 rounded-xl p-3 border border-zinc-700 flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <span className="text-zinc-500 text-xs shrink-0">🧠</span>
+            <p className="text-zinc-400 text-xs font-semibold">Generated from intelligence signal</p>
+          </div>
+          {item.brief && (
+            <p className="text-zinc-500 text-xs leading-relaxed pl-4">{item.brief}</p>
+          )}
+        </div>
+      )}
 
       {/* Admin notes */}
       {notesOpen ? (

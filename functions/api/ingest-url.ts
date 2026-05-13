@@ -343,7 +343,7 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
       },
       body: JSON.stringify({
         model:      MODEL,
-        max_tokens: 1024,
+        max_tokens: 2048,
         messages:   [{ role: "user", content: prompt }],
       }),
     });

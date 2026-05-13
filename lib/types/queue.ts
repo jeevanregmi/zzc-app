@@ -33,24 +33,31 @@ export interface QueueItem {
   contentType:   QueueContentType;
   platform:      QueuePlatform;
 
-  // ── SOURCE TRACEABILITY — required for all items ─────────────────────────────
-  // Every queue item must link back to the source document that generated it.
-  // Admin can always open the original to verify the claim.
-  sourceDocId:       string;    // vault_intelligence_docs document ID
-  sourceDocTitle:    string;    // human-readable title of the source doc
-  sourceDocUrl:      string;    // Firebase Storage URL — direct link to original file
-  sourceDocFileName: string;    // original filename for display
-  sourceInsights:    string[];  // the specific extracted insights that support this idea
-  sourceUploadedAt:  string;
+  // ── SOURCE TRACEABILITY — document-sourced items ──────────────────────────────
+  // Present when the item originates from an uploaded vault document.
+  sourceDocId?:       string;    // vault_intelligence_docs document ID
+  sourceDocTitle?:    string;    // human-readable title of the source doc
+  sourceDocUrl?:      string;    // Firebase Storage URL — direct link to original file
+  sourceDocFileName?: string;    // original filename for display
+  sourceInsights?:    string[];  // the specific extracted insights that support this idea
+  sourceUploadedAt?:  string;
+
+  // ── SOURCE TRACEABILITY — signal-sourced items ────────────────────────────────
+  // Present when the item originates from a SourceSignal (live intelligence feed).
+  sourceSignalId?: string;       // source_signals document ID
+  brief?:          string;       // AI-generated content brief
+  hooks?:          string[];     // attention-grabbing hooks for the piece
+  aiModel?:        string;       // model used to generate this item
+  tags?:           string[];     // taxonomy topic IDs from the signal
 
   // ── Intelligence scores ───────────────────────────────────────────────────────
-  confidence: number;           // 0.0–1.0 from AI analysis of source doc
-  language:   string;
+  confidence: number;            // 0.0–1.0 from AI analysis of source
+  language?:  string;
 
   // ── Admin workflow ────────────────────────────────────────────────────────────
-  status:     QueueItemStatus;
-  adminNotes: string;           // admin comments when reviewing
-  expiresAt:  string;           // auto-archive if pending past this date (7 days)
+  status:      QueueItemStatus;
+  adminNotes?: string;           // admin comments when reviewing
+  expiresAt?:  string;           // auto-archive if pending past this date (7 days)
 
   // ── Timestamps ────────────────────────────────────────────────────────────────
   createdAt:   string;
