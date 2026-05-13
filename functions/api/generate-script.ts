@@ -12,12 +12,16 @@ interface PagesContext {
 }
 
 interface ScriptRequest {
-  topic: string;
-  format: "long-form" | "short" | "reel";
+  topic:        string;
+  format:       "long-form" | "short" | "reel";
   targetMinutes?: number;
-  pillar?: string;
-  cta?: string;
-  tone?: "educational" | "casual" | "dramatic";
+  pillar?:      string;
+  cta?:         string;
+  tone?:        "educational" | "casual" | "dramatic";
+  // Signal context — when this script originates from a validated intelligence signal
+  signalBrief?: string;
+  signalHooks?: string[];
+  signalTags?:  string[];
 }
 
 const CORS = {
@@ -29,8 +33,21 @@ const CORS = {
 
 const MODEL_ID = "anthropic.claude-3-5-sonnet-20241022-v2:0";
 
+function buildSignalSection(body: ScriptRequest): string {
+  const { signalBrief, signalHooks, signalTags } = body;
+  if (!signalBrief && (!signalHooks || signalHooks.length === 0)) return "";
+
+  const lines: string[] = ["", "INTELLIGENCE SIGNAL CONTEXT (use this data to make the script specific):"];
+  if (signalBrief)                        lines.push(`Brief: ${signalBrief}`);
+  if (signalHooks && signalHooks.length)  lines.push(`Validated hooks:\n${signalHooks.map(h => `  - ${h}`).join("\n")}`);
+  if (signalTags  && signalTags.length)   lines.push(`Topics: ${signalTags.join(", ")}`);
+  lines.push("Use the facts and hooks above. Do not invent data not present in the signal.");
+  return lines.join("\n");
+}
+
 function buildPrompt(body: ScriptRequest): string {
   const { topic, format, targetMinutes = format === "long-form" ? 12 : 60, pillar = "", cta = "ZZC calculator मा हेर्नुस्", tone = "educational" } = body;
+  const signalSection = buildSignalSection(body);
 
   if (format === "long-form") {
     return `तपाईं ZZC (Zeneration Z Chautari) को लागि नेपाली YouTube content writer हुनुहुन्छ।
@@ -42,7 +59,7 @@ CTA: ${cta}
 
 Video Topic: "${topic}"
 Format: YouTube Long-form (${targetMinutes} min target)
-Pillar: ${pillar}
+Pillar: ${pillar}${signalSection}
 
 यो JSON structure मा script outline बनाउनुस्:
 {
@@ -73,7 +90,7 @@ Tone: ${tone}
 CTA: ${cta}
 
 Topic: "${topic}"
-Format: ${format === "short" ? "YouTube Short / Instagram Reel" : "TikTok Reel"} (≤60 sec)
+Format: ${format === "short" ? "YouTube Short / Instagram Reel" : "TikTok Reel"} (≤60 sec)${signalSection}
 
 JSON structure मा script बनाउनुस्:
 {

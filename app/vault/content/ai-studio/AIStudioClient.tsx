@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { updateQueueItem } from "../../../../lib/vault/firestore";
+import { updateQueueItem, getQueueItem } from "../../../../lib/vault/firestore";
+import type { QueueItem } from "../../../../lib/types/queue";
 
 type Tool = "script" | "thumbnail-prompt";
 type ScriptFormat = "long-form" | "short" | "reel";
@@ -46,12 +47,25 @@ const STYLE_OPTIONS: { value: ThumbnailStyle; label: string; desc: string }[] = 
   { value: "text-only",         label: "Bold Text",          desc: "Large Nepali typography" },
 ];
 
+const FORMAT_MAP: Record<string, ScriptFormat> = {
+  "youtube-long":  "long-form",
+  "shorts":        "short",
+  "explainer":     "long-form",
+  "facebook-post": "short",
+  "carousel":      "short",
+  "other":         "long-form",
+};
+
 export default function AIStudioClient() {
   const searchParams = useSearchParams();
   const queueId    = searchParams.get("queueId") ?? null;
   const queueTitle = searchParams.get("title")   ? decodeURIComponent(searchParams.get("title")!) : null;
 
   const [tool, setTool] = useState<Tool>("script");
+
+  // Queue context — loaded once on mount from Firestore
+  const [queueItem,       setQueueItem]       = useState<QueueItem | null>(null);
+  const [contextExpanded, setContextExpanded] = useState(true);
 
   // Script state
   const [topic,        setTopic]        = useState(queueTitle ?? "");
@@ -72,13 +86,23 @@ export default function AIStudioClient() {
   const [markedInProd,   setMarkedInProd]   = useState(false);
   const [markingInProd,  setMarkingInProd]  = useState(false);
 
-  // Sync topic/thumbTitle if URL params arrive after render
+  // Load queue item context once on mount
   useEffect(() => {
-    if (queueTitle) {
-      setTopic(queueTitle);
-      setThumbTitle(queueTitle);
-    }
-  }, [queueTitle]);
+    if (!queueId) return;
+    getQueueItem(queueId).then(item => {
+      if (!item) return;
+      setQueueItem(item);
+      // Pre-fill topic from queue title if not already set
+      const title = item.aiTitle || queueTitle || "";
+      setTopic(title);
+      setThumbTitle(title);
+      // Pre-fill format based on content type
+      if (item.contentType) {
+        setFormat(FORMAT_MAP[item.contentType] ?? "long-form");
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queueId]);
 
   async function generateScript() {
     if (!topic) return;
@@ -86,10 +110,16 @@ export default function AIStudioClient() {
     setError("");
     setScriptResult(null);
     try {
+      const payload: Record<string, unknown> = { topic, format, pillar, cta };
+      // Inject signal context if available (makes script grounded in real intelligence)
+      if (queueItem?.brief)                       payload.signalBrief = queueItem.brief;
+      if (queueItem?.hooks && queueItem.hooks.length > 0) payload.signalHooks = queueItem.hooks;
+      if (queueItem?.tags  && queueItem.tags.length > 0)  payload.signalTags  = queueItem.tags;
+
       const res = await fetch("/api/generate-script", {
-        method: "POST",
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, format, pillar, cta }),
+        body:    JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed");
@@ -147,35 +177,79 @@ export default function AIStudioClient() {
         <span className="text-xs px-2 py-0.5 rounded-full bg-green-900/40 text-green-400">Bedrock powered</span>
       </div>
 
-      {/* Queue context banner */}
+      {/* Queue + Signal context banner */}
       {queueId && (
-        <div className={`mb-6 rounded-2xl border px-5 py-4 flex items-start justify-between gap-4 ${
-          markedInProd
-            ? "bg-green-950/40 border-green-800"
-            : "bg-cyan-950/30 border-cyan-900"
+        <div className={`mb-6 rounded-2xl border ${
+          markedInProd ? "bg-green-950/40 border-green-800" : "bg-cyan-950/30 border-cyan-900"
         }`}>
-          <div className="min-w-0">
-            <p className={`text-xs font-semibold uppercase tracking-wider mb-1 ${markedInProd ? "text-green-400" : "text-cyan-400"}`}>
-              {markedInProd ? "✓ Marked as In Production" : "From Queue"}
-            </p>
-            {queueTitle && (
-              <p className="text-white text-sm font-medium truncate">{queueTitle}</p>
-            )}
-            <Link
-              href="/vault/content/queue"
-              className="text-zinc-500 text-xs hover:text-zinc-300 transition-colors"
-            >
-              ← Back to Queue
-            </Link>
+          {/* Top row — queue info + actions */}
+          <div className="px-5 py-4 flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <p className={`text-xs font-semibold uppercase tracking-wider mb-1 ${markedInProd ? "text-green-400" : "text-cyan-400"}`}>
+                {markedInProd ? "✓ Marked as In Production" : "From Queue"}
+              </p>
+              <p className="text-white text-sm font-medium truncate">
+                {queueItem?.aiTitle ?? queueTitle}
+              </p>
+              <div className="flex items-center gap-3 mt-1">
+                <Link href="/vault/content/queue" className="text-zinc-500 text-xs hover:text-zinc-300 transition-colors">
+                  ← Back to Queue
+                </Link>
+                {queueItem?.sourceSignalId && (
+                  <span className="text-zinc-700 text-xs">· Signal-grounded</span>
+                )}
+                {queueItem?.tags && queueItem.tags.length > 0 && (
+                  <div className="flex gap-1 flex-wrap">
+                    {queueItem.tags.slice(0, 3).map(t => (
+                      <span key={t} className="text-[10px] bg-zinc-900 border border-zinc-700 text-zinc-500 px-1.5 py-0.5 rounded">{t}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              {queueItem?.brief && (
+                <button
+                  onClick={() => setContextExpanded(e => !e)}
+                  className="text-xs px-2 py-1 bg-zinc-900 border border-zinc-700 text-zinc-400 rounded hover:text-zinc-200 transition-colors"
+                >
+                  {contextExpanded ? "Hide context" : "Show context"}
+                </button>
+              )}
+              {!markedInProd && (
+                <button
+                  onClick={markInProduction}
+                  disabled={markingInProd}
+                  className="text-xs px-3 py-1.5 bg-cyan-900/50 hover:bg-cyan-800/60 border border-cyan-800 text-cyan-300 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {markingInProd ? "Saving…" : "Mark In Production"}
+                </button>
+              )}
+            </div>
           </div>
-          {!markedInProd && (
-            <button
-              onClick={markInProduction}
-              disabled={markingInProd}
-              className="shrink-0 text-xs px-3 py-1.5 bg-cyan-900/50 hover:bg-cyan-800/60 border border-cyan-800 text-cyan-300 rounded-lg transition-colors disabled:opacity-50"
-            >
-              {markingInProd ? "Saving…" : "Mark In Production"}
-            </button>
+
+          {/* Signal context panel — brief + hooks */}
+          {queueItem?.brief && contextExpanded && (
+            <div className="px-5 pb-4 border-t border-cyan-900/50 pt-3 space-y-3">
+              <div>
+                <p className="text-[10px] text-zinc-600 uppercase tracking-wider font-semibold mb-1">Intelligence Brief</p>
+                <p className="text-zinc-300 text-xs leading-relaxed">{queueItem.brief}</p>
+              </div>
+              {queueItem.hooks && queueItem.hooks.length > 0 && (
+                <div>
+                  <p className="text-[10px] text-zinc-600 uppercase tracking-wider font-semibold mb-1">Validated Hooks</p>
+                  <ul className="space-y-1">
+                    {queueItem.hooks.map((h, i) => (
+                      <li key={i} className="flex items-start gap-2 text-xs text-zinc-400">
+                        <span className="text-cyan-800 shrink-0 mt-0.5">{i + 1}.</span>
+                        <span>{h}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <p className="text-[10px] text-zinc-700">This context is automatically injected into your script generation.</p>
+            </div>
           )}
         </div>
       )}

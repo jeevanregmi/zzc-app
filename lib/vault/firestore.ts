@@ -15,7 +15,7 @@
  */
 
 import {
-  collection, doc, addDoc, updateDoc, deleteDoc,
+  collection, doc, addDoc, updateDoc, deleteDoc, getDoc,
   onSnapshot, query, where, orderBy, Timestamp,
   type Unsubscribe,
 } from "firebase/firestore";
@@ -211,6 +211,18 @@ export function subscribeIntelligenceDocs(
 }
 
 // ─── Content Queue ────────────────────────────────────────────────────────────
+
+export async function getQueueItem(id: string): Promise<QueueItem | null> {
+  const snap = await getDoc(doc(db, COL_CONTENT_QUEUE, id));
+  if (!snap.exists()) return null;
+  const data = snap.data();
+  return {
+    ...data,
+    id:        snap.id,
+    createdAt: data.createdAt?.toDate?.()?.toISOString() ?? now(),
+    updatedAt: data.updatedAt?.toDate?.()?.toISOString() ?? now(),
+  } as QueueItem;
+}
 
 export async function createQueueItem(
   data: Omit<QueueItem, "id">,
