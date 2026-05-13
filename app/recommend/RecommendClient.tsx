@@ -429,12 +429,15 @@ export default function RecommendClient() {
       <div className="max-w-lg mx-auto">
 
         {/* ── Page Header ── */}
-        <div className="text-center mb-12">
-          <div className="text-6xl mb-4">🤖</div>
-          <h1 className="text-4xl font-black text-white mb-3">
-            AI <span className="text-green-400">लगानी सिफारिस</span>
+        <div className="text-center mb-10">
+          <div className="flex items-center justify-center gap-2 mb-4">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+            <span className="text-green-500 text-xs font-semibold tracking-widest uppercase">Nepal Finance Intelligence</span>
+          </div>
+          <h1 className="text-3xl font-black text-white mb-2">
+            AI <span className="text-green-400">सिफारिस</span>
           </h1>
-          <p className="text-zinc-400 text-base">
+          <p className="text-zinc-500 text-sm">
             श्रेणी छान्नुस् — Claude AI ले तपाईंको लागि उत्तम नेपाली योजना सिफारिस गर्नेछ।
           </p>
         </div>

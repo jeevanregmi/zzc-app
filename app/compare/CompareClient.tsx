@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import Link from "next/link";
 import { SCHEMES } from "../../lib/schemes-data";
 import type { SchemeCategory, Org } from "../../lib/schemes-data";
 
@@ -123,11 +124,20 @@ export default function CompareClient() {
 
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-4xl md:text-5xl font-black text-green-400 mb-2">
+          <nav className="flex items-center gap-1.5 text-xs text-zinc-600 mb-4">
+            <Link href="/" className="hover:text-zinc-400 transition">ZZC</Link>
+            <span>/</span>
+            <span className="text-zinc-400">तुलना</span>
+          </nav>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
+            <span className="text-green-500 text-xs font-semibold tracking-widest uppercase">Nepal Finance Intelligence</span>
+          </div>
+          <h1 className="text-3xl md:text-4xl font-black text-white mb-2">
             सबै योजना तुलना
           </h1>
-          <p className="text-zinc-400 text-base md:text-lg">
-            नेपालका सबै EPF, CIT, SSF, NEPSE र Beema योजनाहरू एकै तालिकामा
+          <p className="text-zinc-500 text-sm md:text-base">
+            नेपालका {SCHEMES.length}+ EPF, CIT, SSF, NEPSE र Beema योजनाहरू एकै तालिकामा
           </p>
         </div>
 
@@ -300,12 +310,12 @@ export default function CompareClient() {
 
                     {/* Detail link */}
                     <td className="px-3 py-3 text-center">
-                      <a
+                      <Link
                         href={`/scheme/${s.id}`}
                         className="text-xs text-green-500 hover:text-green-300 transition font-semibold whitespace-nowrap"
                       >
                         हेर्नुस् →
-                      </a>
+                      </Link>
                     </td>
                   </tr>
                 );
@@ -329,24 +339,15 @@ export default function CompareClient() {
 
         {/* CTA */}
         <div className="mt-8 flex gap-3 flex-wrap">
-          <a
-            href="/recommend"
-            className="inline-flex items-center gap-2 bg-green-500 hover:bg-green-400 text-black font-black px-5 py-2.5 rounded-2xl transition-colors text-sm"
-          >
-            🤖 AI सिफारिस पाउनुस्
-          </a>
-          <a
-            href="/calculator"
-            className="inline-flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white font-bold px-5 py-2.5 rounded-2xl border border-zinc-700 transition-colors text-sm"
-          >
-            🧮 क्याल्कुलेटर
-          </a>
-          <a
-            href="/"
-            className="inline-flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white font-bold px-5 py-2.5 rounded-2xl border border-zinc-700 transition-colors text-sm"
-          >
-            ← सबै योजनाहरू
-          </a>
+          <Link href="/recommend" className="inline-flex items-center gap-2 bg-green-500 hover:bg-green-400 text-black font-black px-5 py-2.5 rounded-2xl transition-colors text-sm">
+            ⚡ AI सिफारिस पाउनुस्
+          </Link>
+          <Link href="/calculator" className="inline-flex items-center gap-2 border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-white font-semibold px-5 py-2.5 rounded-2xl transition-colors text-sm">
+            🔢 क्यालकुलेटर
+          </Link>
+          <Link href="/" className="inline-flex items-center gap-2 border border-zinc-800 hover:border-zinc-600 text-zinc-500 hover:text-zinc-300 font-semibold px-5 py-2.5 rounded-2xl transition-colors text-sm">
+            ← योजनाहरू
+          </Link>
         </div>
 
       </div>

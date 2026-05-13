@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { db } from "../firebase";
 import { collection, getDocs } from "firebase/firestore";
 
@@ -211,20 +212,31 @@ export default function EligibilityPage() {
 
   return (
 
-    <main className="min-h-screen bg-black text-white px-6 py-12">
+    <main className="min-h-screen bg-black text-white">
 
-      <div className="max-w-3xl mx-auto">
+      {/* Header */}
+      <div className="border-b border-zinc-900 px-4 sm:px-6 py-7 sm:py-10">
+        <div className="max-w-3xl mx-auto">
+          <nav className="flex items-center gap-1.5 text-xs text-zinc-600 mb-4">
+            <Link href="/" className="hover:text-zinc-400 transition">ZZC</Link>
+            <span>/</span>
+            <span className="text-zinc-400">योग्यता जाँच</span>
+          </nav>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0" />
+            <span className="text-green-500 text-xs font-semibold tracking-widest uppercase">Nepal Finance Intelligence</span>
+          </div>
+          <h1 className="text-2xl sm:text-4xl font-black text-white mb-2">योग्यता जाँच</h1>
+          <p className="text-zinc-500 text-sm sm:text-base">
+            आफ्नो बारेमा बताउनुस् — हामी तपाईंले पाउन सक्ने योजनाहरू देखाउँछौं।
+          </p>
+        </div>
+      </div>
 
-        <h1 className="text-5xl font-black text-green-400 mb-3">
-          योग्यता जाँच
-        </h1>
-
-        <p className="text-zinc-400 text-lg mb-10">
-          आफ्नो बारेमा बताउनुस् — हामी तपाईंले पाउन सक्ने योजनाहरू देखाउँछौं।
-        </p>
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8">
 
         {/* फारम */}
-        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 mb-10 space-y-8">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8 space-y-7">
 
           {/* रोजगारी प्रकार */}
           <div>
@@ -373,84 +385,67 @@ export default function EligibilityPage() {
 
         {/* नतिजाहरू */}
         {results && (
-
           <div>
 
-            <h2 className="text-3xl font-black text-white mb-2">
-              तपाईंको नतिजा
-            </h2>
-
-            <p className="text-zinc-500 mb-8">
-              आधारमा: {selectedOption?.label}, उमेर {profile.age}
-              {profile.isEPFMember ? ", EPF सदस्य" : ""}
-              {profile.isSSFMember ? ", SSF योगदानकर्ता" : ""}
-            </p>
+            {/* Summary bar */}
+            <div className="flex items-center gap-4 bg-zinc-900 border border-zinc-800 rounded-2xl px-5 py-4 mb-6">
+              <div className="flex items-center gap-2">
+                <span className="text-green-400 font-black text-xl">{eligible.length}</span>
+                <span className="text-zinc-400 text-sm">योग्य योजना</span>
+              </div>
+              <div className="w-px h-4 bg-zinc-700" />
+              <div className="flex items-center gap-2">
+                <span className="text-zinc-600 font-black text-xl">{notEligible.length}</span>
+                <span className="text-zinc-600 text-sm">अयोग्य</span>
+              </div>
+              <div className="ml-auto text-xs text-zinc-600">
+                {selectedOption?.label} · उमेर {profile.age}
+              </div>
+            </div>
 
             {/* योग्य */}
-            <div className="mb-10">
-
-              <h3 className="text-xl font-black text-green-400 mb-4">
+            <div className="mb-8">
+              <h3 className="flex items-center gap-2 text-base font-black text-white mb-4">
+                <span className="w-0.5 h-4 bg-green-500 rounded-full" />
                 योग्य ({eligible.length})
               </h3>
-
               <div className="space-y-3">
                 {eligible.map((r) => (
-                  <a
+                  <Link
                     key={r.scheme.id}
                     href={`/scheme/${r.scheme.id}`}
-                    className="
-                      flex items-start gap-4
-                      bg-green-500/10
-                      border
-                      border-green-500/30
-                      rounded-2xl
-                      p-5
-                      hover:border-green-500
-                      transition
-                      block
-                    "
+                    className="flex items-start gap-4 bg-green-500/10 border border-green-500/30 rounded-2xl p-4 hover:border-green-500 transition block group"
                   >
-                    <span className="text-green-400 text-xl mt-0.5 shrink-0">✓</span>
+                    <span className="text-green-400 font-bold mt-0.5 shrink-0">✓</span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <span className="font-bold text-white">{r.scheme.title}</span>
+                        <span className="font-bold text-white text-sm group-hover:text-green-400 transition">{r.scheme.title}</span>
                         <span className={`text-xs px-2 py-0.5 rounded-full text-white font-bold ${orgColor[r.scheme.organization] ?? "bg-zinc-700"}`}>
                           {r.scheme.organization}
                         </span>
                       </div>
-                      <p className="text-sm text-green-300">{r.reason}</p>
+                      <p className="text-xs text-green-300/80">{r.reason}</p>
                     </div>
-                  </a>
+                    <span className="text-zinc-600 group-hover:text-green-400 transition text-sm shrink-0">→</span>
+                  </Link>
                 ))}
               </div>
-
             </div>
 
             {/* अयोग्य */}
             <div>
-
-              <h3 className="text-xl font-black text-zinc-500 mb-4">
+              <h3 className="flex items-center gap-2 text-base font-black text-zinc-500 mb-4">
+                <span className="w-0.5 h-4 bg-zinc-700 rounded-full" />
                 अयोग्य ({notEligible.length})
               </h3>
-
               <div className="space-y-2">
                 {notEligible.map((r) => (
-                  <div
-                    key={r.scheme.id}
-                    className="
-                      flex items-start gap-4
-                      bg-zinc-900
-                      border
-                      border-zinc-800
-                      rounded-2xl
-                      p-4
-                    "
-                  >
-                    <span className="text-zinc-700 text-lg mt-0.5 shrink-0">✕</span>
+                  <div key={r.scheme.id} className="flex items-start gap-3 bg-zinc-900 border border-zinc-800 rounded-xl p-3">
+                    <span className="text-zinc-700 mt-0.5 shrink-0">✕</span>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                        <span className="font-semibold text-zinc-500 text-sm">{r.scheme.title}</span>
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-600 font-bold">
+                        <span className="font-semibold text-zinc-500 text-xs">{r.scheme.title}</span>
+                        <span className="text-xs px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-600 font-bold">
                           {r.scheme.organization}
                         </span>
                       </div>
@@ -459,11 +454,18 @@ export default function EligibilityPage() {
                   </div>
                 ))}
               </div>
+            </div>
 
+            <div className="mt-8 pt-6 border-t border-zinc-900 flex gap-3 flex-wrap">
+              <Link href="/recommend" className="inline-flex items-center gap-2 bg-green-500 hover:bg-green-400 text-black font-black px-5 py-3 rounded-2xl transition-colors text-sm">
+                ⚡ AI सिफारिस लिनुस्
+              </Link>
+              <Link href="/compare" className="inline-flex items-center gap-2 border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-white font-semibold px-5 py-3 rounded-2xl transition-colors text-sm">
+                ⚖ सबै तुलना
+              </Link>
             </div>
 
           </div>
-
         )}
 
       </div>
