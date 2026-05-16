@@ -5,6 +5,7 @@ import { useVaultAuth } from "../../../hooks/vault/useVaultAuth";
 import { useIntelligenceDocs } from "../../../hooks/vault/useIntelligenceDocs";
 import { useDocumentUpload } from "../../../hooks/vault/useDocumentUpload";
 import { deleteIntelligenceDoc, updateIntelligenceDoc, createQueueItem } from "../../../lib/vault/firestore";
+import Link from "next/link";
 import { useQueueItems } from "../../../hooks/vault/useQueueItems";
 import { deleteStorageFile } from "../../../lib/vault/storage";
 import { DocumentCard } from "../../../components/vault/documents/DocumentCard";
@@ -92,7 +93,6 @@ export default function DocumentsClient() {
     setProcessingId(doc.id);
     setProcessError(null);
 
-    // Optimistic update: show "Analyzing…" badge immediately
     await updateIntelligenceDoc(doc.id, { processingStatus: "processing_ai" });
 
     try {
@@ -124,45 +124,17 @@ export default function DocumentsClient() {
         return;
       }
 
+      // AI complete — set to pending_review so admin must approve before queue items are created.
       await updateIntelligenceDoc(doc.id, {
-        processingStatus: "ai_ready",
-        aiSummary:        data.aiSummary,
-        aiKeyInsights:    data.aiKeyInsights,
-        detectedTopics:   data.detectedTopics,
-        contentIdeas:     data.contentIdeas,
-        language:         data.language,
-        confidence:       data.confidence,
+        processingStatus:    "ai_ready",
+        adminApprovalStatus: "pending_review",
+        aiSummary:           data.aiSummary,
+        aiKeyInsights:       data.aiKeyInsights,
+        detectedTopics:      data.detectedTopics,
+        contentIdeas:        data.contentIdeas,
+        language:            data.language,
+        confidence:          data.confidence,
       });
-
-      // Create queue items with full source traceability
-      const ideas    = data.contentIdeas ?? [];
-      const insights = data.aiKeyInsights ?? [];
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
-
-      await Promise.all(ideas.map(idea =>
-        createQueueItem({
-          ownerId:           user!.uid,
-          aiTitle:           idea.replace(/^(YouTube|Short|Post|Reel|Carousel|Explainer):\s*/i, ""),
-          contentType:       inferContentType(idea),
-          platform:          inferPlatform(idea),
-          // Source traceability — every item links back to originating document
-          sourceDocId:       doc.id,
-          sourceDocTitle:    doc.title,
-          sourceDocUrl:      doc.downloadUrl,
-          sourceDocFileName: doc.fileName,
-          sourceInsights:    insights,
-          sourceUploadedAt:  doc.uploadedAt,
-          // Intelligence scores
-          confidence:        data.confidence ?? 0.5,
-          language:          data.language ?? "English",
-          // Admin workflow
-          status:            "pending",
-          adminNotes:        "",
-          expiresAt,
-          createdAt:         new Date().toISOString(),
-          updatedAt:         new Date().toISOString(),
-        })
-      ));
 
     } catch (err) {
       await updateIntelligenceDoc(doc.id, { processingStatus: "error" });
@@ -172,8 +144,50 @@ export default function DocumentsClient() {
     }
   };
 
-  const aiReadyCount  = docs.filter(d => d.processingStatus === "ai_ready").length;
-  const readyCount    = docs.filter(d => d.processingStatus === "ready").length;
+  // Separate from handleProcess — only callable after admin approves the doc in Admin Vault.
+  const handleGenerateQueueItems = async (doc: IntelligenceDocument) => {
+    if (doc.adminApprovalStatus !== "approved") return;
+    if (!doc.contentIdeas || doc.contentIdeas.length === 0) return;
+
+    setProcessingId(doc.id);
+    const ideas     = doc.contentIdeas;
+    const insights  = doc.aiKeyInsights ?? [];
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    try {
+      await Promise.all(ideas.map(idea =>
+        createQueueItem({
+          ownerId:           user!.uid,
+          aiTitle:           idea.replace(/^(YouTube|Short|Post|Reel|Carousel|Explainer):\s*/i, ""),
+          contentType:       inferContentType(idea),
+          platform:          inferPlatform(idea),
+          sourceDocId:       doc.id,
+          sourceDocTitle:    doc.title,
+          sourceDocUrl:      doc.downloadUrl,
+          sourceDocFileName: doc.fileName,
+          sourceInsights:    insights,
+          sourceUploadedAt:  doc.uploadedAt,
+          confidence:        doc.confidence ?? 0.5,
+          language:          doc.language ?? "English",
+          status:            "pending",
+          adminNotes:        "",
+          expiresAt,
+          createdAt:         new Date().toISOString(),
+          updatedAt:         new Date().toISOString(),
+        }),
+      ));
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const aiReadyCount    = docs.filter(d => d.processingStatus === "ai_ready").length;
+  const readyCount      = docs.filter(d => d.processingStatus === "ready").length;
+  const awaitingReview  = docs.filter(d =>
+    d.processingStatus === "ai_ready" &&
+    (d.adminApprovalStatus === "pending_review" || !d.adminApprovalStatus),
+  ).length;
+  const approvedDocs    = docs.filter(d => d.adminApprovalStatus === "approved").length;
 
   return (
     <>
@@ -200,8 +214,13 @@ export default function DocumentsClient() {
             <h1 className="text-3xl font-black text-white">Intelligence Library</h1>
             <p className="text-zinc-500 text-sm mt-1">
               {docs.length} document{docs.length !== 1 ? "s" : ""}
-              {aiReadyCount > 0 && <span className="text-green-400 ml-2">· {aiReadyCount} AI-ready</span>}
-              {readyCount > 0 && <span className="text-zinc-500 ml-2">· {readyCount} awaiting analysis</span>}
+              {awaitingReview > 0 && (
+                <Link href="/vault/admin?tab=documents" className="text-amber-400 ml-2 hover:text-amber-300">
+                  · {awaitingReview} pending admin review →
+                </Link>
+              )}
+              {approvedDocs > 0 && <span className="text-green-400 ml-2">· {approvedDocs} approved</span>}
+              {readyCount > 0 && <span className="text-zinc-500 ml-2">· {readyCount} awaiting AI</span>}
             </p>
           </div>
           <button
@@ -224,10 +243,10 @@ export default function DocumentsClient() {
         {docs.length > 0 && (
           <div className="grid grid-cols-4 gap-3 mb-8">
             {[
-              { label: "Total Docs",  value: docs.length },
-              { label: "AI Ready",    value: aiReadyCount },
-              { label: "Awaiting AI", value: readyCount },
-              { label: "Categories",  value: new Set(docs.map(d => d.category)).size },
+              { label: "Total Docs",     value: docs.length },
+              { label: "Pending Review", value: awaitingReview },
+              { label: "Approved",       value: approvedDocs },
+              { label: "Awaiting AI",    value: readyCount },
             ].map(stat => (
               <div key={stat.label} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">
                 <p className="text-2xl font-black text-white">{stat.value}</p>
@@ -305,6 +324,7 @@ export default function DocumentsClient() {
                 onView={setViewing}
                 onProcess={handleProcess}
                 onDelete={handleDelete}
+                onGenerateQueue={handleGenerateQueueItems}
               />
             ))}
           </div>

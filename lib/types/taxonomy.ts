@@ -23,7 +23,9 @@ export type SectorId =
   | "nbfi"
   | "cooperatives"
   | "capital-markets"
-  | "economic-intelligence";
+  | "economic-intelligence"
+  | "government-finance"   // Government-owned banks + public finance + national savings
+  | "insurance";           // Non-life, general, and specialised insurance
 
 export interface FinancialSector {
   id:          SectorId;
@@ -66,7 +68,15 @@ export type TopicId =
   | "remittance"
   | "government-budget"
   | "interest-rates"
-  | "foreign-exchange";
+  | "foreign-exchange"
+  // Government Finance sector topics
+  | "government-owned-banks"    // ADBL, RBB, NBL — state-owned banking institutions
+  | "national-savings"          // NSB, government savings certificates, post-office savings
+  | "public-debt"               // T-bills, development bonds, government borrowing
+  // Insurance sector topics
+  | "non-life-insurance"        // Motor, property, travel, cargo, fire insurance
+  | "reinsurance"               // Nepal Reinsurance Company (NepRe)
+  | "insurance-regulation";     // Beema Pradhikaran — Insurance Authority of Nepal
 
 export type CalculatorTab = "sip" | "retirement" | "loan" | "risk" | "health" | "portfolio";
 

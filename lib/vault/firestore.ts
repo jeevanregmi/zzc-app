@@ -187,6 +187,28 @@ export async function deleteIntelligenceDoc(id: string): Promise<void> {
   await deleteDoc(doc(db, COL_INTEL_DOCS, id));
 }
 
+// Admin approval gates — called from Admin Intelligence Vault only.
+// These are the ONLY paths that set adminApprovalStatus.
+
+export async function approveIntelligenceDocForQueue(id: string): Promise<void> {
+  await updateDoc(doc(db, COL_INTEL_DOCS, id), {
+    adminApprovalStatus: "approved",
+    adminApprovedAt:     new Date().toISOString(),
+    updatedAt:           Timestamp.now(),
+  });
+}
+
+export async function flagIntelligenceDocForRevision(
+  id:    string,
+  notes: string,
+): Promise<void> {
+  await updateDoc(doc(db, COL_INTEL_DOCS, id), {
+    adminApprovalStatus: "needs_revision",
+    adminApprovalNotes:  notes,
+    updatedAt:           Timestamp.now(),
+  });
+}
+
 export function subscribeIntelligenceDocs(
   ownerId: string,
   onChange: (docs: IntelligenceDocument[]) => void,

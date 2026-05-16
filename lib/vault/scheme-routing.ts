@@ -10,7 +10,9 @@
  */
 
 import { TOPICS } from "../data/taxonomy";
-import type { TaxonomyTag } from "../types/taxonomy";
+
+// Accepts the loose shape from SourceSignal.taxonomyTags (topicId is string, not TopicId)
+type TagInput = { topicId: string; sectorId: string; score: number };
 
 export interface SchemeRouting {
   schemeIds:  string[];
@@ -18,12 +20,12 @@ export interface SchemeRouting {
   topicIds:   string[];  // topic IDs that contributed scheme matches
 }
 
-export function routeSignalToSchemes(taxonomyTags: TaxonomyTag[]): SchemeRouting {
+export function routeSignalToSchemes(taxonomyTags: TagInput[]): SchemeRouting {
   if (!taxonomyTags || taxonomyTags.length === 0) {
     return { schemeIds: [], confidence: 0, topicIds: [] };
   }
 
-  const topicMap = new Map(TOPICS.map(t => [t.id, t]));
+  const topicMap = new Map(TOPICS.map(t => [t.id as string, t]));
 
   // Score each schemeId by the max tag score of topics that reference it
   const schemeScores = new Map<string, number>();

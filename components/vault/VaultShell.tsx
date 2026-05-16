@@ -14,35 +14,42 @@ const NAV_GROUPS = [
   {
     label: null,
     items: [
-      { href: "/vault",                       icon: "◈",  label: "Overview" },
+      { href: "/vault",       icon: "◈", label: "Overview" },
+    ],
+  },
+  {
+    label: "Intelligence",
+    items: [
+      { href: "/vault/admin",                  icon: "⬡", label: "Admin Vault"   },
+      { href: "/vault/content/intelligence",   icon: "◉", label: "Signal Feed"   },
+      { href: "/vault/content/queue",          icon: "◆", label: "Content Queue" },
+      { href: "/vault/documents",              icon: "◻", label: "Documents"     },
     ],
   },
   {
     label: "Content",
     items: [
-      { href: "/vault/content",               icon: "🎬", label: "Content Pipeline" },
-      { href: "/vault/content/queue",         icon: "📥", label: "Queue" },
-      { href: "/vault/content/ai-studio",     icon: "⚡", label: "AI Studio" },
-      { href: "/vault/content/intelligence",  icon: "🧠", label: "Intelligence" },
-      { href: "/vault/media",                 icon: "🎞", label: "Media" },
+      { href: "/vault/content",            icon: "▶", label: "Pipeline"    },
+      { href: "/vault/content/ai-studio",  icon: "⚡", label: "AI Studio"  },
+      { href: "/vault/media",              icon: "◎", label: "Media"       },
     ],
   },
   {
     label: "Operations",
     items: [
-      { href: "/vault/business",              icon: "📊", label: "Business BI" },
-      { href: "/vault/analytics",             icon: "📈", label: "Analytics" },
-      { href: "/vault/tasks",                 icon: "✅", label: "Tasks" },
-      { href: "/vault/calendar",              icon: "📅", label: "Calendar" },
+      { href: "/vault/business",  icon: "◈", label: "Business BI" },
+      { href: "/vault/analytics", icon: "◉", label: "Analytics"   },
+      { href: "/vault/tasks",     icon: "◻", label: "Tasks"       },
+      { href: "/vault/calendar",  icon: "◆", label: "Calendar"    },
     ],
   },
   {
     label: "System",
     items: [
-      { href: "/vault/finance",               icon: "💰", label: "Finance" },
-      { href: "/vault/documents",             icon: "📄", label: "Documents" },
-      { href: "/vault/deploy",                icon: "🚀", label: "Deploy" },
-      { href: "/vault/ai-queue",              icon: "🤖", label: "AI Queue" },
+      { href: "/vault/system",    icon: "◉", label: "System"    },
+      { href: "/vault/finance",   icon: "◈", label: "Finance"   },
+      { href: "/vault/deploy",    icon: "▶", label: "Deploy"    },
+      { href: "/vault/ai-queue",  icon: "⚡", label: "AI Queue" },
     ],
   },
 ];
@@ -58,14 +65,22 @@ export function VaultShell({ children }: { children: React.ReactNode }) {
   const { items: queue }   = useQueueItems(user?.uid ?? null, "all");
   const { signals }        = useSourceSignals(user?.uid ?? null, "raw");
 
-  const queuePending  = queue.filter(i => i.status === "pending").length;
-  const awaitingAI    = docs.filter(d => d.processingStatus === "ready").length;
-  const rawSignalCount = signals.length;
+  const queuePending    = queue.filter(i => i.status === "pending").length;
+  const awaitingAI      = docs.filter(d => d.processingStatus === "ready").length;
+  const rawSignalCount  = signals.length;
+  // Docs that AI has processed but admin has not yet approved
+  const pendingDocReview = docs.filter(d =>
+    d.processingStatus === "ai_ready" &&
+    (!(d as { adminApprovalStatus?: string }).adminApprovalStatus ||
+     (d as { adminApprovalStatus?: string }).adminApprovalStatus === "pending_review"),
+  ).length;
+  const adminVaultTotal = rawSignalCount + pendingDocReview + queuePending;
 
   function navBadge(href: string): number | undefined {
-    if (href === "/vault/content/queue"         && queuePending    > 0) return queuePending;
+    if (href === "/vault/admin"                 && adminVaultTotal > 0) return adminVaultTotal;
     if (href === "/vault/documents"             && awaitingAI      > 0) return awaitingAI;
     if (href === "/vault/content/intelligence"  && rawSignalCount  > 0) return rawSignalCount;
+    if (href === "/vault/content/queue"         && queuePending    > 0) return queuePending;
     return undefined;
   }
 

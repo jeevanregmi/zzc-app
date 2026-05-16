@@ -16,6 +16,13 @@ export type ProcessingStatus =
   | "ai_ready"
   | "error";
 
+// Separate from ProcessingStatus — tracks admin review of AI output.
+// An ai_ready doc must reach "approved" before queue items can be generated.
+export type AdminApprovalStatus =
+  | "pending_review"   // AI done, awaiting admin review in Admin Vault
+  | "approved"         // Admin reviewed and approved — queue generation unlocked
+  | "needs_revision";  // Admin flagged — AI output needs correction before use
+
 export interface IntelligenceDocument {
   id:               string;
   ownerId:          string;
@@ -41,6 +48,10 @@ export interface IntelligenceDocument {
   // Flywheel connector fields — feed into Content Pipeline
   detectedTopics?:     string[];   // e.g. ["EPF", "housing loan", "interest rate"]
   contentIdeas?:       string[];   // AI-proposed content titles/concepts from this doc
+  // Admin validation gate — set after AI processing; governs queue item generation
+  adminApprovalStatus?:  AdminApprovalStatus;
+  adminApprovalNotes?:   string;   // admin comments when flagging for revision
+  adminApprovedAt?:      string;   // ISO timestamp
   // Optional metadata
   pageCount?:          number;
   language?:           string;

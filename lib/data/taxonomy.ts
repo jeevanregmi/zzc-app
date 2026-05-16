@@ -624,6 +624,122 @@ export const TOPICS: FinancialTopic[] = [
     priority:    "high",
   },
 
+  // --- Government Finance --------------------------------------------------
+
+  {
+    id:          "government-owned-banks",
+    sectorId:    "government-finance",
+    name:        "Government-Owned Banks",
+    nameNe:      "सरकारी स्वामित्वका बैंक",
+    description: "Nepal's state-owned banking institutions — Rastriya Banijya Bank (RBB), Agriculture Development Bank (ADBL), and Nepal Bank Limited (NBL) — providing development finance, agricultural credit, and government-directed lending.",
+    keywords:    [
+      "rastriya banijya bank", "rbb", "nepal bank limited", "nbl",
+      "agriculture development bank", "adbl", "krishi bank", "sarkari bank",
+      "government bank", "state owned bank", "public sector bank",
+      "government banking", "development bank nepal", "adbl loan",
+      "rbb deposit", "nbl service",
+    ],
+    aliases:     ["RBB", "ADBL", "NBL", "sarkari bank"],
+    relatedTopicIds: ["commercial-banks", "rural-finance", "government-budget"],
+    schemeIds:   [],
+    priority:    "medium",
+  },
+
+  {
+    id:          "national-savings",
+    sectorId:    "government-finance",
+    name:        "National Savings & Post-Office Finance",
+    nameNe:      "राष्ट्रिय बचत",
+    description: "Government-backed savings instruments including National Savings Certificates, Post-Office savings accounts, and NSB (National Savings Bank) products offering secure, government-guaranteed returns.",
+    keywords:    [
+      "national savings", "national savings bank", "nsb", "rastriya bachat",
+      "savings certificate", "savings bond", "post office savings", "postal savings",
+      "government savings", "sarkari bachat", "bachat patra", "savings scheme",
+      "government guaranteed", "risk free savings", "fixed return",
+    ],
+    aliases:     ["NSB", "bachat patra", "savings certificate"],
+    relatedTopicIds: ["government-owned-banks", "public-debt", "epf", "cit"],
+    schemeIds:   [],
+    priority:    "medium",
+  },
+
+  {
+    id:          "public-debt",
+    sectorId:    "government-finance",
+    name:        "Public Debt & Government Securities",
+    nameNe:      "सार्वजनिक ऋण",
+    description: "Nepal government's domestic and external borrowing — Treasury Bills (T-bills), Development Bonds, NRB Bonds, and foreign loans — and their impact on interest rates and capital market liquidity.",
+    keywords:    [
+      "treasury bill", "t-bill", "development bond", "government bond",
+      "nrb bond", "public debt", "sarvajanik rin", "government borrowing",
+      "fiscal deficit", "government loan", "external debt", "internal debt",
+      "bond auction", "bond yield", "debt management", "government securities",
+      "gilt", "sovereign bond", "budget deficit",
+    ],
+    aliases:     ["T-bill", "government bond", "sarvajanik rin"],
+    relatedTopicIds: ["government-budget", "nrb-policy", "debentures-bonds", "interest-rates"],
+    schemeIds:   [],
+    priority:    "medium",
+  },
+
+  // --- Insurance Sector ----------------------------------------------------
+
+  {
+    id:          "non-life-insurance",
+    sectorId:    "insurance",
+    name:        "Non-Life & General Insurance",
+    nameNe:      "निर्जीवन बीमा",
+    description: "Motor, property, fire, travel, cargo, and agricultural insurance products in Nepal offered by SEBON-regulated non-life insurers. Includes third-party liability, comprehensive motor cover, and crop insurance.",
+    keywords:    [
+      "non-life insurance", "general insurance", "nirjeevan bima", "motor insurance",
+      "vehicle insurance", "bike insurance", "car insurance", "property insurance",
+      "fire insurance", "travel insurance", "cargo insurance", "crop insurance",
+      "third party insurance", "comprehensive insurance", "shikhar insurance",
+      "nepal insurance", "prudential insurance", "himalayan general insurance",
+      "sagarmatha insurance", "neco insurance", "asian life property",
+    ],
+    aliases:     ["general insurance", "motor bima", "nirjeevan bima"],
+    relatedTopicIds: ["life-insurance", "health-insurance", "insurance-regulation"],
+    schemeIds:   [],
+    priority:    "medium",
+  },
+
+  {
+    id:          "reinsurance",
+    sectorId:    "insurance",
+    name:        "Reinsurance",
+    nameNe:      "पुनर्बीमा",
+    description: "Nepal Reinsurance Company (NepRe) — the mandatory reinsurer for all Nepal insurers — and international reinsurance arrangements for catastrophic risk coverage.",
+    keywords:    [
+      "reinsurance", "punarbima", "nepal reinsurance", "nepre",
+      "mandatory reinsurance", "catastrophe cover", "cat cover",
+      "reinsurer", "insurance risk", "reinsurance treaty", "quota share",
+    ],
+    aliases:     ["NepRe", "punarbima"],
+    relatedTopicIds: ["non-life-insurance", "life-insurance", "insurance-regulation"],
+    schemeIds:   [],
+    priority:    "low",
+  },
+
+  {
+    id:          "insurance-regulation",
+    sectorId:    "insurance",
+    name:        "Insurance Regulation — Beema Pradhikaran",
+    nameNe:      "बीमा प्राधिकरण",
+    description: "Insurance Authority of Nepal (Beema Pradhikaran) — the insurance sector regulator. Covers licensing, premium directives, solvency requirements, product approval, and consumer protection rules.",
+    keywords:    [
+      "beema pradhikaran", "insurance authority", "insurance board",
+      "insurance regulation", "insurance regulator", "beema niyam",
+      "insurance act", "insurance directive", "premium rate", "solvency ratio",
+      "insurance license", "insurance policy", "insurance claim settlement",
+      "consumer protection insurance", "grievance insurance",
+    ],
+    aliases:     ["Beema Pradhikaran", "Insurance Authority Nepal"],
+    relatedTopicIds: ["non-life-insurance", "life-insurance", "health-insurance", "reinsurance"],
+    schemeIds:   [],
+    priority:    "medium",
+  },
+
   {
     id:          "foreign-exchange",
     sectorId:    "economic-intelligence",
@@ -702,6 +818,24 @@ export const SECTORS: FinancialSector[] = [
     topicIds:    ["savings-cooperatives", "credit-cooperatives", "cooperative-governance"],
     icon:        "🤝",
     priority:    3,
+  },
+  {
+    id:          "government-finance",
+    name:        "Government Finance",
+    nameNe:      "सरकारी वित्त",
+    description: "State-owned banks, national savings instruments, and government securities — Nepal's public financial infrastructure including ADBL, RBB, NBL, NSB, T-bills, and development bonds.",
+    topicIds:    ["government-owned-banks", "national-savings", "public-debt"],
+    icon:        "🏛",
+    priority:    2,
+  },
+  {
+    id:          "insurance",
+    name:        "Insurance",
+    nameNe:      "बीमा क्षेत्र",
+    description: "Nepal's non-life insurance sector — motor, property, fire, travel, crop, and cargo insurance — regulated by Beema Pradhikaran, plus national reinsurance through NepRe.",
+    topicIds:    ["non-life-insurance", "reinsurance", "insurance-regulation"],
+    icon:        "🛡",
+    priority:    2,
   },
 ];
 

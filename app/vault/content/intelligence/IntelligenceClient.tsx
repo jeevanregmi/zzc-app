@@ -5,6 +5,7 @@ import { useVaultAuth }          from "../../../../hooks/vault/useVaultAuth";
 import { useSourceSignals }      from "../../../../hooks/vault/useSourceSignals";
 import { useMonitoredSources }   from "../../../../hooks/vault/useMonitoredSources";
 import { useIntelligenceTopics } from "../../../../hooks/vault/useIntelligenceTopics";
+import { routeSignalToSchemes }  from "../../../../lib/vault/scheme-routing";
 import {
   updateSourceSignal,
   deleteSourceSignal,
@@ -166,6 +167,11 @@ function SignalDetail({
   const [generateStatus,  setGenerateStatus] = useState<"idle" | "ok" | "error">("idle");
   const [error,           setError]          = useState("");
 
+  const schemeRouting = useMemo(
+    () => signal ? routeSignalToSchemes(signal.taxonomyTags ?? []) : null,
+    [signal],
+  );
+
   const setStatus = useCallback(async (status: SignalStatus) => {
     if (!signal) return;
     setBusy(true);
@@ -271,6 +277,28 @@ function SignalDetail({
                 {t.topicId}
               </span>
             ))}
+          </div>
+        )}
+
+        {/* Scheme routing */}
+        {schemeRouting && schemeRouting.schemeIds.length > 0 && (
+          <div className="mb-3 bg-zinc-900/60 border border-zinc-800 rounded-lg px-3 py-2.5">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[9px] font-semibold text-zinc-500 uppercase tracking-widest">Matched Schemes</span>
+              <span className="text-[9px] text-zinc-600">
+                {Math.round(schemeRouting.confidence * 100)}% confidence
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {schemeRouting.schemeIds.slice(0, 6).map(id => (
+                <span key={id} className="text-[9px] bg-blue-950/50 border border-blue-900/60 px-1.5 py-0.5 rounded text-blue-300 font-mono">
+                  {id}
+                </span>
+              ))}
+              {schemeRouting.schemeIds.length > 6 && (
+                <span className="text-[9px] text-zinc-600">+{schemeRouting.schemeIds.length - 6} more</span>
+              )}
+            </div>
           </div>
         )}
 

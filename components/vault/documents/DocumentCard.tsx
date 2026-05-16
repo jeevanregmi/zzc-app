@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import type { IntelligenceDocument } from "../../../lib/types/documents";
+import type { IntelligenceDocument, AdminApprovalStatus } from "../../../lib/types/documents";
 
 const FILE_ICONS: Record<string, string> = {
   pdf:   "📄",
@@ -13,11 +13,17 @@ const FILE_ICONS: Record<string, string> = {
 };
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
-  uploading:     { label: "Uploading",     cls: "bg-blue-900 text-blue-300" },
-  ready:         { label: "Ready",         cls: "bg-zinc-800 text-zinc-400" },
-  processing_ai: { label: "Analyzing…",    cls: "bg-amber-900 text-amber-300 animate-pulse" },
-  ai_ready:      { label: "AI Ready",      cls: "bg-green-900 text-green-400" },
-  error:         { label: "Error",         cls: "bg-red-900 text-red-400" },
+  uploading:     { label: "Uploading",  cls: "bg-blue-900  text-blue-300"                  },
+  ready:         { label: "Ready",      cls: "bg-zinc-800  text-zinc-400"                  },
+  processing_ai: { label: "Analyzing…", cls: "bg-amber-900 text-amber-300 animate-pulse"   },
+  ai_ready:      { label: "AI Ready",   cls: "bg-green-900 text-green-400"                 },
+  error:         { label: "Error",      cls: "bg-red-900   text-red-400"                   },
+};
+
+const APPROVAL_BADGE: Record<AdminApprovalStatus, { label: string; cls: string }> = {
+  pending_review: { label: "Pending Review", cls: "bg-amber-900 text-amber-300 border border-amber-800" },
+  approved:       { label: "Approved",       cls: "bg-green-900 text-green-300 border border-green-800" },
+  needs_revision: { label: "Needs Revision", cls: "bg-red-900   text-red-300   border border-red-800"   },
 };
 
 const CAT_COLORS: Record<string, string> = {
@@ -37,19 +43,23 @@ function formatSize(bytes: number): string {
 }
 
 interface Props {
-  doc:          IntelligenceDocument;
-  isProcessing: boolean;
-  queueCount?:  number;
-  onView:       (doc: IntelligenceDocument) => void;
-  onProcess:    (doc: IntelligenceDocument) => void;
-  onDelete:     (doc: IntelligenceDocument) => void;
+  doc:              IntelligenceDocument;
+  isProcessing:     boolean;
+  queueCount?:      number;
+  onView:           (doc: IntelligenceDocument) => void;
+  onProcess:        (doc: IntelligenceDocument) => void;
+  onDelete:         (doc: IntelligenceDocument) => void;
+  onGenerateQueue?: (doc: IntelligenceDocument) => void;
 }
 
-export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete }: Props) {
-  const displayStatus = isProcessing ? "processing_ai" : doc.processingStatus;
-  const status        = STATUS_BADGE[displayStatus] ?? STATUS_BADGE.ready;
-  const border        = CAT_COLORS[doc.category] ?? "border-zinc-800";
-  const canProcess    = !isProcessing && (doc.processingStatus === "ready" || doc.processingStatus === "error");
+export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onGenerateQueue }: Props) {
+  const displayStatus  = isProcessing ? "processing_ai" : doc.processingStatus;
+  const status         = STATUS_BADGE[displayStatus] ?? STATUS_BADGE.ready;
+  const border         = CAT_COLORS[doc.category] ?? "border-zinc-800";
+  const canProcess     = !isProcessing && (doc.processingStatus === "ready" || doc.processingStatus === "error");
+  const approvalStatus = doc.adminApprovalStatus;
+  const isApproved     = approvalStatus === "approved";
+  const canGenerateQueue = isApproved && !!onGenerateQueue && (doc.contentIdeas?.length ?? 0) > 0 && queueCount === 0;
 
   return (
     <div className={`bg-zinc-900 border ${border} rounded-2xl p-4 flex flex-col gap-3 hover:border-zinc-600 transition-colors`}>
@@ -166,6 +176,21 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
         )}
       </div>
 
+      {/* Admin approval status — shown after AI processing */}
+      {approvalStatus && doc.processingStatus === "ai_ready" && (
+        <div className={`rounded-lg px-3 py-2 text-xs flex items-center justify-between gap-2 ${APPROVAL_BADGE[approvalStatus].cls}`}>
+          <span className="font-semibold">{APPROVAL_BADGE[approvalStatus].label}</span>
+          {approvalStatus === "pending_review" && (
+            <Link href="/vault/admin?tab=documents" className="underline hover:no-underline">
+              Review in Admin Vault →
+            </Link>
+          )}
+          {approvalStatus === "needs_revision" && doc.adminApprovalNotes && (
+            <span className="opacity-75 truncate">{doc.adminApprovalNotes}</span>
+          )}
+        </div>
+      )}
+
       {/* Footer actions */}
       <div className="flex items-center justify-between mt-auto pt-2 border-t border-zinc-800">
         <span className="text-zinc-600 text-xs">{new Date(doc.uploadedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
@@ -180,6 +205,14 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
           )}
           {isProcessing && (
             <span className="text-xs text-amber-400">Analyzing…</span>
+          )}
+          {canGenerateQueue && (
+            <button
+              onClick={() => onGenerateQueue!(doc)}
+              className="text-xs text-cyan-400 hover:text-cyan-300 font-semibold transition-colors"
+            >
+              Generate Queue Items
+            </button>
           )}
           <button
             onClick={() => onView(doc)}
