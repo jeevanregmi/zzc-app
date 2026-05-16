@@ -587,3 +587,179 @@ export function subscribeStructuredSchemes(
     },
   );
 }
+
+// ─── Signal Routes (admin-configurable routing rules) ─────────────────────────
+
+import type { SignalRoute, MarketRateSuggestion, SchemeSuggestion } from "../types/routing";
+import type { PageModule } from "../types/modules";
+
+const COL_SIGNAL_ROUTES        = "signal_routes";
+const COL_MARKET_RATE_SUGGESTS = "market_rate_suggestions";
+const COL_SCHEME_SUGGESTS      = "scheme_suggestions";
+const COL_PAGE_MODULES         = "page_modules";
+
+export async function upsertSignalRoute(
+  id: string,
+  data: Partial<Omit<SignalRoute, "id">>,
+): Promise<void> {
+  await setDoc(doc(db, COL_SIGNAL_ROUTES, id), {
+    ...data,
+    updatedAt: now(),
+  }, { merge: true });
+}
+
+export async function createSignalRoute(
+  data: Omit<SignalRoute, "id" | "createdAt" | "updatedAt" | "matchCount">,
+): Promise<string> {
+  const ref = await addDoc(collection(db, COL_SIGNAL_ROUTES), {
+    ...data,
+    matchCount: 0,
+    createdAt:  now(),
+    updatedAt:  now(),
+  });
+  return ref.id;
+}
+
+export async function deleteSignalRoute(id: string): Promise<void> {
+  await deleteDoc(doc(db, COL_SIGNAL_ROUTES, id));
+}
+
+export function subscribeSignalRoutes(
+  onChange: (routes: SignalRoute[]) => void,
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, COL_SIGNAL_ROUTES), orderBy("createdAt", "desc")),
+    snap => {
+      const routes = snap.docs.map(d => {
+        const data = d.data();
+        return {
+          ...data,
+          id:         d.id,
+          matchCount: data.matchCount ?? 0,
+          active:     data.active     ?? false,
+        } as SignalRoute;
+      });
+      onChange(routes);
+    },
+  );
+}
+
+export async function incrementRouteMatchCount(id: string): Promise<void> {
+  const { increment } = await import("firebase/firestore");
+  await updateDoc(doc(db, COL_SIGNAL_ROUTES, id), {
+    lastMatchAt: now(),
+    matchCount:  increment(1),
+  });
+}
+
+// ─── Market Rate Suggestions ──────────────────────────────────────────────────
+
+export async function createMarketRateSuggestion(
+  data: Omit<MarketRateSuggestion, "id" | "createdAt" | "updatedAt">,
+): Promise<string> {
+  const ref = await addDoc(collection(db, COL_MARKET_RATE_SUGGESTS), {
+    ...data,
+    createdAt: now(),
+    updatedAt: now(),
+  });
+  return ref.id;
+}
+
+export function subscribeMarketRateSuggestions(
+  onChange: (items: MarketRateSuggestion[]) => void,
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, COL_MARKET_RATE_SUGGESTS), orderBy("createdAt", "desc")),
+    snap => {
+      const items = snap.docs.map(d => ({
+        ...(d.data() as Omit<MarketRateSuggestion, "id">),
+        id: d.id,
+      } as MarketRateSuggestion));
+      onChange(items);
+    },
+  );
+}
+
+// ─── Scheme Suggestions ───────────────────────────────────────────────────────
+
+export async function createSchemeSuggestion(
+  data: Omit<SchemeSuggestion, "id" | "createdAt" | "updatedAt">,
+): Promise<string> {
+  const ref = await addDoc(collection(db, COL_SCHEME_SUGGESTS), {
+    ...data,
+    createdAt: now(),
+    updatedAt: now(),
+  });
+  return ref.id;
+}
+
+// ─── Page Modules ─────────────────────────────────────────────────────────────
+
+export async function upsertPageModule(
+  id: string,
+  data: Partial<Omit<PageModule, "id">>,
+): Promise<void> {
+  await setDoc(doc(db, COL_PAGE_MODULES, id), {
+    ...data,
+    updatedAt: now(),
+  }, { merge: true });
+}
+
+export async function createPageModule(
+  data: Omit<PageModule, "id" | "createdAt" | "updatedAt">,
+): Promise<string> {
+  const ref = await addDoc(collection(db, COL_PAGE_MODULES), {
+    ...data,
+    createdAt: now(),
+    updatedAt: now(),
+  });
+  return ref.id;
+}
+
+export async function deletePageModule(id: string): Promise<void> {
+  await deleteDoc(doc(db, COL_PAGE_MODULES, id));
+}
+
+export function subscribePageModules(
+  page: string | null,
+  onChange: (modules: PageModule[]) => void,
+): Unsubscribe {
+  const q = page
+    ? query(
+        collection(db, COL_PAGE_MODULES),
+        where("page",  "==", page),
+        orderBy("order", "asc"),
+      )
+    : query(
+        collection(db, COL_PAGE_MODULES),
+        orderBy("order", "asc"),
+      );
+
+  return onSnapshot(q, snap => {
+    const modules = snap.docs.map(d => ({
+      ...(d.data() as Omit<PageModule, "id">),
+      id: d.id,
+    } as PageModule));
+    onChange(modules);
+  });
+}
+
+export function subscribePublishedPageModules(
+  page: string,
+  onChange: (modules: PageModule[]) => void,
+): Unsubscribe {
+  const q = query(
+    collection(db, COL_PAGE_MODULES),
+    where("page",          "==", page),
+    where("publishStatus", "==", "published"),
+    where("hidden",        "==", false),
+    orderBy("order", "asc"),
+  );
+  return onSnapshot(q, snap => {
+    const modules = snap.docs.map(d => ({
+      ...(d.data() as Omit<PageModule, "id">),
+      id: d.id,
+    } as PageModule));
+    onChange(modules);
+  });
+}

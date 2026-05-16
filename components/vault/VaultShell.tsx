@@ -23,6 +23,7 @@ const NAV_GROUPS = [
     items: [
       { href: "/vault/admin",                  icon: "⬡", label: "Admin Vault"   },
       { href: "/vault/content/intelligence",   icon: "◉", label: "Signal Feed"   },
+      { href: "/vault/routing",                icon: "◈", label: "Routing"       },
       { href: "/vault/content/queue",          icon: "◆", label: "Content Queue" },
       { href: "/vault/documents",              icon: "◻", label: "Documents"     },
     ],

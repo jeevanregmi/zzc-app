@@ -25,8 +25,8 @@ export type DomainEventType =
   | "MediaAssetCreated"
   | "MediaAssetUpdated"
   | "MediaAssetDeleted"
-  | "EmbeddingGenerated"          // MediaAsset.embeddingId populated
-  | "TranscriptGenerated"         // MediaAsset.extractedText populated
+  | "EmbeddingGenerated"
+  | "TranscriptGenerated"
 
   // AI generation
   | "AIGenerationRequested"
@@ -50,7 +50,19 @@ export type DomainEventType =
 
   // Recommendations
   | "RecommendationSignalRefreshed"
-  | "RecommendationGenerated";
+  | "RecommendationGenerated"
+
+  // ── Publishing pipeline (new) ───────────────────────────────────────────
+  | "SignalIngested"              // new SourceSignal written from ingest worker
+  | "SignalRouted"                // signal matched one or more SignalRoutes
+  | "RouteExecuted"               // a single route fired and created downstream item
+  | "ContentStatusChanged"        // any publishable item advanced through PublishStatus
+  | "MarketRateSuggestionCreated" // route created a market rate suggestion
+  | "SchemeSuggestionCreated"     // route created a scheme suggestion
+  | "SchemePublished"             // admin published a structuredScheme
+  | "MarketRatePublished"         // admin published a market rate
+  | "PageModulePublished"         // admin published a page module
+  | "PageModuleUnpublished";      // admin unpublished a page module
 
 // ── Base event shape ──────────────────────────────────────────────────────────
 
@@ -110,22 +122,77 @@ export type RecommendationGeneratedPayload = {
   recommendedContentIds: string[];
 };
 
+// ── Publishing pipeline payload types ─────────────────────────────────────
+
+export type SignalIngestedPayload = {
+  signalId:       string;
+  sourceUrl:      string;
+  sourceName:     string;
+  relevanceScore: number;
+  taxonomyTags:   { topicId: string; sectorId: string; score: number }[];
+};
+
+export type SignalRoutedPayload = {
+  signalId:      string;
+  matchedRoutes: { routeId: string; routeName: string; destination: string }[];
+};
+
+export type RouteExecutedPayload = {
+  routeId:       string;
+  routeName:     string;
+  signalId:      string;
+  destination:   string;
+  action:        string;
+  createdItemId: string;
+};
+
+export type ContentStatusChangedPayload = {
+  contentType:   string;   // "scheme" | "market_rate" | "queue_item" | "page_module"
+  contentId:     string;
+  fromStatus:    string;
+  toStatus:      string;
+};
+
+export type SchemePublishedPayload = {
+  schemeId:      string;
+  schemeTitle:   string;
+};
+
+export type MarketRatePublishedPayload = {
+  rateId:        string;
+  rateLabel:     string;
+  value:         number;
+};
+
+export type PageModulePublishedPayload = {
+  moduleId:      string;
+  page:          string;
+  slot:          string;
+  moduleType:    string;
+};
+
 // ── Concrete event types (for strong typing in Workers) ───────────────────────
 
-export type MediaAssetCreatedEvent     = DomainEvent<MediaAssetCreatedPayload>;
-export type AIGenerationCompletedEvent = DomainEvent<AIGenerationCompletedPayload>;
-export type AudienceLeadCapturedEvent  = DomainEvent<AudienceLeadCapturedPayload>;
-export type ContentPublishedEvent      = DomainEvent<ContentPublishedPayload>;
-export type AnalyticsSnapshotEvent     = DomainEvent<AnalyticsSnapshotGeneratedPayload>;
+export type MediaAssetCreatedEvent       = DomainEvent<MediaAssetCreatedPayload>;
+export type AIGenerationCompletedEvent   = DomainEvent<AIGenerationCompletedPayload>;
+export type AudienceLeadCapturedEvent    = DomainEvent<AudienceLeadCapturedPayload>;
+export type ContentPublishedEvent        = DomainEvent<ContentPublishedPayload>;
+export type AnalyticsSnapshotEvent       = DomainEvent<AnalyticsSnapshotGeneratedPayload>;
 export type RecommendationGeneratedEvent = DomainEvent<RecommendationGeneratedPayload>;
+export type SignalIngestedEvent          = DomainEvent<SignalIngestedPayload>;
+export type SignalRoutedEvent            = DomainEvent<SignalRoutedPayload>;
+export type RouteExecutedEvent           = DomainEvent<RouteExecutedPayload>;
+export type ContentStatusChangedEvent    = DomainEvent<ContentStatusChangedPayload>;
+export type SchemePublishedEvent         = DomainEvent<SchemePublishedPayload>;
+export type MarketRatePublishedEvent     = DomainEvent<MarketRatePublishedPayload>;
+export type PageModulePublishedEvent     = DomainEvent<PageModulePublishedPayload>;
 
 // ── EventEmitter interface (Firestore adapter implements this) ────────────────
-// Keeps the domain layer independent of Firestore SDK details.
 
 export interface EventEmitter {
   emit<T extends Record<string, unknown>>(
     ownerId:   string,
     eventType: DomainEventType,
     payload:   T,
-  ): Promise<string>;              // returns event ID
+  ): Promise<string>;
 }

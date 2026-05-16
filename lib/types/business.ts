@@ -384,7 +384,7 @@ export interface ContentPipelineJob {
 
 // ── Publish Queue ─────────────────────────────────────────────────────────────
 
-export type PublishStatus = "queued" | "publishing" | "published" | "failed" | "cancelled";
+export type SocialPublishStatus = "queued" | "publishing" | "published" | "failed" | "cancelled";
 
 export interface PublishQueueItem {
   id:             string;
@@ -393,7 +393,7 @@ export interface PublishQueueItem {
   platform:       ContentPlatform;
   scheduledAt:    string;
   publishedAt:    string;
-  status:         PublishStatus;
+  status:         SocialPublishStatus;
   platformPostId: string;        // returned ID after publish
   errorMsg:       string;
   retryCount:     number;
