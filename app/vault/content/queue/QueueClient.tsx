@@ -6,6 +6,7 @@ import { useVaultAuth } from "../../../../hooks/vault/useVaultAuth";
 import { useQueueItems } from "../../../../hooks/vault/useQueueItems";
 import { updateQueueItem, deleteQueueItem } from "../../../../lib/vault/firestore";
 import type { QueueItem, QueueItemStatus } from "../../../../lib/types/queue";
+import { useLearningMode } from "../../../../contexts/LearningModeContext";
 
 // ─── Display helpers ──────────────────────────────────────────────────────────
 
@@ -198,12 +199,14 @@ function QueueCard({
           <>
             <button
               onClick={() => onApprove(item.id)}
+              title="Approve: marks this idea as approved so it can be sent to AI Studio for script/thumbnail generation"
               className="text-xs bg-green-600 hover:bg-green-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
             >
               Approve
             </button>
             <button
               onClick={() => onReject(item.id)}
+              title="Reject: removes from pending — does not delete, you can see it in the Rejected tab"
               className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-semibold px-3 py-1.5 rounded-lg transition-colors"
             >
               Reject
@@ -213,9 +216,10 @@ function QueueCard({
         {(item.status === "approved" || item.status === "in_production") && (
           <Link
             href={studioUrl}
+            title="Open in AI Studio — generates a full video script or thumbnail prompt using AWS Bedrock (Claude Sonnet 4.6). Expensive — uses daily token quota."
             className="text-xs bg-amber-600 hover:bg-amber-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
           >
-            → AI Studio
+            → AI Studio 🔴
           </Link>
         )}
         {item.status !== "archived" && item.status !== "rejected" && (
@@ -250,6 +254,7 @@ function QueueCard({
 // ─── Main client ──────────────────────────────────────────────────────────────
 
 export default function QueueClient() {
+  const { on: learn } = useLearningMode();
   const { user } = useVaultAuth();
   const { items, loading } = useQueueItems(user?.uid ?? null, "all");
 
@@ -308,6 +313,28 @@ export default function QueueClient() {
           )}
         </div>
       </div>
+
+      {/* Learning mode — workflow explainer */}
+      {learn && !loading && (
+        <div className="mb-6 bg-cyan-950/30 border border-cyan-900/50 rounded-2xl p-5">
+          <p className="text-xs font-semibold text-cyan-400 uppercase tracking-widest mb-3">How Content Queue Works</p>
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 text-[10px] text-zinc-400">
+            {[
+              { step: "Signal Feed", desc: "Raw intelligence from ingest-url", cost: "🟢 Free (already paid)" },
+              { step: "Validate →\nGenerate Idea", desc: "Claude Haiku writes content brief + hooks", cost: "🟢 Cheap (~2k tokens)" },
+              { step: "Pending Queue", desc: "You review: Approve or Reject", cost: "Free — no AI" },
+              { step: "AI Studio", desc: "Claude Sonnet writes full script / thumbnail prompts", cost: "🔴 Expensive (Bedrock)" },
+              { step: "In Production", desc: "You film + edit + publish", cost: "Free" },
+            ].map((s, i) => (
+              <div key={i} className="bg-zinc-900 rounded-lg p-2.5 space-y-1">
+                <p className="font-semibold text-zinc-300 whitespace-pre-line">{s.step}</p>
+                <p>{s.desc}</p>
+                <p className="text-[9px]">{s.cost}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* How this works — only show when empty */}
       {!loading && items.length === 0 && (

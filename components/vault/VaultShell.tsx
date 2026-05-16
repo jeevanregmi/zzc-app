@@ -9,6 +9,7 @@ import { useVaultAuth } from "../../hooks/vault/useVaultAuth";
 import { useIntelligenceDocs } from "../../hooks/vault/useIntelligenceDocs";
 import { useQueueItems } from "../../hooks/vault/useQueueItems";
 import { useSourceSignals } from "../../hooks/vault/useSourceSignals";
+import { LearningModeProvider, useLearningMode } from "../../contexts/LearningModeContext";
 
 const NAV_GROUPS = [
   {
@@ -55,6 +56,26 @@ const NAV_GROUPS = [
 ];
 
 export const VAULT_NAV = NAV_GROUPS.flatMap(g => g.items);
+
+function LearningModeToggle() {
+  const { on, toggle } = useLearningMode();
+  return (
+    <button
+      onClick={toggle}
+      title={on ? "Turn off learning mode" : "Turn on learning mode — shows AI cost labels, how-it-works explanations, and workflow hints"}
+      className={
+        "w-full flex items-center gap-2.5 px-3 py-1.5 text-xs transition-colors rounded-lg " +
+        (on
+          ? "text-cyan-400 bg-cyan-950/40 hover:bg-cyan-950/60"
+          : "text-zinc-600 hover:text-zinc-400 hover:bg-zinc-900")
+      }
+    >
+      <span className="w-4 text-center">◎</span>
+      <span>{on ? "Learning Mode ON" : "Learning Mode"}</span>
+      {on && <span className="ml-auto text-[9px] bg-cyan-900 text-cyan-400 px-1.5 py-0.5 rounded-full font-bold">ON</span>}
+    </button>
+  );
+}
 
 export function VaultShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -113,6 +134,7 @@ export function VaultShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
+    <LearningModeProvider>
     <div className="min-h-screen bg-black text-white flex">
 
       {/* Sidebar — desktop */}
@@ -145,6 +167,7 @@ export function VaultShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="p-2 border-t border-zinc-900 space-y-0.5">
+          <LearningModeToggle />
           <Link
             href="/"
             className="flex items-center gap-2.5 px-3 py-1.5 text-xs text-zinc-600 hover:text-zinc-400 transition-colors rounded-lg hover:bg-zinc-900"
@@ -207,5 +230,6 @@ export function VaultShell({ children }: { children: React.ReactNode }) {
         {children}
       </main>
     </div>
+    </LearningModeProvider>
   );
 }

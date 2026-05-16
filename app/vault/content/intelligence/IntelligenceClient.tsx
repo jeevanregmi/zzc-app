@@ -6,6 +6,7 @@ import { useSourceSignals }      from "../../../../hooks/vault/useSourceSignals"
 import { useMonitoredSources }   from "../../../../hooks/vault/useMonitoredSources";
 import { useIntelligenceTopics } from "../../../../hooks/vault/useIntelligenceTopics";
 import { routeSignalToSchemes }  from "../../../../lib/vault/scheme-routing";
+import { useLearningMode }       from "../../../../contexts/LearningModeContext";
 import {
   updateSourceSignal,
   deleteSourceSignal,
@@ -161,6 +162,7 @@ function SignalDetail({
   ownerId:   string;
   onDeleted: () => void;
 }) {
+  const { on: learn }     = useLearningMode();
   const [busy,            setBusy]           = useState(false);
   const [generateBusy,    setGenerateBusy]   = useState(false);
   const [generateMsg,     setGenerateMsg]    = useState("");
@@ -415,9 +417,18 @@ function SignalDetail({
           {/* Generate content idea */}
           {(signal.status === "validated" || signal.status === "promoted") && (
             <button onClick={generateContent} disabled={generateBusy || generateStatus === "ok"}
+              title="Calls Claude Haiku to generate a content brief + hooks, then writes to Content Queue"
               className="w-full py-2 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 text-sm rounded-lg transition-all disabled:opacity-40">
               {generateBusy ? "Generating…" : generateStatus === "ok" ? "✓ Added to queue" : "🎬 Generate Content Idea"}
+              {learn && generateStatus !== "ok" && (
+                <span className="ml-2 text-[9px] bg-green-900 text-green-400 px-1.5 py-0.5 rounded font-bold">🟢 Cheap · Haiku</span>
+              )}
             </button>
+          )}
+          {learn && (signal.status === "validated" || signal.status === "promoted") && generateStatus !== "ok" && (
+            <p className="text-[10px] text-zinc-600 px-1">
+              Generates title, content type, platform, brief + 3 hooks. Result goes to Content Queue → AI Studio for script generation.
+            </p>
           )}
 
           {/* Delete */}
@@ -444,6 +455,7 @@ function ConfigPanel({
   ownerId: string;
   signals: SourceSignal[];
 }) {
+  const { on: learn }   = useLearningMode();
   const [newTopic,      setNewTopic]      = useState("");
   const [topicError,    setTopicError]    = useState("");
   const [newUrl,        setNewUrl]        = useState("");
@@ -592,6 +604,17 @@ function ConfigPanel({
         <p className="text-[11px] text-zinc-600 mb-2 leading-relaxed">
           Paste any URL — Claude AI reads it, extracts key facts, scores relevance, and adds it as a raw signal. Uses Haiku (cheap). Takes ~5–15s.
         </p>
+        {learn && (
+          <div className="mb-2 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2 text-[10px] text-zinc-500 space-y-0.5">
+            <p className="font-semibold text-zinc-400 mb-1">Pipeline: URL → Signal</p>
+            <p>1. You paste a URL here</p>
+            <p>2. /api/ingest-url (Haiku) fetches + parses the page</p>
+            <p>3. AI extracts title, summary, topics, relevance score (0–1), credibility</p>
+            <p>4. Signal saved as <span className="text-amber-400">raw</span> — you review in Signal Feed</p>
+            <p>5. Validate → Promote → Generate Content Idea → AI Studio</p>
+            <p className="text-green-500 font-semibold mt-1">🟢 Cost: Cheap (Haiku, ~2k tokens per URL)</p>
+          </div>
+        )}
         <div className="flex gap-2 mb-1">
           <input
             value={ingestUrl}
@@ -603,6 +626,7 @@ function ConfigPanel({
           <button
             onClick={runIngest}
             disabled={ingestStatus === "loading" || !ingestUrl.trim()}
+            title="Calls Claude Haiku to read the URL, extract intelligence, and score relevance against your topics"
             className="shrink-0 px-3 py-2 bg-green-600 hover:bg-green-500 text-black text-sm font-bold rounded-lg transition-all disabled:opacity-40"
           >
             {ingestStatus === "loading" ? "…" : "⚡"}

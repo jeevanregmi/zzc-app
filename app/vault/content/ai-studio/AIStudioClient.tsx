@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { updateQueueItem, getQueueItem } from "../../../../lib/vault/firestore";
 import type { QueueItem } from "../../../../lib/types/queue";
+import { useLearningMode } from "../../../../contexts/LearningModeContext";
 
 type Tool = "script" | "thumbnail-prompt";
 type ScriptFormat = "long-form" | "short" | "reel";
@@ -57,6 +58,7 @@ const FORMAT_MAP: Record<string, ScriptFormat> = {
 };
 
 export default function AIStudioClient() {
+  const { on: learn } = useLearningMode();
   const searchParams = useSearchParams();
   const queueId    = searchParams.get("queueId") ?? null;
   const queueTitle = searchParams.get("title")   ? decodeURIComponent(searchParams.get("title")!) : null;
@@ -324,12 +326,22 @@ export default function AIStudioClient() {
                 className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500"
               />
             </div>
+            {learn && (
+              <div className="text-[10px] text-zinc-500 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 space-y-0.5">
+                <p className="font-semibold text-zinc-400">⚡ Generate Script</p>
+                <p>Provider: AWS Bedrock (us-east-1) · Model: Claude Sonnet 4.6 (inference profile)</p>
+                <p className="text-red-400 font-semibold">🔴 Expensive · ~8–15k tokens · Bedrock daily quota applies</p>
+                <p>Output: full script JSON with hook, sections, CTA, caption, tags</p>
+                <p className="text-amber-400">If you see a 429 error, quota reset is midnight UTC.</p>
+              </div>
+            )}
             <button
               onClick={generateScript}
               disabled={!topic || loading}
+              title="Calls Claude Sonnet 4.6 on AWS Bedrock to generate a full video script. Uses daily token quota."
               className="w-full py-2.5 bg-green-600 hover:bg-green-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-black font-bold rounded-lg text-sm transition-colors"
             >
-              {loading ? "Generating…" : "⚡ Generate Script"}
+              {loading ? "Generating…" : `⚡ Generate Script${learn ? " 🔴" : ""}`}
             </button>
           </div>
 
@@ -406,12 +418,21 @@ export default function AIStudioClient() {
                 ))}
               </div>
             </div>
+            {learn && (
+              <div className="text-[10px] text-zinc-500 bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2 space-y-0.5">
+                <p className="font-semibold text-zinc-400">⚡ Generate Thumbnail Prompts</p>
+                <p>Provider: AWS Bedrock (us-east-1) · Model: Claude Sonnet 4.6 (inference profile)</p>
+                <p className="text-red-400 font-semibold">🔴 Expensive · Shares Bedrock daily quota with Script Generator</p>
+                <p>Output: 3 Midjourney/DALL-E prompts + Canva layout instructions</p>
+              </div>
+            )}
             <button
               onClick={generateThumbnailPrompt}
               disabled={!thumbTitle || !headline || loading}
+              title="Calls Claude Sonnet 4.6 on AWS Bedrock to generate 3 thumbnail prompt variants. Uses daily token quota."
               className="w-full py-2.5 bg-green-600 hover:bg-green-500 disabled:bg-zinc-800 disabled:text-zinc-600 text-black font-bold rounded-lg text-sm transition-colors"
             >
-              {loading ? "Generating…" : "⚡ Generate Prompts"}
+              {loading ? "Generating…" : `⚡ Generate Prompts${learn ? " 🔴" : ""}`}
             </button>
           </div>
 
