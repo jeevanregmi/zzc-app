@@ -273,14 +273,14 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
   } catch (err) {
     return new Response(
       JSON.stringify({ error: `Could not fetch URL: ${String(err)}` }),
-      { status: 502, headers: CORS },
+      { status: 500, headers: CORS },
     );
   }
 
   if (!fetchRes.ok) {
     return new Response(
       JSON.stringify({ error: `URL returned HTTP ${fetchRes.status}` }),
-      { status: 502, headers: CORS },
+      { status: 500, headers: CORS },
     );
   }
 
@@ -350,7 +350,7 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
   } catch (err) {
     return new Response(
       JSON.stringify({ error: `Anthropic API unreachable: ${String(err)}` }),
-      { status: 502, headers: CORS },
+      { status: 500, headers: CORS },
     );
   }
 
@@ -359,7 +359,7 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     console.error("Anthropic error:", anthropicRes.status, errText);
     return new Response(
       JSON.stringify({ error: "AI analysis failed. Check ANTHROPIC_API_KEY." }),
-      { status: 502, headers: CORS },
+      { status: 500, headers: CORS },
     );
   }
 

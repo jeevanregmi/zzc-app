@@ -479,7 +479,8 @@ function ConfigPanel({
           topics:     topics.map(t => t.name),
         }),
       });
-      const data = await res.json() as {
+      const rawText = await res.text();
+      let data: {
         ok?: boolean; error?: string;
         title?: string; summary?: string; body?: string;
         relevanceScore?: number; credibility?: string;
@@ -488,9 +489,16 @@ function ConfigPanel({
         taxonomyTags?: { topicId: string; sectorId: string; score: number }[];
         primarySectorId?: string;
       };
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        setIngestStatus("error");
+        setIngestMsg(`Server error (HTTP ${res.status}): ${rawText.slice(0, 120)}`);
+        return;
+      }
       if (!res.ok || !data.ok) {
         setIngestStatus("error");
-        setIngestMsg(data.error ?? "Ingest failed — check the URL and try again");
+        setIngestMsg(data.error ?? `Ingest failed (HTTP ${res.status}) — check the URL and try again`);
         return;
       }
       await createSourceSignal({
@@ -580,7 +588,10 @@ function ConfigPanel({
 
       {/* Quick Ingest */}
       <section>
-        <div className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Quick Ingest URL</div>
+        <div className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-1">Quick Ingest URL</div>
+        <p className="text-[11px] text-zinc-600 mb-2 leading-relaxed">
+          Paste any URL — Claude AI reads it, extracts key facts, scores relevance, and adds it as a raw signal. Uses Haiku (cheap). Takes ~5–15s.
+        </p>
         <div className="flex gap-2 mb-1">
           <input
             value={ingestUrl}
@@ -609,8 +620,11 @@ function ConfigPanel({
 
       {/* Tracked Topics */}
       <section>
-        <div className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Tracked Topics</div>
-        {topics.length === 0 && <p className="text-zinc-600 text-xs mb-2">No topics yet.</p>}
+        <div className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-1">Tracked Topics</div>
+        <p className="text-[11px] text-zinc-600 mb-2 leading-relaxed">
+          Topics tell the AI what matters to ZZC (e.g. "EPF", "Youth Finance"). Ingest uses these to score relevance.
+        </p>
+        {topics.length === 0 && <p className="text-zinc-600 text-xs mb-2">No topics yet — add one below to guide AI relevance scoring.</p>}
         <div className="space-y-1 mb-2">
           {topics.map(t => (
             <div key={t.id} className="flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2">
@@ -640,8 +654,11 @@ function ConfigPanel({
 
       {/* Monitored Sources */}
       <section>
-        <div className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-2">Monitored Sources</div>
-        {sources.length === 0 && <p className="text-zinc-600 text-xs mb-2">No sources yet.</p>}
+        <div className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-1">Monitored Sources</div>
+        <p className="text-[11px] text-zinc-600 mb-2 leading-relaxed">
+          Sources are auto-checked hourly by a GitHub Actions cron. Each run calls Quick Ingest on every active URL. New content becomes a raw signal automatically.
+        </p>
+        {sources.length === 0 && <p className="text-zinc-600 text-xs mb-2">No sources yet — add an RSS feed or news URL to enable auto-polling.</p>}
         <div className="space-y-1.5 mb-2">
           {sources.map(s => (
             <div key={s.id} className="bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2">

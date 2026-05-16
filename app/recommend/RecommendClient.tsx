@@ -412,12 +412,27 @@ export default function RecommendClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Unknown error");
+
+      const rawText = await res.text();
+      let data: { error?: string } & Partial<Result>;
+      try {
+        data = JSON.parse(rawText) as typeof data;
+      } catch {
+        setErrorMsg(`AI सेवा अस्थायी रूपमा बन्द छ (HTTP ${res.status})। केही मिनेट पछि पुनः प्रयास गर्नुस्।`);
+        setStep("error");
+        return;
+      }
+
+      if (!res.ok) {
+        setErrorMsg(data.error ?? `सर्भर त्रुटि (HTTP ${res.status})। केही मिनेट पछि पुनः प्रयास गर्नुस्।`);
+        setStep("error");
+        return;
+      }
+
       setResult(data as Result);
       setStep("result");
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : "अज्ञात त्रुटि भयो।");
+    } catch {
+      setErrorMsg("नेटवर्क समस्या भयो। इन्टरनेट जडान जाँच गर्नुस् र पुनः प्रयास गर्नुस्।");
       setStep("error");
     }
   };
