@@ -24,3 +24,5 @@
 
 export type { ITextProvider, IImageProvider, IEmbedProvider, AIProviderConfig } from "../types";
 export { PROVIDER_CONFIGS } from "./config";
+export { createAnthropicProvider } from "./anthropic";
+export { createBedrockProvider }   from "./bedrock";
