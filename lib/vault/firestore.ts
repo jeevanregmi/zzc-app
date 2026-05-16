@@ -15,7 +15,7 @@
  */
 
 import {
-  collection, doc, addDoc, updateDoc, deleteDoc, getDoc,
+  collection, doc, addDoc, updateDoc, deleteDoc, getDoc, setDoc,
   onSnapshot, query, where, orderBy, Timestamp,
   type Unsubscribe,
 } from "firebase/firestore";
@@ -493,4 +493,97 @@ export function subscribeMarketRates(
     } as MarketRateDoc));
     onChange(rates);
   });
+}
+
+// ─── Structured Schemes (Public scheme catalogue) ─────────────────────────────
+
+const COL_STRUCTURED_SCHEMES = "structuredSchemes";
+
+export interface StructuredScheme {
+  id:               string;
+  title:            string;
+  titleNepali:      string;
+  organization:     string;
+  category:         string;
+  subcategory:      string;
+  summary:          string;
+  nepaliSummary:    string;
+  interestRate:     number | null;
+  annualReturn:     number | null;
+  riskLevel:        string;
+  liquidity:        string;
+  benefits:         string[];
+  eligibility:      string[];
+  documents:        string[];
+  compareTags:      string[];
+  loanLimit:        string | null;
+  retirementSupport: boolean;
+  medicalCoverage:  boolean;
+  hasInsurance:     boolean;
+  calculatorEnabled: boolean;
+  sourceUrl:        string;
+  verified:         boolean;
+  verifiedBy:       string;
+  verifiedAt:       string;
+  published:        boolean;
+  createdAt:        string;
+  updatedAt:        string;
+}
+
+export async function upsertStructuredScheme(
+  id: string,
+  data: Partial<Omit<StructuredScheme, "id">>,
+): Promise<void> {
+  await setDoc(doc(db, COL_STRUCTURED_SCHEMES, id), {
+    ...data,
+    updatedAt: now(),
+  }, { merge: true });
+}
+
+export async function deleteStructuredScheme(id: string): Promise<void> {
+  await deleteDoc(doc(db, COL_STRUCTURED_SCHEMES, id));
+}
+
+export function subscribeStructuredSchemes(
+  onChange: (schemes: StructuredScheme[]) => void,
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, COL_STRUCTURED_SCHEMES), orderBy("updatedAt", "desc")),
+    snap => {
+      const schemes = snap.docs.map(d => {
+        const data = d.data();
+        return {
+          id:               d.id,
+          title:            data.title            ?? "",
+          titleNepali:      data.titleNepali      ?? "",
+          organization:     data.organization     ?? "",
+          category:         data.category         ?? "",
+          subcategory:      data.subcategory       ?? "",
+          summary:          data.summary           ?? "",
+          nepaliSummary:    data.nepaliSummary     ?? "",
+          interestRate:     data.interestRate      ?? null,
+          annualReturn:     data.annualReturn      ?? null,
+          riskLevel:        data.riskLevel         ?? "",
+          liquidity:        data.liquidity         ?? "",
+          benefits:         data.benefits          ?? [],
+          eligibility:      data.eligibility       ?? [],
+          documents:        data.documents         ?? [],
+          compareTags:      data.compareTags       ?? [],
+          loanLimit:        data.loanLimit         ?? null,
+          retirementSupport: data.retirementSupport ?? false,
+          medicalCoverage:  data.medicalCoverage   ?? false,
+          hasInsurance:     data.hasInsurance      ?? false,
+          calculatorEnabled: data.calculatorEnabled ?? false,
+          sourceUrl:        data.sourceUrl         ?? "",
+          verified:         data.verified          ?? false,
+          verifiedBy:       data.verifiedBy        ?? "",
+          verifiedAt:       data.verifiedAt        ?? "",
+          published:        data.published         ?? false,
+          createdAt:        data.createdAt         ?? now(),
+          updatedAt:        data.updatedAt         ?? now(),
+        } as StructuredScheme;
+      });
+      onChange(schemes);
+    },
+  );
 }
