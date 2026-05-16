@@ -31,7 +31,7 @@ const CORS = {
   "Content-Type": "application/json",
 };
 
-const MODEL_ID = "anthropic.claude-3-5-sonnet-20241022-v2:0";
+const MODEL_ID = "anthropic.claude-sonnet-4-6";
 
 function buildSignalSection(body: ScriptRequest): string {
   const { signalBrief, signalHooks, signalTags } = body;
@@ -165,7 +165,7 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     if (!res.ok) {
       const err = await res.text();
       console.error("Bedrock error:", res.status, err);
-      return new Response(JSON.stringify({ error: "AI service unavailable. Retry." }), { status: 502, headers: CORS });
+      return new Response(JSON.stringify({ error: "AI service unavailable. Retry.", bedrockStatus: res.status, bedrockError: err.slice(0, 500) }), { status: 500, headers: CORS });
     }
 
     const raw = (await res.json()) as { content: Array<{ type: string; text: string }> };
