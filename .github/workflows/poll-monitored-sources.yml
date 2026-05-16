@@ -1,0 +1,43 @@
+name: Poll Monitored Sources
+
+# Task 3A — Hourly intelligence collection from active monitored sources.
+# No Bedrock dependency. Writes raw SourceSignals only; admin validates in vault.
+on:
+  schedule:
+    # Hourly at :30, offset from update-rates (:15) to avoid burst
+    - cron: "30 * * * *"
+  workflow_dispatch:
+
+jobs:
+  poll:
+    name: Poll & Ingest Active Sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install production dependencies
+        run: npm ci --omit=dev
+
+      - name: Poll monitored sources
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          SITE_URL: "https://zzc.jeevanregmi.com.np"
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: node scripts/poll-monitored-sources.js
+
+      - name: Upload log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: poll-failure-log
+          path: /tmp/poll.log
+          retention-days: 7
