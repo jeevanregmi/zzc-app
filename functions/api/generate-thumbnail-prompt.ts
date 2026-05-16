@@ -31,7 +31,7 @@ const CORS = {
   "Content-Type": "application/json",
 };
 
-const MODEL_ID = "anthropic.claude-sonnet-4-6";
+const MODEL_ID = "us.anthropic.claude-sonnet-4-6";
 
 const BASE_STYLE = `Professional YouTube thumbnail for ZZC, a Nepal Gen Z fintech education channel.
 Style: dark background (#000 or #18181b), bold green (#22c55e) accents, white high-contrast text.

@@ -31,7 +31,7 @@ const CORS = {
   "Content-Type": "application/json",
 };
 
-const MODEL_ID = "anthropic.claude-sonnet-4-6";
+const MODEL_ID = "us.anthropic.claude-sonnet-4-6";
 
 function buildSignalSection(body: ScriptRequest): string {
   const { signalBrief, signalHooks, signalTags } = body;
