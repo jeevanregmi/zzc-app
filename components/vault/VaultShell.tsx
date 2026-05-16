@@ -38,10 +38,11 @@ const NAV_GROUPS = [
   {
     label: "Operations",
     items: [
-      { href: "/vault/business",  icon: "◈", label: "Business BI" },
-      { href: "/vault/analytics", icon: "◉", label: "Analytics"   },
-      { href: "/vault/tasks",     icon: "◻", label: "Tasks"       },
-      { href: "/vault/calendar",  icon: "◆", label: "Calendar"    },
+      { href: "/vault/public-data", icon: "◈", label: "Public Data"  },
+      { href: "/vault/business",    icon: "◈", label: "Business BI"  },
+      { href: "/vault/analytics",   icon: "◉", label: "Analytics"    },
+      { href: "/vault/tasks",       icon: "◻", label: "Tasks"        },
+      { href: "/vault/calendar",    icon: "◆", label: "Calendar"     },
     ],
   },
   {

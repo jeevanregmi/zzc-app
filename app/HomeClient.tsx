@@ -116,7 +116,7 @@ export default function Home() {
   const [email, setEmail] = useState("");
   const [emailStatus, setEmailStatus] = useState<"idle" | "submitting" | "success" | "error">("idle");
 
-  const { rates, isFallback } = useMarketRates();
+  const { rates, hasVerifiedData, updatedAt: ratesUpdatedAt, source: ratesSource } = useMarketRates();
 
   useEffect(() => {
     const fetchSchemes = async () => {
@@ -212,32 +212,41 @@ export default function Home() {
         </div>
       </section>
 
-      {/* ── Live Intelligence Ticker ── */}
+      {/* ── Market Rates Ticker ── */}
       <section className="bg-zinc-950 border-b border-zinc-900 px-4 sm:px-6 py-3">
         <div className="max-w-7xl mx-auto">
-          <div className="flex items-center gap-4 overflow-x-auto scrollbar-none">
-            <span className={`text-[10px] font-mono font-bold tracking-widest shrink-0 ${isFallback ? "text-zinc-600" : "text-green-600"}`}>
-              {isFallback ? "EST." : "LIVE"}
-            </span>
-            <div className="w-px h-3.5 bg-zinc-800 shrink-0" />
-            {([
-              { label: "EPF",     value: `${rates.epfRate}%`,         color: "text-blue-400"   },
-              { label: "SSF",     value: `${rates.ssfRate}%`,         color: "text-orange-400" },
-              { label: "FD",      value: `${rates.fdRate}%`,          color: "text-green-400"  },
-              { label: "NEPSE",   value: `~${rates.nepseAvgReturn}%`, color: "text-purple-400" },
-              { label: "USD/NPR", value: `रु${rates.usdToNprRate}`,   color: "text-zinc-300"   },
-            ] as const).map((r, i) => (
-              <div key={r.label} className={`flex items-baseline gap-1.5 shrink-0 ${i > 0 ? "pl-4 border-l border-zinc-800" : ""}`}>
-                <span className="text-zinc-600 text-xs font-mono">{r.label}</span>
-                <span className={`text-sm font-bold font-mono ${r.color}`}>{r.value}</span>
+          {hasVerifiedData ? (
+            <div className="flex items-center gap-4 overflow-x-auto scrollbar-none">
+              <span className="text-green-600 text-[10px] font-mono font-bold tracking-widest shrink-0">VERIFIED</span>
+              <div className="w-px h-3.5 bg-zinc-800 shrink-0" />
+              {([
+                { label: "EPF",     value: `${rates.epfRate}%`,         color: "text-blue-400"   },
+                { label: "SSF",     value: `${rates.ssfRate}%`,         color: "text-orange-400" },
+                { label: "FD",      value: `${rates.fdRate}%`,          color: "text-green-400"  },
+                { label: "NEPSE",   value: `~${rates.nepseAvgReturn}%`, color: "text-purple-400" },
+                { label: "USD/NPR", value: `रु${rates.usdToNprRate}`,   color: "text-zinc-300"   },
+              ] as const).map((r, i) => (
+                <div key={r.label} className={`flex items-baseline gap-1.5 shrink-0 ${i > 0 ? "pl-4 border-l border-zinc-800" : ""}`}>
+                  <span className="text-zinc-600 text-xs font-mono">{r.label}</span>
+                  <span className={`text-sm font-bold font-mono ${r.color}`}>{r.value}</span>
+                </div>
+              ))}
+              <div className="ml-auto shrink-0 hidden sm:flex flex-col items-end gap-0.5">
+                {ratesUpdatedAt && (
+                  <span className="text-zinc-700 text-[10px] font-mono">अपडेट: {ratesUpdatedAt}</span>
+                )}
+                {ratesSource && (
+                  <span className="text-zinc-700 text-[10px]">स्रोत: {ratesSource}</span>
+                )}
               </div>
-            ))}
-            {!isFallback && (
-              <span className="text-zinc-700 text-[10px] font-mono ml-auto shrink-0 hidden sm:block">
-                अपडेट: {rates.updatedAt}
-              </span>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3">
+              <span className="text-zinc-700 text-[10px] font-mono font-bold tracking-widest">दर डेटा</span>
+              <span className="text-zinc-600 text-xs">Admin द्वारा अझै प्रमाणीकरण गरिएको छैन</span>
+              <span className="text-zinc-700 text-[10px] font-mono">— Vault → Public Data मा अपडेट गर्नुस्</span>
+            </div>
+          )}
         </div>
       </section>
 

@@ -449,3 +449,48 @@ export function subscribeIntelligenceTopics(
     onChange(items);
   });
 }
+
+// ─── Market Rates (Public Data Control) ──────────────────────────────────────
+
+const COL_MARKET_RATES = "market_rates";
+
+export interface MarketRateDoc {
+  id:         string;
+  label:      string;
+  value:      number;
+  source:     string;
+  sourceUrl:  string;
+  updatedAt:  string;
+  verified:   boolean;
+  verifiedBy: string;
+  verifiedAt: string;
+  published:  boolean;
+}
+
+export async function setMarketRate(
+  id: string,
+  patch: Partial<Omit<MarketRateDoc, "id">>,
+): Promise<void> {
+  await updateDoc(doc(db, COL_MARKET_RATES, id), {
+    ...patch,
+    updatedAt: now(),
+  });
+}
+
+export function subscribeMarketRates(
+  onChange: (rates: MarketRateDoc[]) => void,
+): Unsubscribe {
+  return onSnapshot(collection(db, COL_MARKET_RATES), snap => {
+    const rates = snap.docs.map(d => ({
+      ...(d.data() as Omit<MarketRateDoc, "id">),
+      id:        d.id,
+      verified:  d.data().verified  ?? false,
+      published: d.data().published ?? false,
+      source:    d.data().source    ?? "",
+      sourceUrl: d.data().sourceUrl ?? "",
+      verifiedBy: d.data().verifiedBy ?? "",
+      verifiedAt: d.data().verifiedAt ?? "",
+    } as MarketRateDoc));
+    onChange(rates);
+  });
+}

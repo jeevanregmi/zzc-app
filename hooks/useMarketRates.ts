@@ -5,59 +5,94 @@ import { collection, onSnapshot, query } from "firebase/firestore";
 import { db } from "../app/firebase";
 import type { MarketRateSnapshot } from "../lib/types/financial";
 
-// Fallback used when Firestore has no rates or during loading
-const FALLBACK: MarketRateSnapshot = {
-  inflationRate:  6.5,   // NRB headline CPI avg 2020-2025
-  riskFreeRate:   6.5,   // 91-day T-bill proxy
-  nepseAvgReturn: 12.0,  // NEPSE 3-year rolling avg
-  fdRate:         9.0,   // commercial bank FD avg
-  epfRate:        8.5,   // EPF declared FY 2023/24
-  ssfRate:        8.5,   // SSF declared FY 2023/24
-  usdToNprRate:   133,   // mid-market rate
-  updatedAt:      "2025-01-01",
+/**
+ * Calculator-safe defaults — used ONLY for the calculator and internal tools.
+ * Never displayed publicly as "live" data.
+ */
+export const CALCULATOR_DEFAULTS: MarketRateSnapshot = {
+  inflationRate:  6.5,
+  riskFreeRate:   6.5,
+  nepseAvgReturn: 12.0,
+  fdRate:         9.0,
+  epfRate:        8.5,
+  ssfRate:        8.5,
+  usdToNprRate:   133,
+  updatedAt:      "—",
 };
 
 /**
  * useMarketRates — subscribes to the `market_rates` Firestore collection.
  *
- * Firestore document shape: { id, label, value, source, updatedAt }
- * IDs used: "nepal-inflation" | "risk-free" | "nepse-avg" | "fd-rate"
- *           "epf-rate" | "ssf-rate" | "usd-npr"
+ * Returns:
+ *   rates           — values from Firestore if available, else CALCULATOR_DEFAULTS
+ *   loading         — true while initial Firestore fetch is in-flight
+ *   hasVerifiedData — true only when Firestore has at least one published+verified doc
+ *   updatedAt       — ISO string of most recent Firestore update, or null
+ *   source          — text description of data source from Firestore, or null
  *
- * Falls back to hardcoded Nepal defaults while loading or if collection is empty.
+ * Public UI should only display rate data when hasVerifiedData === true.
+ * The calculator may always use `rates` as internal defaults.
  */
 export function useMarketRates() {
-  const [rates,   setRates]   = useState<MarketRateSnapshot>(FALLBACK);
-  const [loading, setLoading] = useState(true);
+  const [rates,           setRates]           = useState<MarketRateSnapshot>(CALCULATOR_DEFAULTS);
+  const [loading,         setLoading]         = useState(true);
+  const [hasVerifiedData, setHasVerifiedData] = useState(false);
+  const [updatedAt,       setUpdatedAt]       = useState<string | null>(null);
+  const [source,          setSource]          = useState<string | null>(null);
 
   useEffect(() => {
     const q = query(collection(db, "market_rates"));
     const unsub = onSnapshot(q, snap => {
-      if (snap.empty) { setLoading(false); return; }
+      if (snap.empty) {
+        setLoading(false);
+        setHasVerifiedData(false);
+        return;
+      }
 
       const map: Record<string, number> = {};
-      let updatedAt = FALLBACK.updatedAt;
+      let latestUpdatedAt = "";
+      let latestSource    = "";
+      let anyVerifiedPublished = false;
+
       snap.docs.forEach(d => {
         const data = d.data();
-        map[d.id] = typeof data.value === "number" ? data.value : 0;
-        if (data.updatedAt) updatedAt = data.updatedAt as string;
+        const isPublished = data.published === true;
+        const isVerified  = data.verified  === true;
+
+        if (isPublished && isVerified) {
+          anyVerifiedPublished = true;
+          if (typeof data.value === "number") map[d.id] = data.value;
+          if (data.updatedAt && data.updatedAt > latestUpdatedAt) {
+            latestUpdatedAt = data.updatedAt as string;
+          }
+          if (data.source) latestSource = data.source as string;
+        }
       });
 
-      setRates({
-        inflationRate:  map["nepal-inflation"] ?? FALLBACK.inflationRate,
-        riskFreeRate:   map["risk-free"]       ?? FALLBACK.riskFreeRate,
-        nepseAvgReturn: map["nepse-avg"]       ?? FALLBACK.nepseAvgReturn,
-        fdRate:         map["fd-rate"]         ?? FALLBACK.fdRate,
-        epfRate:        map["epf-rate"]        ?? FALLBACK.epfRate,
-        ssfRate:        map["ssf-rate"]        ?? FALLBACK.ssfRate,
-        usdToNprRate:   map["usd-npr"]         ?? FALLBACK.usdToNprRate,
-        updatedAt,
-      });
+      if (anyVerifiedPublished) {
+        setRates({
+          inflationRate:  map["nepal-inflation"] ?? CALCULATOR_DEFAULTS.inflationRate,
+          riskFreeRate:   map["risk-free"]       ?? CALCULATOR_DEFAULTS.riskFreeRate,
+          nepseAvgReturn: map["nepse-avg"]       ?? CALCULATOR_DEFAULTS.nepseAvgReturn,
+          fdRate:         map["fd-rate"]         ?? CALCULATOR_DEFAULTS.fdRate,
+          epfRate:        map["epf-rate"]        ?? CALCULATOR_DEFAULTS.epfRate,
+          ssfRate:        map["ssf-rate"]        ?? CALCULATOR_DEFAULTS.ssfRate,
+          usdToNprRate:   map["usd-npr"]         ?? CALCULATOR_DEFAULTS.usdToNprRate,
+          updatedAt:      latestUpdatedAt || "—",
+        });
+        setUpdatedAt(latestUpdatedAt || null);
+        setSource(latestSource || null);
+      }
+
+      setHasVerifiedData(anyVerifiedPublished);
       setLoading(false);
-    }, () => setLoading(false));   // on error, keep fallback + stop loading
+    }, () => {
+      setLoading(false);
+      setHasVerifiedData(false);
+    });
 
     return unsub;
   }, []);
 
-  return { rates, loading, isFallback: !loading && rates === FALLBACK };
+  return { rates, loading, hasVerifiedData, updatedAt, source };
 }
