@@ -10,15 +10,20 @@ export function useQueueItems(
 ) {
   const [items,   setItems]   = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState<string | null>(null);
 
   useEffect(() => {
     if (!ownerId) { setLoading(false); return; }
+    setError(null);
     const unsub = subscribeQueueItems(ownerId, status, data => {
       setItems(data);
+      setLoading(false);
+    }, err => {
+      setError(err.message);
       setLoading(false);
     });
     return unsub;
   }, [ownerId, status]);
 
-  return { items, loading };
+  return { items, loading, error };
 }

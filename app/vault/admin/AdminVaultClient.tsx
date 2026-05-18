@@ -17,6 +17,8 @@ import type { SourceSignal }        from "../../../lib/types/signals";
 import type { IntelligenceDocument } from "../../../lib/types/documents";
 import type { QueueItem }           from "../../../lib/types/queue";
 import type { CalculatorFormula }   from "../../../lib/data/calculator-registry";
+import { TrustBadge }               from "../../../components/vault/TrustBadge";
+import { trustFromSignal, trustFromDoc, trustFromQueueItem } from "../../../lib/intelligence/trust-score";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -125,6 +127,7 @@ function SignalCard({ signal, onValidate, onReject }: {
   onReject:   (id: string) => Promise<void>;
 }) {
   const [acting, setActing] = useState(false);
+  const trust = trustFromSignal(signal);
 
   const act = async (fn: (id: string) => Promise<void>) => {
     setActing(true);
@@ -157,14 +160,17 @@ function SignalCard({ signal, onValidate, onReject }: {
             )}
           </div>
         </div>
-        <a
-          href={signal.sourceUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-xs text-cyan-700 hover:text-cyan-500 shrink-0 mt-0.5"
-        >
-          Source ↗
-        </a>
+        <div className="flex items-start gap-2 shrink-0">
+          <TrustBadge trust={trust} />
+          <a
+            href={signal.sourceUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-cyan-700 hover:text-cyan-500 mt-0.5"
+          >
+            Source ↗
+          </a>
+        </div>
       </div>
 
       {/* AI summary */}
@@ -223,6 +229,7 @@ function DocReviewCard({ doc, onApprove, onFlag }: {
   const [acting,    setActing]    = useState(false);
   const [flagging,  setFlagging]  = useState(false);
   const [flagNotes, setFlagNotes] = useState("");
+  const trust = trustFromDoc(doc);
 
   const actApprove = async () => {
     setActing(true);
@@ -247,9 +254,10 @@ function DocReviewCard({ doc, onApprove, onFlag }: {
             <span>{doc.fileName}</span>
           </div>
         </div>
-        {doc.confidence !== undefined && (
-          <ConfBadge confidence={doc.confidence} />
-        )}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {doc.confidence !== undefined && <ConfBadge confidence={doc.confidence} />}
+          <TrustBadge trust={trust} />
+        </div>
       </div>
 
       {/* AI Summary */}
@@ -359,6 +367,7 @@ function QueueReviewCard({ item, onApprove, onReject }: {
   const [acting,    setActing]    = useState(false);
   const [showNotes, setShowNotes] = useState(false);
   const [notes,     setNotes]     = useState(item.adminNotes ?? "");
+  const trust = trustFromQueueItem(item);
 
   const act = async (fn: (id: string, n: string) => Promise<void>) => {
     setActing(true);
@@ -379,7 +388,10 @@ function QueueReviewCard({ item, onApprove, onReject }: {
             <span>{relTime(item.createdAt)}</span>
           </div>
         </div>
-        <ConfBadge confidence={item.confidence} />
+        <div className="flex items-center gap-1.5 shrink-0">
+          <ConfBadge confidence={item.confidence} />
+          <TrustBadge trust={trust} />
+        </div>
       </div>
 
       {/* Source traceability — required for every queue item */}

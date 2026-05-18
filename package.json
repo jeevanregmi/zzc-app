@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "setup": "node scripts/setup.js",
+    "setup:force": "node scripts/setup.js --force",
+    "seed:routes": "node scripts/seed-signal-routes.js",
+    "seed:signals": "node scripts/seed-policy-signals.js"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1045.0",
@@ -21,6 +25,7 @@
     "recharts": "^3.8.1"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260518.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

@@ -1,3 +1,5 @@
+import { anthropicErrorMessage, providerError, log } from "./_shared";
+
 /**
  * POST /api/generate-content-idea
  *
@@ -105,7 +107,7 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
 
   if (!ANTHROPIC_API_KEY) {
     return new Response(
-      JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" }),
+      JSON.stringify({ error: "ANTHROPIC_API_KEY not configured in Cloudflare Pages env vars", code: "ENV_MISSING" }),
       { status: 500, headers: CORS },
     );
   }
@@ -114,14 +116,14 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
   try {
     body = await context.request.json();
   } catch {
-    return new Response(JSON.stringify({ error: "Invalid request body" }), { status: 400, headers: CORS });
+    return new Response(JSON.stringify({ error: "Invalid request body", code: "BAD_REQUEST" }), { status: 400, headers: CORS });
   }
 
   const { signal } = body;
 
   if (!signal?.id || !signal?.title) {
     return new Response(
-      JSON.stringify({ error: "signal with id and title is required" }),
+      JSON.stringify({ error: "signal with id and title is required", code: "VALIDATION_ERROR" }),
       { status: 400, headers: CORS },
     );
   }
@@ -145,17 +147,18 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     });
   } catch (err) {
     return new Response(
-      JSON.stringify({ error: `Anthropic API unreachable: ${String(err)}` }),
-      { status: 502, headers: CORS },
+      JSON.stringify({ error: `Anthropic API unreachable: ${String(err)}`, code: "ANTHROPIC_UNREACHABLE" }),
+      { status: 500, headers: CORS },
     );
   }
 
   if (!anthropicRes.ok) {
-    const errText = await anthropicRes.text();
-    console.error("Anthropic error:", anthropicRes.status, errText);
-    return new Response(
-      JSON.stringify({ error: "AI generation failed. Check ANTHROPIC_API_KEY." }),
-      { status: 502, headers: CORS },
+    const errText = await anthropicRes.text().catch(() => "");
+    log("generate-content-idea", "anthropic_error", { status: anthropicRes.status, signalId: signal.id });
+    return providerError(
+      anthropicErrorMessage(anthropicRes.status),
+      "ANTHROPIC_ERROR",
+      errText.slice(0, 300),
     );
   }
 
@@ -164,8 +167,9 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
 
   const jsonMatch = aiText.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
+    log("generate-content-idea", "parse_error", { signalId: signal.id, preview: aiText.slice(0, 100) });
     return new Response(
-      JSON.stringify({ error: "Could not parse AI response", preview: aiText.slice(0, 400) }),
+      JSON.stringify({ error: "AI returned unparseable response. Retry.", code: "AI_PARSE_ERROR", preview: aiText.slice(0, 400) }),
       { status: 500, headers: CORS },
     );
   }
@@ -181,8 +185,9 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
   try {
     ai = JSON.parse(jsonMatch[0]);
   } catch {
+    log("generate-content-idea", "parse_error", { signalId: signal.id, preview: aiText.slice(0, 100) });
     return new Response(
-      JSON.stringify({ error: "AI response was not valid JSON", preview: aiText.slice(0, 400) }),
+      JSON.stringify({ error: "AI response was not valid JSON. Retry.", code: "AI_PARSE_ERROR", preview: aiText.slice(0, 400) }),
       { status: 500, headers: CORS },
     );
   }
@@ -196,5 +201,6 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     hooks:    ai.hooks    ?? [],
   };
 
+  log("generate-content-idea", "ok", { model: MODEL, signalId: signal.id, type: result.type });
   return new Response(JSON.stringify(result), { headers: CORS });
 };

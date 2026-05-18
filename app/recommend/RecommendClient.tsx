@@ -6,6 +6,7 @@ import {
   INVESTMENT_SCHEMES, LOAN_SCHEMES, INSURANCE_SCHEMES, PENSION_SCHEMES,
   type Scheme, type SchemeCategory,
 } from "../../lib/schemes-data";
+import { createRecommendationClick } from "../../lib/vault/firestore";
 
 /* ─── Types ──────────────────────────────────────────────── */
 type Category = "investment" | "loan" | "insurance" | "pension";
@@ -154,6 +155,41 @@ const CATEGORY_HEADER: Record<Category, { icon: string; label: string; accentCla
   insurance:  { icon: "🛡️", label: "बीमा सिफारिस",   accentClass: "text-pink-400" },
   pension:    { icon: "🎯", label: "पेन्सन सिफारिस", accentClass: "text-purple-400" },
 };
+
+/* ─── Affiliate portal map ───────────────────────────────── */
+const SCHEME_PORTAL: Record<string, string> = {
+  "EPF":             "https://epf.gov.np",
+  "SSF":             "https://ssf.gov.np",
+  "CIT":             "https://online.cit.com.np",
+  "NEPSE":           "https://tms.nepsegroup.com",
+  "Jeevan Beema":    "https://nlic.gov.np",
+  "Swasthya Beema":  "https://nhic.gov.np",
+  "EPF Loan":        "https://epf.gov.np",
+  "EPF Pension":     "https://epf.gov.np",
+  "Home Loan":       "https://epf.gov.np",
+};
+
+function getSessionId(): string {
+  if (typeof window === "undefined") return "ssr";
+  const key = "zzc_sid";
+  let sid = sessionStorage.getItem(key);
+  if (!sid) {
+    sid = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    sessionStorage.setItem(key, sid);
+  }
+  return sid;
+}
+
+function trackClick(schemeName: string, schemeOrg: string, category: string, targetUrl: string) {
+  createRecommendationClick({
+    schemeName,
+    schemeOrg,
+    category,
+    targetUrl,
+    sessionId:  getSessionId(),
+    timestamp:  new Date().toISOString(),
+  }).catch(() => {});
+}
 
 /* ─── Sub-components ─────────────────────────────────────── */
 
@@ -349,6 +385,23 @@ function SchemeCard({ s, isTop, category }: { s: Sifaris; isTop: boolean; catego
           <span className="text-amber-400 shrink-0">⚠</span>
           <p className="text-amber-200/80 text-sm">{s.savdhan}</p>
         </div>
+      )}
+
+      {/* Apply CTA */}
+      {SCHEME_PORTAL[s.name] && (
+        <a
+          href={SCHEME_PORTAL[s.name]}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => trackClick(s.name, s.name.split(" ")[0], category, SCHEME_PORTAL[s.name])}
+          className={`block w-full text-center font-black text-sm py-3 rounded-2xl transition-colors ${
+            isTop
+              ? "bg-green-500 hover:bg-green-400 text-black"
+              : "border border-zinc-700 hover:border-zinc-500 text-zinc-300 hover:text-white"
+          }`}
+        >
+          अहिले नै आवेदन गर्नुस् →
+        </a>
       )}
     </div>
   );

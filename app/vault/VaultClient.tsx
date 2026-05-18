@@ -238,8 +238,8 @@ function ActivityFeed({ docs, queue }: { docs: IntelligenceDocument[]; queue: Qu
 
 export default function VaultClient() {
   const { user } = useVaultAuth();
-  const { docs }         = useIntelligenceDocs(user?.uid ?? null);
-  const { items: queue } = useQueueItems(user?.uid ?? null, "all");
+  const { docs,         error: docErr  } = useIntelligenceDocs(user?.uid ?? null);
+  const { items: queue, error: queueErr } = useQueueItems(user?.uid ?? null, "all");
 
   const docCount     = docs.length;
   const awaitingAI   = docs.filter(d => d.processingStatus === "ready").length;
@@ -415,6 +415,10 @@ export default function VaultClient() {
         <h1 className="text-2xl font-bold text-white mb-0.5">Command Center</h1>
         <p className="text-zinc-500 text-sm">ZZC Vault — private operations dashboard</p>
       </div>
+
+      {/* Firestore error banners */}
+      {docErr   && <div className="mb-4 flex items-start gap-2 bg-red-950/40 border border-red-900/60 rounded-xl px-4 py-3"><span className="text-red-400 text-sm">✕</span><p className="text-xs text-red-300/90">Intelligence library unavailable: {docErr}</p></div>}
+      {queueErr && <div className="mb-4 flex items-start gap-2 bg-red-950/40 border border-red-900/60 rounded-xl px-4 py-3"><span className="text-red-400 text-sm">✕</span><p className="text-xs text-red-300/90">Content queue unavailable: {queueErr}</p></div>}
 
       {/* Intelligence Flywheel — live pipeline state */}
       <FlywheelBar

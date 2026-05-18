@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useVaultAuth } from "../../../hooks/vault/useVaultAuth";
 import { useIntelligenceDocs } from "../../../hooks/vault/useIntelligenceDocs";
 import { useDocumentUpload } from "../../../hooks/vault/useDocumentUpload";
@@ -49,7 +49,7 @@ const CAT_LABEL: Record<FilterCategory, string> = {
 export default function DocumentsClient() {
   const { user } = useVaultAuth();
   const { docs, loading } = useIntelligenceDocs(user?.uid ?? null);
-  const { tasks, uploadDoc, clearDone } = useDocumentUpload(user?.uid ?? "");
+  const { tasks, uploadDoc, clearDone, dismissTask, summary } = useDocumentUpload(user?.uid ?? "");
   const { items: allQueueItems } = useQueueItems(user?.uid ?? null, "all");
 
   // Source traceability: map docId → count of queue items it generated
@@ -65,10 +65,26 @@ export default function DocumentsClient() {
 
   const [search,       setSearch]      = useState("");
   const [filter,       setFilter]      = useState<FilterCategory>("all");
-  const [showUpload,   setShowUpload]  = useState(false);
-  const [viewing,      setViewing]     = useState<IntelligenceDocument | null>(null);
-  const [processingId, setProcessingId] = useState<string | null>(null);
-  const [processError, setProcessError] = useState<string | null>(null);
+  const [showUpload,    setShowUpload]   = useState(false);
+  const [viewing,       setViewing]      = useState<IntelligenceDocument | null>(null);
+  const [processingId,  setProcessingId] = useState<string | null>(null);
+  const [processError,  setProcessError] = useState<string | null>(null);
+  const [uploadToast,   setUploadToast]  = useState<{ type: "success" | "error"; msg: string } | null>(null);
+
+  // Show a toast when a batch of uploads finishes — cleared after 5s
+  useEffect(() => {
+    if (!summary) return;
+    const { successCount, errorCount } = summary;
+    if (successCount > 0 && errorCount === 0) {
+      setUploadToast({ type: "success", msg: `${successCount} document${successCount > 1 ? "s" : ""} uploaded successfully.` });
+    } else if (errorCount > 0 && successCount === 0) {
+      setUploadToast({ type: "error",   msg: `${errorCount} upload${errorCount > 1 ? "s" : ""} failed. See details in the upload panel.` });
+    } else if (successCount > 0 && errorCount > 0) {
+      setUploadToast({ type: "error",   msg: `${successCount} uploaded, ${errorCount} failed. See details in the upload panel.` });
+    }
+    const t = setTimeout(() => setUploadToast(null), 5_000);
+    return () => clearTimeout(t);
+  }, [summary]);
 
   const filtered = docs.filter(d => {
     const matchCat    = filter === "all" || d.category === filter;
@@ -196,6 +212,7 @@ export default function DocumentsClient() {
           tasks={tasks}
           onUpload={uploadDoc}
           onClear={clearDone}
+          onDismiss={dismissTask}
           onClose={() => setShowUpload(false)}
         />
       )}
@@ -230,6 +247,20 @@ export default function DocumentsClient() {
             + Upload Documents
           </button>
         </div>
+
+        {/* Upload toast */}
+        {uploadToast && (
+          <div className={`mb-4 border rounded-2xl px-5 py-3 flex items-center justify-between gap-4 transition-all ${
+            uploadToast.type === "success"
+              ? "bg-green-950 border-green-800"
+              : "bg-red-950 border-red-800"
+          }`}>
+            <p className={`text-sm font-semibold ${uploadToast.type === "success" ? "text-green-400" : "text-red-400"}`}>
+              {uploadToast.msg}
+            </p>
+            <button onClick={() => setUploadToast(null)} className="text-zinc-500 hover:text-white text-lg leading-none shrink-0">×</button>
+          </div>
+        )}
 
         {/* Process error banner */}
         {processError && (

@@ -6,7 +6,9 @@ import { useVaultAuth } from "../../../../hooks/vault/useVaultAuth";
 import { useQueueItems } from "../../../../hooks/vault/useQueueItems";
 import { updateQueueItem, deleteQueueItem } from "../../../../lib/vault/firestore";
 import type { QueueItem, QueueItemStatus } from "../../../../lib/types/queue";
-import { useLearningMode } from "../../../../contexts/LearningModeContext";
+import { useLearningMode }  from "../../../../contexts/LearningModeContext";
+import { TrustBadge }       from "../../../../components/vault/TrustBadge";
+import { trustFromQueueItem } from "../../../../lib/intelligence/trust-score";
 
 // ─── Display helpers ──────────────────────────────────────────────────────────
 
@@ -77,7 +79,8 @@ function QueueCard({
 }) {
   const [notesOpen, setNotesOpen] = useState(false);
   const [notes,     setNotes]     = useState(item.adminNotes ?? "");
-  const badge = confidenceBadge(item.confidence);
+  const badge   = confidenceBadge(item.confidence);
+  const trust   = trustFromQueueItem(item);
   const expiring = item.status === "pending" && isExpiringSoon(item.expiresAt);
   const expired  = item.status === "pending" && isExpired(item.expiresAt);
 
@@ -109,6 +112,7 @@ function QueueCard({
             <span className={`text-xs px-2 py-0.5 rounded-full border ${badge.cls}`}>
               {(item.confidence * 100).toFixed(0)}% {badge.label}
             </span>
+            <TrustBadge trust={trust} />
             {expiring && !expired && (
               <span className="text-xs text-amber-400">Expires soon</span>
             )}
@@ -213,10 +217,26 @@ function QueueCard({
             </button>
           </>
         )}
-        {(item.status === "approved" || item.status === "in_production") && (
+        {item.status === "approved" && (
+          <>
+            <Link
+              href={`/vault/content/preview?id=${item.id}`}
+              className="text-xs bg-green-700 hover:bg-green-600 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+            >
+              Preview →
+            </Link>
+            <Link
+              href={studioUrl}
+              title="Open in AI Studio — generates a full video script or thumbnail prompt using AWS Bedrock (Claude Sonnet 4.6). Expensive — uses daily token quota."
+              className="text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 font-semibold px-3 py-1.5 rounded-lg transition-colors"
+            >
+              AI Studio 🔴
+            </Link>
+          </>
+        )}
+        {item.status === "in_production" && (
           <Link
             href={studioUrl}
-            title="Open in AI Studio — generates a full video script or thumbnail prompt using AWS Bedrock (Claude Sonnet 4.6). Expensive — uses daily token quota."
             className="text-xs bg-amber-600 hover:bg-amber-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
           >
             → AI Studio 🔴
@@ -256,7 +276,7 @@ function QueueCard({
 export default function QueueClient() {
   const { on: learn } = useLearningMode();
   const { user } = useVaultAuth();
-  const { items, loading } = useQueueItems(user?.uid ?? null, "all");
+  const { items, loading, error } = useQueueItems(user?.uid ?? null, "all");
 
   const [activeTab, setActiveTab] = useState<QueueItemStatus | "all">("pending");
 
@@ -313,6 +333,14 @@ export default function QueueClient() {
           )}
         </div>
       </div>
+
+      {/* Firestore error banner */}
+      {error && (
+        <div className="mb-6 flex items-start gap-2 bg-red-950/40 border border-red-900/60 rounded-2xl px-4 py-3">
+          <span className="text-red-400 text-sm">✕</span>
+          <p className="text-xs text-red-300/90">Queue unavailable: {error}. Check your connection and refresh.</p>
+        </div>
+      )}
 
       {/* Learning mode — workflow explainer */}
       {learn && !loading && (

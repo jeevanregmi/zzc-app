@@ -16,6 +16,7 @@
  */
 
 import { matchTopics, matchSectors, taxonomySummaryForPrompt } from "../../lib/data/taxonomy";
+import { anthropicErrorMessage, providerError, log } from "./_shared";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -229,7 +230,7 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
 
   if (!ANTHROPIC_API_KEY) {
     return new Response(
-      JSON.stringify({ error: "ANTHROPIC_API_KEY not configured" }),
+      JSON.stringify({ error: "ANTHROPIC_API_KEY not configured in Cloudflare Pages env vars", code: "ENV_MISSING" }),
       { status: 500, headers: CORS },
     );
   }
@@ -239,14 +240,14 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
   try {
     body = await context.request.json();
   } catch {
-    return new Response(JSON.stringify({ error: "Invalid request body" }), { status: 400, headers: CORS });
+    return new Response(JSON.stringify({ error: "Invalid request body", code: "BAD_REQUEST" }), { status: 400, headers: CORS });
   }
 
   const { url, sourceName, topics = [], tags = [] } = body;
 
   if (!url || !sourceName) {
     return new Response(
-      JSON.stringify({ error: "url and sourceName are required" }),
+      JSON.stringify({ error: "url and sourceName are required", code: "VALIDATION_ERROR" }),
       { status: 400, headers: CORS },
     );
   }
@@ -257,7 +258,7 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     parsedUrl = new URL(url);
     if (!["http:", "https:"].includes(parsedUrl.protocol)) throw new Error("bad protocol");
   } catch {
-    return new Response(JSON.stringify({ error: "Invalid URL" }), { status: 400, headers: CORS });
+    return new Response(JSON.stringify({ error: "Invalid URL — must be http or https", code: "INVALID_URL" }), { status: 400, headers: CORS });
   }
 
   // ── Fetch the URL ──────────────────────────────────────────────────────────
@@ -272,14 +273,14 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     });
   } catch (err) {
     return new Response(
-      JSON.stringify({ error: `Could not fetch URL: ${String(err)}` }),
+      JSON.stringify({ error: `Could not fetch URL: ${String(err)}`, code: "FETCH_ERROR" }),
       { status: 500, headers: CORS },
     );
   }
 
   if (!fetchRes.ok) {
     return new Response(
-      JSON.stringify({ error: `URL returned HTTP ${fetchRes.status}` }),
+      JSON.stringify({ error: `URL returned HTTP ${fetchRes.status}`, code: "FETCH_ERROR" }),
       { status: 500, headers: CORS },
     );
   }
@@ -288,7 +289,7 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
   const rawLen = Number(fetchRes.headers.get("content-length") ?? 0);
   if (rawLen > MAX_FETCH_SIZE) {
     return new Response(
-      JSON.stringify({ error: `Page too large (${(rawLen / 1024 / 1024).toFixed(1)} MB). Max 2 MB.` }),
+      JSON.stringify({ error: `Page too large (${(rawLen / 1024 / 1024).toFixed(1)} MB). Max 2 MB.`, code: "PAGE_TOO_LARGE" }),
       { status: 413, headers: CORS },
     );
   }
@@ -320,7 +321,7 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
 
   if (clauceText.trim().length < 100) {
     return new Response(
-      JSON.stringify({ error: "Could not extract meaningful text from this URL. The page may require JavaScript or authentication." }),
+      JSON.stringify({ error: "Could not extract meaningful text from this URL. The page may require JavaScript or authentication.", code: "EXTRACT_FAILED" }),
       { status: 422, headers: CORS },
     );
   }
@@ -349,17 +350,18 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     });
   } catch (err) {
     return new Response(
-      JSON.stringify({ error: `Anthropic API unreachable: ${String(err)}` }),
+      JSON.stringify({ error: `Anthropic API unreachable: ${String(err)}`, code: "ANTHROPIC_UNREACHABLE" }),
       { status: 500, headers: CORS },
     );
   }
 
   if (!anthropicRes.ok) {
-    const errText = await anthropicRes.text();
-    console.error("Anthropic error:", anthropicRes.status, errText);
-    return new Response(
-      JSON.stringify({ error: "AI analysis failed. Check ANTHROPIC_API_KEY." }),
-      { status: 500, headers: CORS },
+    const errText = await anthropicRes.text().catch(() => "");
+    log("ingest-url", "anthropic_error", { status: anthropicRes.status, url: body.url });
+    return providerError(
+      anthropicErrorMessage(anthropicRes.status),
+      "ANTHROPIC_ERROR",
+      errText.slice(0, 300),
     );
   }
 
@@ -370,7 +372,7 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
   const jsonMatch = aiText.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
     return new Response(
-      JSON.stringify({ error: "Could not parse AI response", preview: aiText.slice(0, 400) }),
+      JSON.stringify({ error: "AI returned unparseable response. Retry.", code: "AI_PARSE_ERROR", preview: aiText.slice(0, 400) }),
       { status: 500, headers: CORS },
     );
   }
@@ -391,7 +393,7 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     ai = JSON.parse(jsonMatch[0]);
   } catch {
     return new Response(
-      JSON.stringify({ error: "AI response was not valid JSON", preview: aiText.slice(0, 400) }),
+      JSON.stringify({ error: "AI response was not valid JSON. Retry.", code: "AI_PARSE_ERROR", preview: aiText.slice(0, 400) }),
       { status: 500, headers: CORS },
     );
   }
@@ -460,5 +462,6 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     model:           MODEL,
   };
 
+  log("ingest-url", "ok", { model: MODEL, url: body.url, relevanceScore: result.relevanceScore, primarySectorId: result.primarySectorId });
   return new Response(JSON.stringify({ ok: true, ...result }), { headers: CORS });
 };

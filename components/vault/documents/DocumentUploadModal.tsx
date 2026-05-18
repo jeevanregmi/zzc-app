@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useCallback } from "react";
+import Link from "next/link";
 import type { UploadDocMeta } from "../../../hooks/vault/useDocumentUpload";
 import type { DocUploadTask } from "../../../lib/types/documents";
 
@@ -18,13 +19,14 @@ const ALLOWED_MIME = [
 const CATEGORIES = ["research", "strategy", "legal", "finance", "content", "intelligence", "other"] as const;
 
 interface Props {
-  tasks:     DocUploadTask[];
-  onUpload:  (file: File, meta: UploadDocMeta) => void;
-  onClear:   () => void;
-  onClose:   () => void;
+  tasks:      DocUploadTask[];
+  onUpload:   (file: File, meta: UploadDocMeta) => void;
+  onClear:    () => void;
+  onClose:    () => void;
+  onDismiss?: (localId: string) => void;
 }
 
-export function DocumentUploadModal({ tasks, onUpload, onClear, onClose }: Props) {
+export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismiss }: Props) {
   const inputRef   = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const [staged,   setStaged]   = useState<File[]>([]);
@@ -57,8 +59,19 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose }: Props
     setStaged([]);
   };
 
-  const allDone    = tasks.length > 0 && tasks.every(t => t.status === "done" || t.status === "error");
-  const anyActive  = tasks.some(t => t.status === "uploading" || t.status === "creating");
+  // ── Task state analysis ───────────────────────────────────────────────────────
+  const anyActive       = tasks.some(t => t.status === "uploading" || t.status === "creating");
+  const anyError        = tasks.some(t => t.status === "error");
+  const allSucceeded    = tasks.length > 0 && tasks.every(t => t.status === "done");
+  const allSettled      = tasks.length > 0 && !anyActive;
+  const successCount    = tasks.filter(t => t.status === "done").length;
+  const errorCount      = tasks.filter(t => t.status === "error").length;
+
+  // ── Footer logic ──────────────────────────────────────────────────────────────
+  // Three distinct states, never conflated:
+  //   allSucceeded → green "Done" — closes modal, clears tasks
+  //   allSettled + errors → red error summary — modal stays open, no auto-close
+  //   otherwise → Upload button or Uploading… label
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
@@ -154,12 +167,17 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose }: Props
 
         {/* Upload tasks */}
         {tasks.length > 0 && (
-          <ul className="space-y-2 max-h-32 overflow-y-auto">
+          <ul className="space-y-2 max-h-36 overflow-y-auto">
             {tasks.map(task => (
               <li key={task.localId}>
                 <div className="flex items-center justify-between text-xs mb-1">
                   <span className="text-zinc-400 truncate">{task.fileName}</span>
-                  <span className={task.status === "done" ? "text-green-400" : task.status === "error" ? "text-red-400" : "text-zinc-500"}>
+                  <span className={
+                    task.status === "done"     ? "text-green-400" :
+                    task.status === "error"    ? "text-red-400"   :
+                    task.status === "creating" ? "text-amber-400" :
+                                                 "text-zinc-500"
+                  }>
                     {task.status === "uploading" ? `${task.progress}%` : task.status}
                   </span>
                 </div>
@@ -171,20 +189,70 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose }: Props
                     />
                   </div>
                 )}
-                {task.error && <p className="text-red-400 text-xs">{task.error}</p>}
+                {task.error && (
+                  <div className="mt-1 bg-red-950/60 border border-red-900/70 rounded-lg px-3 py-2 text-xs">
+                    <p className="text-red-400 font-medium">{task.error}</p>
+                    {onDismiss && (
+                      <button
+                        onClick={() => onDismiss(task.localId)}
+                        className="mt-1.5 text-red-500 hover:text-red-300 underline"
+                      >
+                        Dismiss
+                      </button>
+                    )}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
         )}
 
+        {/* Error summary banner — only shown when all settled and there are errors */}
+        {allSettled && anyError && (
+          <div className="bg-red-950/40 border border-red-900/60 rounded-xl px-4 py-3 space-y-2">
+            <p className="text-red-400 text-sm font-semibold">
+              {errorCount === tasks.length
+                ? `Upload failed — ${errorCount} file${errorCount > 1 ? "s" : ""} could not be saved`
+                : `${successCount} saved · ${errorCount} failed`}
+            </p>
+            <p className="text-red-300/70 text-xs">
+              Nothing was saved for the failed files. Check{" "}
+              <Link href="/vault/system" className="underline hover:text-red-200" onClick={onClose}>
+                System Status
+              </Link>{" "}
+              to diagnose storage connectivity, then dismiss each error above and try again.
+            </p>
+          </div>
+        )}
+
+        {/* Footer */}
         <div className="flex gap-3">
-          {allDone ? (
+          {allSucceeded ? (
+            // All uploads truly succeeded — safe to close
             <button
               onClick={() => { onClear(); onClose(); }}
               className="flex-1 bg-green-500 hover:bg-green-400 text-black font-black py-2.5 rounded-xl text-sm transition-colors"
             >
-              Done
+              Done — {successCount} saved
             </button>
+          ) : allSettled && anyError ? (
+            // Some/all failed — never auto-close, let founder decide
+            <>
+              {successCount > 0 && (
+                <button
+                  onClick={onClear}
+                  className="flex-1 bg-zinc-700 hover:bg-zinc-600 text-white font-bold py-2.5 rounded-xl text-sm transition-colors"
+                >
+                  Keep {successCount} saved, dismiss errors
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold py-2.5 rounded-xl text-sm transition-colors"
+              >
+                Close (files NOT saved)
+              </button>
+            </>
           ) : (
             <button
               onClick={handleUploadAll}
@@ -194,12 +262,14 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose }: Props
               {anyActive ? "Uploading…" : `Upload ${staged.length > 0 ? staged.length + " file" + (staged.length > 1 ? "s" : "") : ""}`.trim()}
             </button>
           )}
-          <button
-            onClick={onClose}
-            className="px-5 bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-2.5 rounded-xl text-sm transition-colors"
-          >
-            Cancel
-          </button>
+          {!allSettled && (
+            <button
+              onClick={onClose}
+              className="px-5 bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-2.5 rounded-xl text-sm transition-colors"
+            >
+              Cancel
+            </button>
+          )}
         </div>
       </div>
     </div>

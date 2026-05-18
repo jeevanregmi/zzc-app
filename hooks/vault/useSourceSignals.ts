@@ -10,15 +10,20 @@ export function useSourceSignals(
 ) {
   const [signals, setSignals] = useState<SourceSignal[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState<string | null>(null);
 
   useEffect(() => {
     if (!ownerId) { setLoading(false); return; }
+    setError(null);
     const unsub = subscribeSourceSignals(ownerId, status, items => {
       setSignals(items);
+      setLoading(false);
+    }, err => {
+      setError(err.message);
       setLoading(false);
     });
     return unsub;
   }, [ownerId, status]);
 
-  return { signals, loading };
+  return { signals, loading, error };
 }

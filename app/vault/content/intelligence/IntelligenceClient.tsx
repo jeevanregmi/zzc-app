@@ -19,6 +19,8 @@ import {
 } from "../../../../lib/vault/firestore";
 import type { SourceSignal, MonitoredSource, IntelligenceTopic, SignalStatus } from "../../../../lib/types/signals";
 import type { QueueItem } from "../../../../lib/types/queue";
+import { TrustBadge }    from "../../../../components/vault/TrustBadge";
+import { trustFromSignal } from "../../../../lib/intelligence/trust-score";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -110,42 +112,47 @@ function SignalFeed({
             <span className="text-zinc-700">Use Quick Ingest to add a URL.</span>
           </div>
         )}
-        {shown.map(s => (
-          <button
-            key={s.id}
-            onClick={() => onSelect(s.id)}
-            className={
-              "w-full text-left px-3 py-3 transition-all " +
-              (selectedId === s.id ? "bg-zinc-800" : "hover:bg-zinc-800/40")
-            }
-          >
-            <div className="flex items-start justify-between gap-2 mb-1">
-              <span className="text-sm font-semibold text-white line-clamp-2 leading-snug">{s.title || s.sourceUrl}</span>
-              <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase ${STATUS_COLOR[s.status]}`}>
-                {s.status}
-              </span>
-            </div>
-            <div className="text-[11px] text-zinc-500 flex items-center gap-1.5 flex-wrap">
-              <span className="truncate max-w-[120px]">{s.sourceName}</span>
-              <span>·</span>
-              <span>{relTime(s.createdAt)}</span>
-              {s.relevanceScore !== undefined && (
-                <>
-                  <span>·</span>
-                  <span className={s.relevanceScore >= 0.7 ? "text-green-500" : s.relevanceScore >= 0.4 ? "text-amber-500" : "text-zinc-600"}>
-                    {Math.round(s.relevanceScore * 100)}%
+        {shown.map(s => {
+          const trust = trustFromSignal(s);
+          return (
+            <button
+              key={s.id}
+              onClick={() => onSelect(s.id)}
+              className={
+                "w-full text-left px-3 py-3 transition-all " +
+                (selectedId === s.id ? "bg-zinc-800" : "hover:bg-zinc-800/40")
+              }
+            >
+              <div className="flex items-start justify-between gap-2 mb-1">
+                <span className="text-sm font-semibold text-white line-clamp-2 leading-snug">{s.title || s.sourceUrl}</span>
+                <span className={`shrink-0 text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase ${STATUS_COLOR[s.status]}`}>
+                  {s.status}
+                </span>
+              </div>
+              <div className="text-[11px] text-zinc-500 flex items-center gap-1.5 flex-wrap">
+                <span className="truncate max-w-[120px]">{s.sourceName}</span>
+                <span>·</span>
+                <span>{relTime(s.createdAt)}</span>
+                {s.relevanceScore !== undefined && (
+                  <>
+                    <span>·</span>
+                    <span className={s.relevanceScore >= 0.7 ? "text-green-500" : s.relevanceScore >= 0.4 ? "text-amber-500" : "text-zinc-600"}>
+                      {Math.round(s.relevanceScore * 100)}%
+                    </span>
+                  </>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                {s.sectorId && (
+                  <span className="text-[9px] bg-zinc-900 border border-zinc-700 px-1.5 py-0.5 rounded text-zinc-400 uppercase tracking-wide">
+                    {s.sectorId}
                   </span>
-                </>
-              )}
-            </div>
-            {/* Taxonomy sector badge */}
-            {s.sectorId && (
-              <span className="inline-block mt-1.5 text-[9px] bg-zinc-900 border border-zinc-700 px-1.5 py-0.5 rounded text-zinc-400 uppercase tracking-wide">
-                {s.sectorId}
-              </span>
-            )}
-          </button>
-        ))}
+                )}
+                <TrustBadge trust={trust} />
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

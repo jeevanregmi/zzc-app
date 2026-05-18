@@ -14,7 +14,14 @@ service firebase.storage {
           || request.resource.contentType.matches('video/.*')
           || request.resource.contentType.matches('audio/.*')
           || request.resource.contentType == 'application/pdf'
-          || request.resource.contentType == 'text/plain';
+          || request.resource.contentType == 'text/plain'
+          // Microsoft Word (DOCX)
+          || request.resource.contentType == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+          // Legacy .doc format
+          || request.resource.contentType == 'application/msword'
+          // Markdown (browsers send these two variants)
+          || request.resource.contentType == 'text/markdown'
+          || request.resource.contentType == 'text/x-markdown';
     }
     // 500 MB cap per upload
     function isUnderSizeLimit() {

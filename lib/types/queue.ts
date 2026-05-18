@@ -60,8 +60,9 @@ export interface QueueItem {
   expiresAt?:  string;           // auto-archive if pending past this date (7 days)
 
   // ── Timestamps ────────────────────────────────────────────────────────────────
-  createdAt:   string;
-  updatedAt:   string;
-  approvedAt?: string;
-  rejectedAt?: string;
+  createdAt:          string;
+  updatedAt:          string;
+  approvedAt?:        string;
+  rejectedAt?:        string;
+  previewApprovedAt?: string;   // set when admin approves via preview → gates in_production
 }

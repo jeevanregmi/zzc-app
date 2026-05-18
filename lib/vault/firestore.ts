@@ -63,6 +63,7 @@ export function subscribeMedia(
   ownerId: string,
   folder: string | null,
   onChange: (items: VaultMedia[]) => void,
+  onError?: (err: Error) => void,
 ): Unsubscribe {
   let q = query(
     collection(db, COL_MEDIA),
@@ -88,7 +89,7 @@ export function subscribeMedia(
       } as VaultMedia;
     });
     onChange(items);
-  });
+  }, err => { console.error("subscribeMedia:", err); onError?.(err); });
 }
 
 // ─── VaultFolder ─────────────────────────────────────────────────────────────
@@ -108,6 +109,7 @@ export async function deleteFolder(id: string): Promise<void> {
 export function subscribeFolders(
   ownerId: string,
   onChange: (folders: VaultFolder[]) => void,
+  onError?: (err: Error) => void,
 ): Unsubscribe {
   const q = query(
     collection(db, COL_FOLDERS),
@@ -121,7 +123,7 @@ export function subscribeFolders(
       createdAt: d.data().createdAt?.toDate?.()?.toISOString() ?? now(),
     }) as VaultFolder);
     onChange(folders);
-  });
+  }, err => { console.error("subscribeFolders:", err); onError?.(err); });
 }
 
 // ─── VaultDocument ───────────────────────────────────────────────────────────
@@ -146,6 +148,7 @@ export async function deleteDocument(id: string): Promise<void> {
 export function subscribeDocuments(
   ownerId: string,
   onChange: (docs: VaultDocument[]) => void,
+  onError?: (err: Error) => void,
 ): Unsubscribe {
   const q = query(
     collection(db, COL_DOCUMENTS),
@@ -160,7 +163,7 @@ export function subscribeDocuments(
       updatedAt: d.data().updatedAt?.toDate?.()?.toISOString() ?? now(),
     }) as VaultDocument);
     onChange(docs);
-  });
+  }, err => { console.error("subscribeDocuments:", err); onError?.(err); });
 }
 
 // ─── IntelligenceDocument ────────────────────────────────────────────────────
@@ -212,6 +215,7 @@ export async function flagIntelligenceDocForRevision(
 export function subscribeIntelligenceDocs(
   ownerId: string,
   onChange: (docs: IntelligenceDocument[]) => void,
+  onError?: (err: Error) => void,
 ): Unsubscribe {
   const q = query(
     collection(db, COL_INTEL_DOCS),
@@ -229,7 +233,7 @@ export function subscribeIntelligenceDocs(
       } as IntelligenceDocument;
     });
     onChange(docs);
-  });
+  }, err => { console.error("subscribeIntelligenceDocs:", err); onError?.(err); });
 }
 
 // ─── Content Queue ────────────────────────────────────────────────────────────
@@ -272,6 +276,7 @@ export function subscribeQueueItems(
   ownerId: string,
   status: QueueItem["status"] | "all",
   onChange: (items: QueueItem[]) => void,
+  onError?: (err: Error) => void,
 ): Unsubscribe {
   const q = status === "all"
     ? query(
@@ -297,7 +302,7 @@ export function subscribeQueueItems(
       } as QueueItem;
     });
     onChange(items);
-  });
+  }, err => { console.error("subscribeQueueItems:", err); onError?.(err); });
 }
 
 // ─── SourceSignal ─────────────────────────────────────────────────────────────
@@ -328,6 +333,7 @@ export function subscribeSourceSignals(
   ownerId: string,
   status: SourceSignal["status"] | "all",
   onChange: (items: SourceSignal[]) => void,
+  onError?: (err: Error) => void,
 ): Unsubscribe {
   const q = status === "all"
     ? query(
@@ -353,7 +359,7 @@ export function subscribeSourceSignals(
       } as SourceSignal;
     });
     onChange(items);
-  });
+  }, err => { console.error("subscribeSourceSignals:", err); onError?.(err); });
 }
 
 // ─── MonitoredSource ──────────────────────────────────────────────────────────
@@ -383,6 +389,7 @@ export async function deleteMonitoredSource(id: string): Promise<void> {
 export function subscribeMonitoredSources(
   ownerId: string,
   onChange: (items: MonitoredSource[]) => void,
+  onError?: (err: Error) => void,
 ): Unsubscribe {
   const q = query(
     collection(db, COL_MONITORED_SRCS),
@@ -400,7 +407,7 @@ export function subscribeMonitoredSources(
       } as MonitoredSource;
     });
     onChange(items);
-  });
+  }, err => { console.error("subscribeMonitoredSources:", err); onError?.(err); });
 }
 
 // ─── IntelligenceTopic ────────────────────────────────────────────────────────
@@ -430,6 +437,7 @@ export async function deleteIntelligenceTopic(id: string): Promise<void> {
 export function subscribeIntelligenceTopics(
   ownerId: string,
   onChange: (items: IntelligenceTopic[]) => void,
+  onError?: (err: Error) => void,
 ): Unsubscribe {
   const q = query(
     collection(db, COL_INTEL_TOPICS),
@@ -447,7 +455,7 @@ export function subscribeIntelligenceTopics(
       } as IntelligenceTopic;
     });
     onChange(items);
-  });
+  }, err => { console.error("subscribeIntelligenceTopics:", err); onError?.(err); });
 }
 
 // ─── Market Rates (Public Data Control) ──────────────────────────────────────
@@ -479,6 +487,7 @@ export async function setMarketRate(
 
 export function subscribeMarketRates(
   onChange: (rates: MarketRateDoc[]) => void,
+  onError?: (err: Error) => void,
 ): Unsubscribe {
   return onSnapshot(collection(db, COL_MARKET_RATES), snap => {
     const rates = snap.docs.map(d => ({
@@ -492,7 +501,7 @@ export function subscribeMarketRates(
       verifiedAt: d.data().verifiedAt ?? "",
     } as MarketRateDoc));
     onChange(rates);
-  });
+  }, err => { console.error("subscribeMarketRates:", err); onError?.(err); });
 }
 
 // ─── Structured Schemes (Public scheme catalogue) ─────────────────────────────
@@ -546,6 +555,7 @@ export async function deleteStructuredScheme(id: string): Promise<void> {
 
 export function subscribeStructuredSchemes(
   onChange: (schemes: StructuredScheme[]) => void,
+  onError?: (err: Error) => void,
 ): Unsubscribe {
   return onSnapshot(
     query(collection(db, COL_STRUCTURED_SCHEMES), orderBy("updatedAt", "desc")),
@@ -585,6 +595,7 @@ export function subscribeStructuredSchemes(
       });
       onChange(schemes);
     },
+    err => { console.error("subscribeStructuredSchemes:", err); onError?.(err); },
   );
 }
 
@@ -626,6 +637,7 @@ export async function deleteSignalRoute(id: string): Promise<void> {
 
 export function subscribeSignalRoutes(
   onChange: (routes: SignalRoute[]) => void,
+  onError?: (err: Error) => void,
 ): Unsubscribe {
   return onSnapshot(
     query(collection(db, COL_SIGNAL_ROUTES), orderBy("createdAt", "desc")),
@@ -641,6 +653,7 @@ export function subscribeSignalRoutes(
       });
       onChange(routes);
     },
+    err => { console.error("subscribeSignalRoutes:", err); onError?.(err); },
   );
 }
 
@@ -667,6 +680,7 @@ export async function createMarketRateSuggestion(
 
 export function subscribeMarketRateSuggestions(
   onChange: (items: MarketRateSuggestion[]) => void,
+  onError?: (err: Error) => void,
 ): Unsubscribe {
   return onSnapshot(
     query(collection(db, COL_MARKET_RATE_SUGGESTS), orderBy("createdAt", "desc")),
@@ -677,6 +691,7 @@ export function subscribeMarketRateSuggestions(
       } as MarketRateSuggestion));
       onChange(items);
     },
+    err => { console.error("subscribeMarketRateSuggestions:", err); onError?.(err); },
   );
 }
 
@@ -723,6 +738,7 @@ export async function deletePageModule(id: string): Promise<void> {
 export function subscribePageModules(
   page: string | null,
   onChange: (modules: PageModule[]) => void,
+  onError?: (err: Error) => void,
 ): Unsubscribe {
   const q = page
     ? query(
@@ -741,12 +757,13 @@ export function subscribePageModules(
       id: d.id,
     } as PageModule));
     onChange(modules);
-  });
+  }, err => { console.error("subscribePageModules:", err); onError?.(err); });
 }
 
 export function subscribePublishedPageModules(
   page: string,
   onChange: (modules: PageModule[]) => void,
+  onError?: (err: Error) => void,
 ): Unsubscribe {
   const q = query(
     collection(db, COL_PAGE_MODULES),
@@ -761,5 +778,333 @@ export function subscribePublishedPageModules(
       id: d.id,
     } as PageModule));
     onChange(modules);
+  }, err => { console.error("subscribePublishedPageModules:", err); onError?.(err); });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONTENT PIPELINE COLLECTIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+import type { NormalizedContent, AIEnrichment, Publication, AuditLog } from "../types/pipeline";
+import type { Job } from "../types/jobs";
+import type { FinancialEntity } from "../types/entities";
+
+const COL_NORMALIZED   = "normalized_content";
+const COL_ENRICHMENTS  = "ai_enrichments";
+const COL_PUBLICATIONS = "publications";
+const COL_JOBS         = "jobs";
+const COL_AUDIT_LOGS   = "audit_logs";
+const COL_ENTITIES     = "entities";
+
+// ─── NormalizedContent ────────────────────────────────────────────────────────
+
+export async function createNormalizedContent(
+  data: Omit<NormalizedContent, "id">,
+): Promise<string> {
+  const ref = await addDoc(collection(db, COL_NORMALIZED), {
+    ...data,
+    normalizedAt: now(),
+    updatedAt:    now(),
+  });
+  return ref.id;
+}
+
+export async function updateNormalizedContent(
+  id: string,
+  patch: Partial<NormalizedContent>,
+): Promise<void> {
+  await updateDoc(doc(db, COL_NORMALIZED, id), { ...patch, updatedAt: now() });
+}
+
+export function subscribeNormalizedContent(
+  opts: { limit?: number; enrichmentStatus?: string } = {},
+  onChange: (items: NormalizedContent[]) => void,
+): Unsubscribe {
+  let q = opts.enrichmentStatus
+    ? query(
+        collection(db, COL_NORMALIZED),
+        where("enrichmentStatus", "==", opts.enrichmentStatus),
+        orderBy("normalizedAt", "desc"),
+      )
+    : query(
+        collection(db, COL_NORMALIZED),
+        orderBy("normalizedAt", "desc"),
+      );
+
+  return onSnapshot(q, snap => {
+    const items = snap.docs.map(d => ({
+      ...(d.data() as Omit<NormalizedContent, "id">),
+      id: d.id,
+    } as NormalizedContent));
+    onChange(opts.limit ? items.slice(0, opts.limit) : items);
   });
 }
+
+// ─── AIEnrichment ────────────────────────────────────────────────────────────
+
+export async function createAIEnrichment(
+  data: Omit<AIEnrichment, "id">,
+): Promise<string> {
+  const ref = await addDoc(collection(db, COL_ENRICHMENTS), {
+    ...data,
+    enrichedAt: now(),
+    updatedAt:  now(),
+  });
+  return ref.id;
+}
+
+export async function updateAIEnrichment(
+  id: string,
+  patch: Partial<AIEnrichment>,
+): Promise<void> {
+  await updateDoc(doc(db, COL_ENRICHMENTS, id), { ...patch, updatedAt: now() });
+}
+
+export function subscribeAIEnrichments(
+  opts: { normalizedContentId?: string; limit?: number } = {},
+  onChange: (items: AIEnrichment[]) => void,
+): Unsubscribe {
+  const q = opts.normalizedContentId
+    ? query(
+        collection(db, COL_ENRICHMENTS),
+        where("normalizedContentId", "==", opts.normalizedContentId),
+        orderBy("enrichedAt", "desc"),
+      )
+    : query(
+        collection(db, COL_ENRICHMENTS),
+        orderBy("enrichedAt", "desc"),
+      );
+
+  return onSnapshot(q, snap => {
+    const items = snap.docs.map(d => ({
+      ...(d.data() as Omit<AIEnrichment, "id">),
+      id: d.id,
+    } as AIEnrichment));
+    onChange(opts.limit ? items.slice(0, opts.limit) : items);
+  });
+}
+
+// ─── Publications ─────────────────────────────────────────────────────────────
+
+export async function createPublication(
+  data: Omit<Publication, "id">,
+): Promise<string> {
+  const ref = await addDoc(collection(db, COL_PUBLICATIONS), {
+    ...data,
+    createdAt: now(),
+    updatedAt: now(),
+  });
+  return ref.id;
+}
+
+export async function updatePublication(
+  id: string,
+  patch: Partial<Publication>,
+): Promise<void> {
+  await updateDoc(doc(db, COL_PUBLICATIONS, id), { ...patch, updatedAt: now() });
+}
+
+export function subscribePublications(
+  opts: { publishStatus?: string; surface?: string; limit?: number } = {},
+  onChange: (items: Publication[]) => void,
+): Unsubscribe {
+  let q = opts.publishStatus
+    ? query(
+        collection(db, COL_PUBLICATIONS),
+        where("publishStatus", "==", opts.publishStatus),
+        orderBy("createdAt", "desc"),
+      )
+    : query(
+        collection(db, COL_PUBLICATIONS),
+        orderBy("createdAt", "desc"),
+      );
+
+  return onSnapshot(q, snap => {
+    let items = snap.docs.map(d => ({
+      ...(d.data() as Omit<Publication, "id">),
+      id: d.id,
+    } as Publication));
+    if (opts.surface) items = items.filter(p => p.surfaces.includes(opts.surface as Publication["surfaces"][number]));
+    onChange(opts.limit ? items.slice(0, opts.limit) : items);
+  });
+}
+
+// ─── Jobs ────────────────────────────────────────────────────────────────────
+
+export async function createJob(
+  data: Omit<Job, "id" | "createdAt" | "updatedAt">,
+): Promise<string> {
+  // Idempotency check: if idempotencyKey is set, don't create duplicate
+  if (data.idempotencyKey) {
+    const existing = await import("firebase/firestore").then(({ getDocs, query: q2, where: w }) =>
+      getDocs(q2(collection(db, COL_JOBS), w("idempotencyKey", "==", data.idempotencyKey), w("status", "in", ["pending", "claimed"]))),
+    );
+    if (!existing.empty) return existing.docs[0].id;
+  }
+
+  const ref = await addDoc(collection(db, COL_JOBS), {
+    ...data,
+    createdAt: now(),
+    updatedAt: now(),
+  });
+  return ref.id;
+}
+
+export async function updateJob(
+  id: string,
+  patch: Partial<Job>,
+): Promise<void> {
+  await updateDoc(doc(db, COL_JOBS, id), { ...patch, updatedAt: now() });
+}
+
+export function subscribeJobs(
+  opts: { status?: Job["status"]; type?: Job["type"]; limit?: number } = {},
+  onChange: (jobs: Job[]) => void,
+): Unsubscribe {
+  const q = opts.status
+    ? query(
+        collection(db, COL_JOBS),
+        where("status", "==", opts.status),
+        orderBy("createdAt", "desc"),
+      )
+    : query(
+        collection(db, COL_JOBS),
+        orderBy("createdAt", "desc"),
+      );
+
+  return onSnapshot(q, snap => {
+    let jobs = snap.docs.map(d => ({
+      ...(d.data() as Omit<Job, "id">),
+      id: d.id,
+    } as Job));
+    if (opts.type) jobs = jobs.filter(j => j.type === opts.type);
+    onChange(opts.limit ? jobs.slice(0, opts.limit) : jobs);
+  });
+}
+
+// ─── Audit Logs (append-only) ─────────────────────────────────────────────────
+
+export async function writeAuditLog(
+  data: Omit<AuditLog, "id">,
+): Promise<string> {
+  const ref = await addDoc(collection(db, COL_AUDIT_LOGS), {
+    ...data,
+    occurredAt: data.occurredAt ?? now(),
+  });
+  return ref.id;
+}
+
+export function subscribeAuditLogs(
+  opts: { entityId?: string; limit?: number } = {},
+  onChange: (logs: AuditLog[]) => void,
+): Unsubscribe {
+  const q = opts.entityId
+    ? query(
+        collection(db, COL_AUDIT_LOGS),
+        where("entityId", "==", opts.entityId),
+        orderBy("occurredAt", "desc"),
+      )
+    : query(
+        collection(db, COL_AUDIT_LOGS),
+        orderBy("occurredAt", "desc"),
+      );
+
+  return onSnapshot(q, snap => {
+    const logs = snap.docs.map(d => ({
+      ...(d.data() as Omit<AuditLog, "id">),
+      id: d.id,
+    } as AuditLog));
+    onChange(opts.limit ? logs.slice(0, opts.limit) : logs);
+  });
+}
+
+// ─── Entities ────────────────────────────────────────────────────────────────
+
+export async function upsertEntity(
+  id: string,
+  data: Partial<Omit<FinancialEntity, "id">>,
+): Promise<void> {
+  await setDoc(doc(db, COL_ENTITIES, id), {
+    ...data,
+    updatedAt: now(),
+  }, { merge: true });
+}
+
+export function subscribeEntities(
+  onChange: (entities: FinancialEntity[]) => void,
+): Unsubscribe {
+  return onSnapshot(
+    query(collection(db, COL_ENTITIES), orderBy("name", "asc")),
+    snap => {
+      const entities = snap.docs.map(d => ({
+        ...(d.data() as Omit<FinancialEntity, "id">),
+        id: d.id,
+      } as FinancialEntity));
+      onChange(entities);
+    },
+  );
+}
+
+// ─── Revenue: Recommendation Clicks ──────────────────────────────────────────
+
+import type { RecommendationClick, AudienceLead } from "../types/revenue";
+
+const COL_REC_CLICKS  = "recommendation_clicks";
+const COL_AUDIENCE_LEADS = "audience_leads";
+
+export async function createRecommendationClick(
+  data: Omit<RecommendationClick, "id">,
+): Promise<void> {
+  await addDoc(collection(db, COL_REC_CLICKS), {
+    ...data,
+    timestamp: data.timestamp ?? now(),
+  });
+}
+
+export function subscribeRecommendationClicks(
+  opts: { limit?: number } = {},
+  onChange: (clicks: RecommendationClick[]) => void,
+): Unsubscribe {
+  const q = query(
+    collection(db, COL_REC_CLICKS),
+    orderBy("timestamp", "desc"),
+  );
+  return onSnapshot(q, snap => {
+    const clicks = snap.docs.map(d => ({
+      ...(d.data() as Omit<RecommendationClick, "id">),
+      id: d.id,
+    } as RecommendationClick));
+    onChange(opts.limit ? clicks.slice(0, opts.limit) : clicks);
+  });
+}
+
+// ─── Revenue: Audience Leads ──────────────────────────────────────────────────
+
+export async function createAudienceLead(
+  email: string,
+  source: string,
+): Promise<void> {
+  await addDoc(collection(db, COL_AUDIENCE_LEADS), {
+    email,
+    source,
+    createdAt: now(),
+  });
+}
+
+export function subscribeAudienceLeads(
+  opts: { limit?: number } = {},
+  onChange: (leads: AudienceLead[]) => void,
+): Unsubscribe {
+  const q = query(
+    collection(db, COL_AUDIENCE_LEADS),
+    orderBy("createdAt", "desc"),
+  );
+  return onSnapshot(q, snap => {
+    const leads = snap.docs.map(d => ({
+      ...(d.data() as Omit<AudienceLead, "id">),
+      id: d.id,
+    } as AudienceLead));
+    onChange(opts.limit ? leads.slice(0, opts.limit) : leads);
+  });
+}
+

@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import type { IntelligenceDocument, AdminApprovalStatus } from "../../../lib/types/documents";
+import { TrustBadge }  from "../TrustBadge";
+import { trustFromDoc } from "../../../lib/intelligence/trust-score";
 
 const FILE_ICONS: Record<string, string> = {
   pdf:   "📄",
@@ -60,6 +62,7 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
   const approvalStatus = doc.adminApprovalStatus;
   const isApproved     = approvalStatus === "approved";
   const canGenerateQueue = isApproved && !!onGenerateQueue && (doc.contentIdeas?.length ?? 0) > 0 && queueCount === 0;
+  const trust          = trustFromDoc(doc);
 
   return (
     <div className={`bg-zinc-900 border ${border} rounded-2xl p-4 flex flex-col gap-3 hover:border-zinc-600 transition-colors`}>
@@ -73,7 +76,10 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
             <p className="text-zinc-500 text-xs mt-0.5">{doc.fileName}</p>
           </div>
         </div>
-        <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${status.cls}`}>{status.label}</span>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <span className={`text-xs px-2 py-0.5 rounded-full ${status.cls}`}>{status.label}</span>
+          {doc.processingStatus === "ai_ready" && <TrustBadge trust={trust} />}
+        </div>
       </div>
 
       {/* Description */}

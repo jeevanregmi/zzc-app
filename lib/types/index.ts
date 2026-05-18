@@ -11,3 +11,7 @@ export * from "./content";
 export * from "./publish";
 export * from "./routing";
 export * from "./modules";
+// Content pipeline
+export * from "./pipeline";
+export * from "./jobs";
+export * from "./entities";

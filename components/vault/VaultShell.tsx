@@ -39,6 +39,7 @@ const NAV_GROUPS = [
   {
     label: "Operations",
     items: [
+      { href: "/vault/revenue",         icon: "◆", label: "Revenue"        },
       { href: "/vault/public-preview", icon: "◎", label: "Public Preview" },
       { href: "/vault/schemes",        icon: "◻", label: "Schemes"        },
       { href: "/vault/public-data",    icon: "◈", label: "Market Rates"   },

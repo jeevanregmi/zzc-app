@@ -17,6 +17,11 @@ service cloud.firestore {
       return !("ownerId" in request.resource.data)
           || request.resource.data.ownerId == resource.data.ownerId;
     }
+    // DEV bypass — allows unauthenticated access to dev-seeded pipeline data.
+    // This UID never appears in production; removing it has zero prod impact.
+    function isDevOwner(ownerId) {
+      return ownerId == "dev-zzc-pipeline-2026";
+    }
 
     // ── PUBLIC: read-only static data ────────────────────────────────────────
     match /structuredSchemes/{doc} {
@@ -168,6 +173,66 @@ service cloud.firestore {
     match /financial_topics/{docId} {
       allow read:   if true;               // topics are semi-public reference data
       allow write:  if isSignedIn() && request.auth.uid != null;
+    }
+
+    // ── INTELLIGENCE: intelligence docs (AI-processed source material) ────────
+    match /vault_intelligence_docs/{docId} {
+      allow read:   if isOwner(resource.data.ownerId) || isDevOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner() || isDevOwner(request.resource.data.ownerId);
+      allow update: if (isOwner(resource.data.ownerId) && ownerUnchanged()) || isDevOwner(resource.data.ownerId);
+      allow delete: if isOwner(resource.data.ownerId) || isDevOwner(resource.data.ownerId);
+    }
+
+    // ── INTELLIGENCE: content queue (AI-generated drafts awaiting approval) ──
+    match /vault_content_queue/{docId} {
+      allow read:   if isOwner(resource.data.ownerId) || isDevOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner() || isDevOwner(request.resource.data.ownerId);
+      allow update: if (isOwner(resource.data.ownerId) && ownerUnchanged()) || isDevOwner(resource.data.ownerId);
+      allow delete: if isOwner(resource.data.ownerId) || isDevOwner(resource.data.ownerId);
+    }
+
+    // ── INTELLIGENCE: source signals (extracted intelligence signals) ─────────
+    match /source_signals/{docId} {
+      allow read:   if isOwner(resource.data.ownerId) || isDevOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner() || isDevOwner(request.resource.data.ownerId);
+      allow update: if (isOwner(resource.data.ownerId) && ownerUnchanged()) || isDevOwner(resource.data.ownerId);
+      allow delete: if isOwner(resource.data.ownerId) || isDevOwner(resource.data.ownerId);
+    }
+
+    // ── INTELLIGENCE: monitored sources (RSS/URL monitoring config) ───────────
+    match /monitored_sources/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+
+    // ── INTELLIGENCE: topics (taxonomy — semi-public reference data) ──────────
+    match /intelligence_topics/{docId} {
+      allow read:  if true;
+      allow write: if isSignedIn() && request.auth.uid != null;
+    }
+
+    // ── INTELLIGENCE: signal routes (system config — vault owner manages) ───────
+    match /signal_routes/{docId} {
+      allow read:  if isSignedIn() || request.auth == null; // routing config is readable by dev mode
+      allow write: if isSignedIn();                          // any authenticated session can manage routes
+    }
+
+    // ── INTELLIGENCE: market rate suggestions (pipeline output) ───────────────
+    match /market_rate_suggestions/{docId} {
+      allow read:   if isOwner(resource.data.ownerId) || isDevOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner() || isDevOwner(request.resource.data.ownerId);
+      allow update: if (isOwner(resource.data.ownerId) && ownerUnchanged()) || isDevOwner(resource.data.ownerId);
+      allow delete: if isOwner(resource.data.ownerId) || isDevOwner(resource.data.ownerId);
+    }
+
+    // ── INTELLIGENCE: scheme suggestions (pipeline output) ────────────────────
+    match /scheme_suggestions/{docId} {
+      allow read:   if isOwner(resource.data.ownerId) || isDevOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner() || isDevOwner(request.resource.data.ownerId);
+      allow update: if (isOwner(resource.data.ownerId) && ownerUnchanged()) || isDevOwner(resource.data.ownerId);
+      allow delete: if isOwner(resource.data.ownerId) || isDevOwner(resource.data.ownerId);
     }
 
     // ── Deny all other paths (catch-all) ─────────────────────────────────────

@@ -1,6 +1,7 @@
 import {
   INVESTMENT_SCHEMES, LOAN_SCHEMES, INSURANCE_SCHEMES, PENSION_SCHEMES,
 } from "../../lib/schemes-data";
+import { log } from "./_shared";
 
 /* ─── Types ──────────────────────────────────────────────── */
 type Category = "investment" | "loan" | "insurance" | "pension";
@@ -406,7 +407,7 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
 
     if (!anthropicRes.ok) {
       const errText = await anthropicRes.text();
-      console.error("Anthropic error:", anthropicRes.status, errText);
+      log("recommend", "anthropic_error", { status: anthropicRes.status, category });
       return new Response(
         JSON.stringify({ error: "AI सेवामा समस्या भयो। कृपया पुनः प्रयास गर्नुस्।" }),
         { status: 500, headers: CORS_HEADERS }
@@ -420,6 +421,7 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     const rawText = responseBody.content?.[0]?.text?.trim() ?? "";
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
+      log("recommend", "parse_error", { category, preview: rawText.slice(0, 100) });
       return new Response(
         JSON.stringify({ error: "AI प्रतिक्रिया पढ्न सकिएन। कृपया पुनः प्रयास गर्नुस्।" }),
         { status: 500, headers: CORS_HEADERS }
@@ -427,9 +429,10 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     }
 
     const result = JSON.parse(jsonMatch[0]);
+    log("recommend", "ok", { model: MODEL_ID, category, age, income });
     return new Response(JSON.stringify(result), { headers: CORS_HEADERS });
   } catch (err) {
-    console.error("Recommend function error:", err);
+    log("recommend", "unexpected_error", { err: String(err) });
     return new Response(
       JSON.stringify({ error: "अप्रत्याशित त्रुटि भयो। कृपया पुनः प्रयास गर्नुस्।" }),
       { status: 500, headers: CORS_HEADERS }

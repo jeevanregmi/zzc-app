@@ -32,6 +32,23 @@ export type RouteAction =
 
 export type RoutePriority = "critical" | "high" | "medium" | "low";
 
+// ── Audience layer — which ZZC audience segment this content targets ────────
+// One signal fans out to multiple routes with different audience layers.
+// This enables future multi-site routing without schema changes:
+//   "investor"  → main ZZC finance content
+//   "genz"      → future-economy explainers (career, AI, digital Nepal)
+//   "diaspora"  → remittance, NRN, cross-border
+//   "business"  → SME/startup/policy impact
+//   "depositor" → cooperative/bank safety content
+
+export type ContentAudience =
+  | "investor"    // NEPSE, EPF, savings — primary ZZC fintech audience
+  | "genz"        // AI, jobs, digital economy, future Nepal — broader Gen Z
+  | "diaspora"    // remittance, NRN investment, cross-border work
+  | "business"    // startup, SME, policy impact for founders
+  | "depositor"   // cooperative, bank safety, savings protection
+  | "general";    // broad Nepal finance — not segment-specific
+
 // ── Keyword match strategy ─────────────────────────────────────────────────
 
 export type KeywordMatchMode =
@@ -64,6 +81,7 @@ export interface SignalRoute {
   // ── Content queue config (used when destination === "content_queue") ───
   contentType?:  string;          // QueueContentType
   platform?:     string;          // QueuePlatform
+  audience?:     ContentAudience; // which audience segment this content targets
 
   // ── Control ────────────────────────────────────────────────────────────
   active:        boolean;
