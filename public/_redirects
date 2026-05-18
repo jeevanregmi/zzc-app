@@ -1,1 +1,1 @@
-/scheme/*  /scheme/:splat/index.html  200
+# CF Pages handles /scheme/* → /scheme/slug/index.html automatically via static hosting
