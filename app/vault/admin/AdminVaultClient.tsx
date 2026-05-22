@@ -19,6 +19,7 @@ import type { QueueItem }           from "../../../lib/types/queue";
 import type { CalculatorFormula }   from "../../../lib/data/calculator-registry";
 import { TrustBadge }               from "../../../components/vault/TrustBadge";
 import { trustFromSignal, trustFromDoc, trustFromQueueItem } from "../../../lib/intelligence/trust-score";
+import { LearnTip, LearnBlock }    from "../../../components/vault/LearnTip";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -263,7 +264,9 @@ function DocReviewCard({ doc, onApprove, onFlag }: {
       {/* AI Summary */}
       {doc.aiSummary && (
         <div className="bg-zinc-950 border border-zinc-900 rounded px-3 py-2">
-          <p className="text-xs text-zinc-600 font-medium mb-1">AI Summary</p>
+          <p className="text-xs text-zinc-600 font-medium mb-1 flex items-center gap-1">
+            AI Summary <LearnTip term="AI Summary" />
+          </p>
           <p className="text-xs text-zinc-400 leading-relaxed line-clamp-3">{doc.aiSummary}</p>
         </div>
       )}
@@ -271,7 +274,9 @@ function DocReviewCard({ doc, onApprove, onFlag }: {
       {/* Key Insights */}
       {doc.aiKeyInsights && doc.aiKeyInsights.length > 0 && (
         <div className="space-y-1">
-          <p className="text-xs text-zinc-600 font-medium">Key Insights ({doc.aiKeyInsights.length})</p>
+          <p className="text-xs text-zinc-600 font-medium flex items-center gap-1">
+            Key Insights ({doc.aiKeyInsights.length}) <LearnTip term="Key Insights" />
+          </p>
           {doc.aiKeyInsights.slice(0, 3).map((insight, i) => (
             <div key={i} className="flex gap-1.5 text-xs text-zinc-400">
               <span className="text-cyan-800 shrink-0">›</span>
@@ -396,7 +401,9 @@ function QueueReviewCard({ item, onApprove, onReject }: {
 
       {/* Source traceability — required for every queue item */}
       <div className="bg-zinc-950 border border-zinc-900 rounded px-3 py-2 space-y-1">
-        <p className="text-xs text-zinc-600 font-medium">Source Trace</p>
+        <p className="text-xs text-zinc-600 font-medium flex items-center gap-1">
+          Source Trace <LearnTip term="Source Trace" />
+        </p>
         {item.sourceDocTitle && (
           <p className="text-xs text-zinc-400 truncate">Document: {item.sourceDocTitle}</p>
         )}
@@ -530,8 +537,8 @@ function FormulaCard({ formula }: { formula: CalculatorFormula }) {
 export default function AdminVaultClient() {
   const [tab, setTab] = useState<Tab>("signals");
 
-  const { user }                              = useVaultAuth();
-  const uid                                   = user?.uid ?? null;
+  const { user, loading: authLoading, isOwner } = useVaultAuth();
+  const uid                                      = user?.uid ?? null;
   const { signals: allSignals, loading: sl }  = useSourceSignals(uid, "all");
   const { docs, loading: dl }                 = useIntelligenceDocs(uid);
   const { items: pendingQueue, loading: ql }  = useQueueItems(uid, "pending");
@@ -552,14 +559,15 @@ export default function AdminVaultClient() {
   };
 
   const totalActionable = counts.signals + counts.documents + counts.queue;
-  const loading         = sl || dl || ql;
+  const loading         = authLoading || sl || dl || ql;
 
   // ── Signal actions ──────────────────────────────────────────────────────────
 
   const handleValidateSignal = async (id: string) => {
+    if (!user?.email) return;
     await updateSourceSignal(id, {
       status:      "validated",
-      validatedBy: user?.email ?? "admin",
+      validatedBy: user.email,
       validatedAt: new Date().toISOString(),
     });
   };
@@ -597,6 +605,21 @@ export default function AdminVaultClient() {
   };
 
   // ── Render ──────────────────────────────────────────────────────────────────
+
+  if (!authLoading && !isOwner) {
+    return (
+      <div className="min-h-screen bg-black flex items-center justify-center">
+        <div className="text-center space-y-3 p-8">
+          <p className="text-4xl">🔒</p>
+          <p className="text-white font-bold">Access Denied</p>
+          <p className="text-zinc-500 text-sm">Admin Vault is restricted to the vault owner.</p>
+          <Link href="/vault" className="inline-block mt-2 text-xs text-cyan-600 hover:text-cyan-400">
+            ← Back to Vault
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-black">
@@ -681,6 +704,16 @@ export default function AdminVaultClient() {
         {/* Documents */}
         {!loading && tab === "documents" && (
           <div className="space-y-3">
+            <LearnBlock
+              title="Document Review — के गर्ने?"
+              nepali="AI ले document analyze गरिसक्यो। अब तपाईंले review गर्नुपर्छ — सहि लाग्यो भने Approve, गलत लाग्यो भने Flag गर्नुहोस्।"
+              steps={[
+                "AI Summary र Key Insights पढ्नुहोस् — AI ले document बाट के बुझ्यो?",
+                "Content Ideas हेर्नुहोस् — यी ideas YouTube/Instagram मा publish गर्न मिल्छ?",
+                "सहि लागे: 'Approve for Queue' थिच्नुहोस् — ideas Content Queue मा जान्छन्",
+                "नमिले: 'Flag for Revision' थिच्नुहोस् — reason लेख्नुहोस्",
+              ]}
+            />
             <p className="text-xs text-zinc-600 pb-1">
               These documents have been processed by AI. Review the AI output, then approve to unlock queue item generation — or flag for revision.
             </p>
@@ -708,6 +741,16 @@ export default function AdminVaultClient() {
         {/* Queue */}
         {!loading && tab === "queue" && (
           <div className="space-y-3">
+            <LearnBlock
+              title="Content Queue Review — के गर्ने?"
+              nepali="यी content ideas document बाट AI ले बनाएको हो। तपाईंले approve गरेपछि AI Studio मा script र thumbnail बन्छ।"
+              steps={[
+                "Content idea को title पढ्नुहोस् — YouTube/Instagram मा राम्रो हुन्छ?",
+                "Source Trace हेर्नुहोस् — कुन document बाट आयो?",
+                "सहि लागे: 'Approve' थिच्नुहोस् — AI Studio मा जान्छ",
+                "नमिले: 'Reject' थिच्नुहोस्",
+              ]}
+            />
             <p className="text-xs text-zinc-600 pb-1">
               Approve items to unlock them for AI Studio script and thumbnail generation. Every item must have a verified source before approval.
             </p>

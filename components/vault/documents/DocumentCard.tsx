@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import type { IntelligenceDocument, AdminApprovalStatus } from "../../../lib/types/documents";
+import { LearnTip } from "../LearnTip";
+import type { IntelligenceDocument, AdminApprovalStatus, SourceType } from "../../../lib/types/documents";
 import { TrustBadge }  from "../TrustBadge";
 import { trustFromDoc } from "../../../lib/intelligence/trust-score";
 
@@ -15,11 +17,12 @@ const FILE_ICONS: Record<string, string> = {
 };
 
 const STATUS_BADGE: Record<string, { label: string; cls: string }> = {
-  uploading:     { label: "Uploading",  cls: "bg-blue-900  text-blue-300"                  },
-  ready:         { label: "Ready",      cls: "bg-zinc-800  text-zinc-400"                  },
-  processing_ai: { label: "Analyzing…", cls: "bg-amber-900 text-amber-300 animate-pulse"   },
-  ai_ready:      { label: "AI Ready",   cls: "bg-green-900 text-green-400"                 },
-  error:         { label: "Error",      cls: "bg-red-900   text-red-400"                   },
+  uploading:     { label: "Uploading",   cls: "bg-blue-900  text-blue-300"                  },
+  ready:         { label: "Ready",       cls: "bg-zinc-800  text-zinc-400"                  },
+  processing_ai: { label: "Analyzing…",  cls: "bg-amber-900 text-amber-300 animate-pulse"   },
+  ai_ready:      { label: "AI Ready",    cls: "bg-green-900 text-green-400"                 },
+  ai_paused:     { label: "AI Paused",   cls: "bg-amber-900 text-amber-400"                 },
+  error:         { label: "Error",       cls: "bg-red-900   text-red-400"                   },
 };
 
 const APPROVAL_BADGE: Record<AdminApprovalStatus, { label: string; cls: string }> = {
@@ -52,13 +55,32 @@ interface Props {
   onProcess:        (doc: IntelligenceDocument) => void;
   onDelete:         (doc: IntelligenceDocument) => void;
   onGenerateQueue?: (doc: IntelligenceDocument) => void;
+  onResetStuck?:    (doc: IntelligenceDocument) => void;
 }
 
-export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onGenerateQueue }: Props) {
+const PROVIDER_LABEL: Record<string, string> = {
+  "gemini-flash":    "Gemini",
+  "bedrock-sonnet":  "Bedrock",
+  "anthropic-sonnet":"Anthropic",
+};
+
+const SOURCE_TYPE_BADGE: Record<SourceType, { label: string; cls: string }> = {
+  official:   { label: "✓ Official",   cls: "bg-green-950  text-green-400  border border-green-800"  },
+  unofficial: { label: "⚠ Unofficial", cls: "bg-amber-950  text-amber-400  border border-amber-800"  },
+  research:   { label: "◎ Research",   cls: "bg-blue-950   text-blue-400   border border-blue-800"   },
+  unknown:    { label: "? Unknown",    cls: "bg-zinc-800   text-zinc-500   border border-zinc-700"   },
+};
+
+export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onGenerateQueue, onResetStuck }: Props) {
+  const [showFullNotes, setShowFullNotes] = useState(false);
   const displayStatus  = isProcessing ? "processing_ai" : doc.processingStatus;
+
+  // Detect stuck: Firestore says processing_ai but this browser session isn't the one running it
+  const isStuck = doc.processingStatus === "processing_ai" && !isProcessing;
   const status         = STATUS_BADGE[displayStatus] ?? STATUS_BADGE.ready;
   const border         = CAT_COLORS[doc.category] ?? "border-zinc-800";
-  const canProcess     = !isProcessing && (doc.processingStatus === "ready" || doc.processingStatus === "error");
+  // AI can be retried from ready, ai_paused, or legacy error states
+  const canProcess     = !isProcessing && ["ready", "ai_paused", "error"].includes(doc.processingStatus);
   const approvalStatus = doc.adminApprovalStatus;
   const isApproved     = approvalStatus === "approved";
   const canGenerateQueue = isApproved && !!onGenerateQueue && (doc.contentIdeas?.length ?? 0) > 0 && queueCount === 0;
@@ -77,7 +99,11 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
           </div>
         </div>
         <div className="flex flex-col items-end gap-1 shrink-0">
-          <span className={`text-xs px-2 py-0.5 rounded-full ${status.cls}`}>{status.label}</span>
+          {isStuck ? (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-red-900 text-red-300 animate-pulse">Stuck</span>
+          ) : (
+            <span className={`text-xs px-2 py-0.5 rounded-full ${status.cls}`}>{status.label}</span>
+          )}
           {doc.processingStatus === "ai_ready" && <TrustBadge trust={trust} />}
         </div>
       </div>
@@ -87,11 +113,31 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
         <p className="text-zinc-400 text-xs line-clamp-2">{doc.description}</p>
       )}
 
+      {/* Source type + authority — trust header */}
+      {doc.sourceType && doc.sourceType !== "unknown" && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${SOURCE_TYPE_BADGE[doc.sourceType].cls}`}>
+            {SOURCE_TYPE_BADGE[doc.sourceType].label}
+          </span>
+          {doc.sourceAuthority && (
+            <span className="text-zinc-500 text-xs truncate">{doc.sourceAuthority}</span>
+          )}
+        </div>
+      )}
+
       {/* AI Summary */}
       {doc.aiSummary && (
         <div className="bg-zinc-800/60 rounded-xl p-3 border border-zinc-700">
           <p className="text-zinc-500 text-xs mb-1 font-semibold">AI Summary</p>
           <p className="text-zinc-300 text-xs line-clamp-3">{doc.aiSummary}</p>
+        </div>
+      )}
+
+      {/* Nepali explainer — public trust layer */}
+      {doc.nepaliExplainer && (
+        <div className="bg-blue-950/40 rounded-xl p-3 border border-blue-900/50">
+          <p className="text-blue-400 text-xs mb-1 font-semibold">सरल नेपालीमा</p>
+          <p className="text-blue-200 text-xs line-clamp-3">{doc.nepaliExplainer}</p>
         </div>
       )}
 
@@ -108,6 +154,28 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
             <li className="text-xs text-zinc-600 pl-3">+{doc.aiKeyInsights.length - 3} more insights</li>
           )}
         </ul>
+      )}
+
+      {/* Affected sectors */}
+      {doc.affectedSectors && doc.affectedSectors.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {doc.affectedSectors.slice(0, 4).map(sector => (
+            <span key={sector} className="text-xs bg-purple-950 text-purple-400 border border-purple-900 px-2 py-0.5 rounded-full">
+              {sector}
+            </span>
+          ))}
+          {doc.affectedSectors.length > 4 && (
+            <span className="text-xs text-zinc-600">+{doc.affectedSectors.length - 4}</span>
+          )}
+        </div>
+      )}
+
+      {/* Youth impact — if exists and no Nepali explainer */}
+      {doc.youthImpact && !doc.nepaliExplainer && (
+        <div className="bg-zinc-800/40 rounded-xl p-3 border border-zinc-700/60">
+          <p className="text-zinc-500 text-xs mb-1 font-semibold">युवाहरूलाई असर</p>
+          <p className="text-zinc-400 text-xs line-clamp-2">{doc.youthImpact}</p>
+        </div>
       )}
 
       {/* Content Ideas — flywheel connector with queue traceability */}
@@ -161,8 +229,38 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
         </div>
       )}
 
+      {/* Stuck recovery banner — processing_ai but no active browser session */}
+      {isStuck && (
+        <div className="bg-red-950/50 border border-red-800 rounded-xl px-3 py-2.5 space-y-2">
+          <p className="text-xs text-red-300 font-semibold">Analysis अड्किएको छ (Stuck)</p>
+          <p className="text-xs text-red-400/80">
+            AI analysis सुरु भएको थियो तर सकिएन — browser बन्द भयो वा timeout भयो।
+            Document सुरक्षित छ।
+          </p>
+          <button
+            onClick={() => onResetStuck?.(doc)}
+            className="w-full text-xs font-bold py-2 rounded-xl bg-red-700 hover:bg-red-600 text-white transition-colors"
+          >
+            🔄 Reset गरेर फेरि Analyze गर्नुहोस्
+          </button>
+        </div>
+      )}
+
+      {/* AI paused — prominent retry banner */}
+      {doc.processingStatus === "ai_paused" && (
+        <div className="bg-amber-950/40 border border-amber-900/60 rounded-xl px-3 py-2.5 space-y-1">
+          <p className="text-xs text-amber-400 font-semibold flex items-center gap-1">
+            AI Analysis रोकिएको छ <LearnTip term="AI Paused" />
+          </p>
+          {doc.aiProcessingError && (
+            <p className="text-xs text-amber-600/80 line-clamp-2">{doc.aiProcessingError}</p>
+          )}
+          <p className="text-xs text-zinc-500">Document सुरक्षित छ — पछि retry गर्न सकिन्छ</p>
+        </div>
+      )}
+
       {/* Source metadata — traceability footer */}
-      <div className="flex items-center gap-3 text-xs text-zinc-700">
+      <div className="flex items-center gap-2 flex-wrap text-xs text-zinc-700">
         <span>{formatSize(doc.fileSize)}</span>
         <span>·</span>
         <span>{doc.category}</span>
@@ -172,6 +270,12 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
             <span className={doc.confidence >= 0.7 ? "text-green-700" : doc.confidence >= 0.4 ? "text-yellow-700" : "text-red-700"}>
               {Math.round(doc.confidence * 100)}% confidence
             </span>
+          </>
+        )}
+        {doc.aiProvider && (
+          <>
+            <span>·</span>
+            <span className="text-zinc-600">{PROVIDER_LABEL[doc.aiProvider] ?? doc.aiProvider}</span>
           </>
         )}
         {doc.language && doc.language !== "English" && (
@@ -185,50 +289,68 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
       {/* Admin approval status — shown after AI processing */}
       {approvalStatus && doc.processingStatus === "ai_ready" && (
         <div className={`rounded-lg px-3 py-2 text-xs flex items-center justify-between gap-2 ${APPROVAL_BADGE[approvalStatus].cls}`}>
-          <span className="font-semibold">{APPROVAL_BADGE[approvalStatus].label}</span>
+          <span className="font-semibold flex items-center gap-1">
+            {APPROVAL_BADGE[approvalStatus].label}
+            {approvalStatus === "pending_review" && <LearnTip term="pending_review" />}
+          </span>
           {approvalStatus === "pending_review" && (
             <Link href="/vault/admin?tab=documents" className="underline hover:no-underline">
               Review in Admin Vault →
             </Link>
           )}
           {approvalStatus === "needs_revision" && doc.adminApprovalNotes && (
-            <span className="opacity-75 truncate">{doc.adminApprovalNotes}</span>
+            <button
+              onClick={() => setShowFullNotes(p => !p)}
+              className="opacity-75 text-left hover:opacity-100 transition-opacity"
+            >
+              <span className={showFullNotes ? "" : "line-clamp-1"}>{doc.adminApprovalNotes}</span>
+              {!showFullNotes && doc.adminApprovalNotes.length > 60 && (
+                <span className="text-red-400 ml-1 text-xs">more ↓</span>
+              )}
+            </button>
           )}
         </div>
       )}
 
       {/* Footer actions */}
-      <div className="flex items-center justify-between mt-auto pt-2 border-t border-zinc-800">
+      {/* Full-width AI retry — only when paused/ready and not stuck */}
+      {canProcess && !isProcessing && !isStuck && (
+        <button
+          onClick={() => onProcess(doc)}
+          className={`w-full text-xs font-bold py-2 rounded-xl transition-colors ${
+            doc.processingStatus === "ai_paused"
+              ? "bg-amber-600 hover:bg-amber-500 text-black"
+              : "bg-zinc-800 hover:bg-zinc-700 text-amber-400"
+          }`}
+        >
+          {doc.processingStatus === "ai_paused" ? "🔄 AI Analysis Retry गर्नुहोस्" : "🤖 AI ले Analyze गर्नुहोस्"}
+        </button>
+      )}
+
+      {canGenerateQueue && !isProcessing && (
+        <button
+          onClick={() => onGenerateQueue!(doc)}
+          className="w-full text-xs font-bold py-2 rounded-xl bg-cyan-900/50 hover:bg-cyan-900 text-cyan-300 border border-cyan-800 transition-colors"
+        >
+          ➕ Content Queue मा Add गर्नुहोस्
+        </button>
+      )}
+
+      <div className="flex items-center justify-between pt-1 border-t border-zinc-800">
         <span className="text-zinc-600 text-xs">{new Date(doc.uploadedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
-        <div className="flex items-center gap-2">
-          {canProcess && (
-            <button
-              onClick={() => onProcess(doc)}
-              className="text-xs text-amber-400 hover:text-amber-300 font-semibold transition-colors"
-            >
-              Analyze with AI
-            </button>
-          )}
+        <div className="flex items-center gap-3">
           {isProcessing && (
             <span className="text-xs text-amber-400">Analyzing…</span>
           )}
-          {canGenerateQueue && (
-            <button
-              onClick={() => onGenerateQueue!(doc)}
-              className="text-xs text-cyan-400 hover:text-cyan-300 font-semibold transition-colors"
-            >
-              Generate Queue Items
-            </button>
-          )}
           <button
             onClick={() => onView(doc)}
-            className="text-xs text-green-400 hover:text-green-300 font-semibold transition-colors"
+            className="text-xs text-zinc-400 hover:text-white font-semibold transition-colors"
           >
             View
           </button>
           <button
             onClick={() => onDelete(doc)}
-            className="text-xs text-zinc-600 hover:text-red-400 transition-colors"
+            className="text-xs text-zinc-700 hover:text-red-400 transition-colors"
           >
             Delete
           </button>

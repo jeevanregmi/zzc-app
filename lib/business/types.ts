@@ -16,7 +16,9 @@
 
 export type RevenueSource =
   | "youtube" | "playstore" | "subscription" | "consultation"
-  | "enterprise" | "affiliate" | "content-licensing" | "other";
+  | "enterprise" | "affiliate" | "content-licensing"
+  | "sponsorship" | "civic-partnership" | "research-sale" | "api-access"
+  | "other";
 
 export interface RevenueEntry {
   id:           string;

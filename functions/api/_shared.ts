@@ -79,7 +79,7 @@ export function validateAnthropicEnv(env: { ANTHROPIC_API_KEY?: string }): strin
  */
 export function bedrockErrorMessage(status: number): string {
   switch (status) {
-    case 400: return "Bedrock rejected the request — model ID may be invalid. Check BEDROCK_MODEL_ID env var format (us.anthropic.claude-3-7-sonnet-20250219-v1:0).";
+    case 400: return "Bedrock rejected the request — model ID may be invalid or not enabled in your AWS account. Check BEDROCK_MODEL_ID env var (e.g. us.anthropic.claude-3-5-haiku-20241022-v1:0).";
     case 401:
     case 403: return "Bedrock credentials invalid or expired. Rotate AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY in Cloudflare Pages env vars.";
     case 404: return "Bedrock model not found. The model ID is either incorrect or not enabled in your AWS account. Verify in AWS Console → Bedrock → Model catalog.";
@@ -100,7 +100,8 @@ export function anthropicErrorMessage(status: number): string {
     case 529: return "Anthropic API overloaded. Retry in a few minutes.";
     case 500:
     case 503: return "Anthropic API unavailable. Retry in a few minutes.";
-    default:  return `Anthropic API returned HTTP ${status}. Retry or check ANTHROPIC_API_KEY.`;
+    case 400: return "Anthropic rejected the request (HTTP 400). The request format or content type may be unsupported.";
+    default:  return `Anthropic API returned HTTP ${status}. Retry or contact support.`;
   }
 }
 

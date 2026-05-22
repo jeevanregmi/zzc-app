@@ -107,7 +107,7 @@ function RouteCard({
                 : "border-green-900 text-green-500 hover:bg-green-900/20"
             }`}
           >
-            {route.active ? "Pause" : "Resume"}
+            {route.active ? "रोक्नुस्" : "चालु गर्नुस्"}
           </button>
           <button onClick={onDelete} disabled={busy} className="text-xs px-2.5 py-1 rounded-lg border border-red-900 text-red-500 hover:bg-red-900/20 transition-colors disabled:opacity-50">
             ✕
@@ -441,13 +441,12 @@ export default function RoutingClient() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-xl font-semibold text-white">Signal Routing</h1>
+          <h1 className="text-xl font-semibold text-white">Signal Routing — के कहाँ जान्छ?</h1>
           <p className="text-sm text-zinc-500 mt-1">
-            Rules that determine where ingested signals go. Signals are matched against active routes
-            and routed to <strong className="text-zinc-300">Content Queue</strong>,{" "}
-            <strong className="text-zinc-300">Rate Suggestions</strong>, or{" "}
-            <strong className="text-zinc-300">Scheme Suggestions</strong>.
-            Nothing auto-publishes — all routed items require admin review.
+            नयाँ signal (news/notice) आउँदा यो page ले decide गर्छ — <strong className="text-zinc-300">Content Queue</strong> मा जान्छ (video idea बन्छ),{" "}
+            <strong className="text-zinc-300">Rate Suggestion</strong> बन्छ (EPF/NRB rate update), वा{" "}
+            <strong className="text-zinc-300">Scheme Suggestion</strong> बन्छ।
+            कुनै पनि कुरा automatically public हुँदैन — admin ले approve गरेपछि मात्र।
           </p>
         </div>
         <button
@@ -461,9 +460,9 @@ export default function RoutingClient() {
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: "Active",       count: activeCount,  color: "text-green-400" },
-          { label: "Paused",       count: pausedCount,  color: "text-zinc-500"  },
-          { label: "Total Fired",  count: totalFired,   color: "text-blue-400"  },
+          { label: "चालु Routes",    count: activeCount,  color: "text-green-400" },
+          { label: "रोकिएका",       count: pausedCount,  color: "text-zinc-500"  },
+          { label: "कति पटक Fire भयो", count: totalFired, color: "text-blue-400"  },
         ].map(s => (
           <div key={s.label} className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 text-center">
             <p className={`text-2xl font-black ${s.color}`}>{s.count}</p>
@@ -474,18 +473,18 @@ export default function RoutingClient() {
 
       {/* Pipeline diagram */}
       <div className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3">
-        <p className="text-[10px] text-zinc-600 font-mono tracking-widest uppercase mb-2">Ingestion pipeline</p>
+        <p className="text-[10px] text-zinc-600 font-mono tracking-widest uppercase mb-2">कसरी काम गर्छ?</p>
         <div className="flex items-center gap-2 text-xs text-zinc-500 flex-wrap">
-          {["MonitoredSource", "→", "ingest-url worker", "→", "SourceSignal", "→", "Route Matcher", "→"].map((s, i) => (
+          {["Website URL", "→", "AI पढ्छ", "→", "Signal बन्छ", "→", "Route Match", "→"].map((s, i) => (
             <span key={i} className={s === "→" ? "text-zinc-700" : "text-zinc-400"}>{s}</span>
           ))}
           <span className="text-blue-400">Content Queue</span>
           <span className="text-zinc-700">/</span>
-          <span className="text-green-400">Rate Suggestions</span>
+          <span className="text-green-400">Rate Update</span>
           <span className="text-zinc-700">/</span>
-          <span className="text-purple-400">Scheme Suggestions</span>
+          <span className="text-purple-400">Scheme Update</span>
         </div>
-        <p className="text-[10px] text-zinc-700 mt-1.5">All routed items start as drafts. Admin approves before anything goes live.</p>
+        <p className="text-[10px] text-zinc-700 mt-1.5">सबै routed items draft मा जान्छन् — admin approve गरेपछि मात्र public हुन्छ।</p>
       </div>
 
       {/* Tabs */}

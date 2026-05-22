@@ -2,131 +2,239 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
-import { useVaultAuth } from "../../hooks/vault/useVaultAuth";
+import { useVaultAuth }        from "../../hooks/vault/useVaultAuth";
 import { useIntelligenceDocs } from "../../hooks/vault/useIntelligenceDocs";
-import { useQueueItems } from "../../hooks/vault/useQueueItems";
+import { useQueueItems }       from "../../hooks/vault/useQueueItems";
+import { useSourceSignals }    from "../../hooks/vault/useSourceSignals";
 import type { IntelligenceDocument } from "../../lib/types/documents";
-import type { QueueItem } from "../../lib/types/queue";
+import type { QueueItem }            from "../../lib/types/queue";
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 function timeAgo(iso: string): string {
   const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
-  if (m < 1)  return "just now";
-  if (m < 60) return `${m}m ago`;
+  if (m < 1)  return "भर्खर";
+  if (m < 60) return `${m} मिनेट अघि`;
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
+  if (h < 24) return `${h} घण्टा अघि`;
+  return `${Math.floor(h / 24)} दिन अघि`;
 }
 
-// ─── Pipeline status config (static + live below) ────────────────────────────
+// ─── Workflow Breadcrumb ──────────────────────────────────────────────────────
 
-const PIPELINE_STATUS = [
-  { label: "AI Script Generation",   status: "live",    note: "/api/generate-script → Bedrock" },
-  { label: "AI Thumbnail Prompts",   status: "live",    note: "/api/generate-thumbnail-prompt → Bedrock" },
-  { label: "AI Recommend",           status: "live",    note: "/api/recommend → Bedrock" },
-  { label: "Document Intelligence",  status: "live",    note: "/api/process-document → Anthropic" },
-  { label: "Content Queue",          status: "live",    note: "vault_content_queue → Firestore" },
-  { label: "Media Upload",           status: "live",    note: "Firebase Storage" },
-  { label: "Image Generation",       status: "pending", note: "Needs TOGETHER_API_KEY" },
-  { label: "Voice Narration",        status: "pending", note: "Needs ELEVENLABS_API_KEY" },
-];
-
-const STATUS_DOT: Record<string, string> = {
-  live:    "bg-green-500",
-  pending: "bg-zinc-600",
-  error:   "bg-red-500",
-};
-
-// ─── Flywheel bar ─────────────────────────────────────────────────────────────
-
-function FlywheelBar({
-  docCount, awaitingAI, queueTotal, queuePending, inProduction,
+function WorkflowBreadcrumb({
+  docCount, awaitingAI, pendingReview, queuePending, inProduction,
 }: {
-  docCount: number; awaitingAI: number; queueTotal: number; queuePending: number; inProduction: number;
+  docCount: number; awaitingAI: number; pendingReview: number;
+  queuePending: number; inProduction: number;
 }) {
-  const nodes = [
+  const steps = [
     {
-      label: "Documents",
-      value: docCount,
-      href:  "/vault/documents",
-      color: docCount > 0 ? "text-zinc-200" : "text-zinc-600",
-      pulse: false,
+      label:  "Upload",
+      nepali: "Upload",
+      value:  docCount,
+      href:   "/vault/documents",
+      done:   docCount > 0,
+      active: docCount === 0,
     },
     {
-      label: "Awaiting AI",
-      value: awaitingAI,
-      href:  "/vault/documents",
-      color: awaitingAI > 0 ? "text-yellow-400" : "text-zinc-600",
-      pulse: awaitingAI > 0,
+      label:  "AI Analysis",
+      nepali: "AI विश्लेषण",
+      value:  awaitingAI,
+      href:   "/vault/documents",
+      done:   docCount > 0 && awaitingAI === 0,
+      active: awaitingAI > 0,
     },
     {
-      label: "In Queue",
-      value: queueTotal,
-      href:  "/vault/content/queue",
-      color: queuePending > 0 ? "text-cyan-400" : queueTotal > 0 ? "text-zinc-300" : "text-zinc-600",
-      pulse: false,
+      label:  "Admin Review",
+      nepali: "Review",
+      value:  pendingReview,
+      href:   "/vault/admin?tab=documents",
+      done:   pendingReview === 0 && docCount > 0,
+      active: pendingReview > 0,
     },
     {
-      label: "Production",
-      value: inProduction,
-      href:  "/vault/content/queue",
-      color: inProduction > 0 ? "text-green-400" : "text-zinc-600",
-      pulse: inProduction > 0,
+      label:  "Content Queue",
+      nepali: "Queue",
+      value:  queuePending,
+      href:   "/vault/content/queue",
+      done:   queuePending === 0 && inProduction > 0,
+      active: queuePending > 0,
+    },
+    {
+      label:  "Production",
+      nepali: "Production",
+      value:  inProduction,
+      href:   "/vault/content/queue",
+      done:   inProduction > 0,
+      active: false,
     },
   ];
 
-  const isActive = docCount > 0 || queueTotal > 0;
-
   return (
-    <div className="mb-6 p-4 bg-zinc-900 border border-zinc-800 rounded-2xl">
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Intelligence Flywheel</span>
-        <span className={`text-xs flex items-center gap-1.5 ${isActive ? "text-green-500" : "text-zinc-600"}`}>
-          <span className={`inline-block w-1.5 h-1.5 rounded-full ${isActive ? "bg-green-500" : "bg-zinc-600"}`} />
-          {isActive ? "active" : "empty"}
-        </span>
-      </div>
-      <div className="flex items-center gap-1 sm:gap-2">
-        {nodes.map((node, i) => (
-          <div key={node.label} className="flex items-center gap-1 sm:gap-2 flex-1">
+    <div className="mb-5 p-4 bg-zinc-900 border border-zinc-800 rounded-2xl">
+      <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">
+        Content Flywheel — स्रोत → विश्लेषण → Review → Publish
+      </p>
+      <div className="flex items-center gap-1 overflow-x-auto pb-1">
+        {steps.map((step, i) => (
+          <div key={step.label} className="flex items-center gap-1 shrink-0">
             <Link
-              href={node.href}
-              className="flex-1 flex flex-col items-center py-2.5 px-1 rounded-xl bg-zinc-800/60 hover:bg-zinc-800 transition-colors text-center"
+              href={step.href}
+              className={`flex flex-col items-center px-3 py-2 rounded-xl transition-colors text-center min-w-16 ${
+                step.active
+                  ? "bg-cyan-900/40 border border-cyan-700"
+                  : step.done
+                  ? "bg-green-950/40 border border-green-900"
+                  : "bg-zinc-800/50 border border-zinc-800"
+              }`}
             >
-              <span className={`text-2xl font-black leading-none tabular-nums ${node.color} ${node.pulse ? "animate-pulse" : ""}`}>
-                {node.value}
+              <span className={`text-lg font-black leading-none ${
+                step.active ? "text-cyan-400" : step.done ? "text-green-400" : "text-zinc-600"
+              }`}>
+                {step.active && step.value > 0 ? step.value : step.done ? "✓" : "–"}
               </span>
-              <span className="text-xs text-zinc-500 mt-1 leading-tight">{node.label}</span>
+              <span className={`text-xs mt-0.5 whitespace-nowrap ${
+                step.active ? "text-cyan-300" : step.done ? "text-green-400" : "text-zinc-600"
+              }`}>
+                {step.nepali}
+              </span>
             </Link>
-            {i < nodes.length - 1 && (
-              <span className="text-zinc-700 text-xs shrink-0">→</span>
+            {i < steps.length - 1 && (
+              <span className="text-zinc-700 text-xs px-0.5">→</span>
             )}
           </div>
         ))}
       </div>
-      {queuePending > 0 && (
-        <div className="mt-3 flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 shrink-0" />
-          <p className="text-xs text-cyan-400">
-            {queuePending} item{queuePending !== 1 ? "s" : ""} pending review in queue
-          </p>
-          <Link href="/vault/content/queue" className="text-xs text-cyan-600 hover:text-cyan-400 ml-auto transition-colors">
-            Review →
-          </Link>
-        </div>
-      )}
-      {awaitingAI > 0 && queuePending === 0 && (
-        <div className="mt-3 flex items-center gap-2">
-          <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 shrink-0" />
-          <p className="text-xs text-yellow-400">
-            {awaitingAI} document{awaitingAI !== 1 ? "s" : ""} awaiting AI analysis
-          </p>
-          <Link href="/vault/documents" className="text-xs text-yellow-600 hover:text-yellow-400 ml-auto transition-colors">
-            Analyze →
-          </Link>
-        </div>
-      )}
+    </div>
+  );
+}
+
+// ─── Founder Focus ("आज के गर्ने?") ──────────────────────────────────────────
+
+interface FocusAction {
+  level:  "urgent" | "normal" | "good";
+  icon:   string;
+  title:  string;
+  nepali: string;
+  href:   string;
+  cta:    string;
+}
+
+function buildFocusActions(
+  awaitingAI: number,
+  pendingReview: number,
+  queuePending: number,
+  docCount: number,
+): FocusAction[] {
+  const actions: FocusAction[] = [];
+
+  if (pendingReview > 0) {
+    actions.push({
+      level:  "urgent",
+      icon:   "📋",
+      title:  `${pendingReview} document${pendingReview > 1 ? "s" : ""} need your approval`,
+      nepali: `${pendingReview} document${pendingReview > 1 ? "हरू" : ""} review को लागि पर्खिरहेको छ — AI analysis सकिएको छ`,
+      href:   "/vault/admin?tab=documents",
+      cta:    "Review गर्नुहोस् →",
+    });
+  }
+
+  if (awaitingAI > 0) {
+    actions.push({
+      level:  "urgent",
+      icon:   "🤖",
+      title:  `${awaitingAI} document${awaitingAI > 1 ? "s" : ""} waiting for AI analysis`,
+      nepali: `${awaitingAI} document upload भइसकेको छ — AI ले अझै analyze गरेको छैन`,
+      href:   "/vault/documents",
+      cta:    "Analyze गर्नुहोस् →",
+    });
+  }
+
+  if (queuePending > 0) {
+    actions.push({
+      level:  "normal",
+      icon:   "📥",
+      title:  `${queuePending} content idea${queuePending > 1 ? "s" : ""} pending queue review`,
+      nepali: `${queuePending} content idea queue मा छ — approve गर्नुहोस् वा reject गर्नुहोस्`,
+      href:   "/vault/content/queue",
+      cta:    "Queue हेर्नुहोस् →",
+    });
+  }
+
+  if (docCount === 0) {
+    actions.push({
+      level:  "normal",
+      icon:   "📤",
+      title:  "Upload your first intelligence document",
+      nepali: "NRB circular, EPF document, वा research file upload गर्नुहोस् — AI ले analyze गर्नेछ",
+      href:   "/vault/documents",
+      cta:    "Upload गर्नुहोस् →",
+    });
+  }
+
+  if (actions.length === 0) {
+    actions.push({
+      level:  "good",
+      icon:   "✅",
+      title:  "Everything looks good!",
+      nepali: "सबै कुरा ठिक छ — नयाँ document upload गर्न वा content generate गर्न सुरु गर्नुहोस्",
+      href:   "/vault/content/ai-studio",
+      cta:    "Content Generate गर्नुहोस् →",
+    });
+  }
+
+  return actions;
+}
+
+function FounderFocus({
+  awaitingAI, pendingReview, queuePending, docCount,
+}: {
+  awaitingAI: number; pendingReview: number; queuePending: number; docCount: number;
+}) {
+  const actions = useMemo(
+    () => buildFocusActions(awaitingAI, pendingReview, queuePending, docCount),
+    [awaitingAI, pendingReview, queuePending, docCount],
+  );
+
+  const hasUrgent = actions.some(a => a.level === "urgent");
+
+  return (
+    <div className={`mb-5 rounded-2xl border p-4 ${
+      hasUrgent
+        ? "bg-amber-950/20 border-amber-900/60"
+        : "bg-green-950/20 border-green-900/40"
+    }`}>
+      <p className={`text-xs font-bold uppercase tracking-wider mb-3 ${
+        hasUrgent ? "text-amber-400" : "text-green-400"
+      }`}>
+        आज के गर्ने? — Today&apos;s Priorities
+      </p>
+      <div className="space-y-2">
+        {actions.map((a, i) => (
+          <div key={i} className={`flex items-start gap-3 p-3 rounded-xl ${
+            a.level === "urgent" ? "bg-amber-950/40 border border-amber-900/60" :
+            a.level === "good"   ? "bg-green-950/40 border border-green-900/40" :
+                                   "bg-zinc-800/60  border border-zinc-700/60"
+          }`}>
+            <span className="text-xl shrink-0 mt-0.5">{a.icon}</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-white">{a.title}</p>
+              <p className="text-xs text-zinc-400 mt-0.5 leading-relaxed">{a.nepali}</p>
+            </div>
+            <Link
+              href={a.href}
+              className={`text-xs font-bold px-3 py-1.5 rounded-lg shrink-0 whitespace-nowrap transition-colors ${
+                a.level === "urgent" ? "bg-amber-600 hover:bg-amber-500 text-black" :
+                a.level === "good"   ? "bg-green-700 hover:bg-green-600 text-white" :
+                                       "bg-zinc-700 hover:bg-zinc-600 text-white"
+              }`}
+            >
+              {a.cta}
+            </Link>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -134,7 +242,7 @@ function FlywheelBar({
 // ─── Activity feed ────────────────────────────────────────────────────────────
 
 type ActivityEntry = {
-  time: string; icon: string; color: string; label: string; detail: string; href: string;
+  time: string; icon: string; color: string; label: string; nepali: string; detail: string; href: string;
 };
 
 function buildActivityFeed(docs: IntelligenceDocument[], queue: QueueItem[]): ActivityEntry[] {
@@ -144,8 +252,9 @@ function buildActivityFeed(docs: IntelligenceDocument[], queue: QueueItem[]): Ac
     entries.push({
       time:   doc.uploadedAt,
       icon:   "📤",
-      color:  "text-zinc-500",
+      color:  "text-zinc-400",
       label:  "Uploaded",
+      nepali: "Upload भयो",
       detail: doc.fileName,
       href:   "/vault/documents",
     });
@@ -153,20 +262,33 @@ function buildActivityFeed(docs: IntelligenceDocument[], queue: QueueItem[]): Ac
       entries.push({
         time:   doc.updatedAt,
         icon:   "🤖",
-        color:  "text-green-500",
+        color:  "text-green-400",
         label:  "AI analyzed",
+        nepali: "AI analysis सकियो",
+        detail: doc.title,
+        href:   "/vault/admin?tab=documents",
+      });
+    }
+    if (doc.adminApprovalStatus === "approved") {
+      entries.push({
+        time:   doc.adminApprovedAt ?? doc.updatedAt,
+        icon:   "✓",
+        color:  "text-green-400",
+        label:  "Approved",
+        nepali: "Approved भयो",
         detail: doc.title,
         href:   "/vault/documents",
       });
     }
-    if (doc.processingStatus === "processing_ai") {
+    if (doc.adminApprovalStatus === "needs_revision") {
       entries.push({
         time:   doc.updatedAt,
-        icon:   "⚙",
-        color:  "text-amber-500",
-        label:  "Analyzing…",
+        icon:   "⚠",
+        color:  "text-amber-400",
+        label:  "Revision needed",
+        nepali: "Revision चाहिन्छ",
         detail: doc.title,
-        href:   "/vault/documents",
+        href:   "/vault/admin?tab=documents",
       });
     }
   });
@@ -175,19 +297,21 @@ function buildActivityFeed(docs: IntelligenceDocument[], queue: QueueItem[]): Ac
     entries.push({
       time:   item.createdAt,
       icon:   "💡",
-      color:  "text-cyan-500",
+      color:  "text-cyan-400",
       label:  "Idea queued",
+      nepali: "Idea queue मा",
       detail: item.aiTitle,
       href:   "/vault/content/queue",
     });
-    if (item.approvedAt) {
+    if (item.status === "approved" && item.approvedAt) {
       entries.push({
         time:   item.approvedAt,
         icon:   "✓",
         color:  "text-green-400",
-        label:  "Approved",
+        label:  "Queue approved",
+        nepali: "Queue approved",
         detail: item.aiTitle,
-        href:   `/vault/content/ai-studio?queueId=${item.id}&title=${encodeURIComponent(item.aiTitle)}`,
+        href:   "/vault/content/ai-studio",
       });
     }
     if (item.status === "in_production") {
@@ -196,26 +320,25 @@ function buildActivityFeed(docs: IntelligenceDocument[], queue: QueueItem[]): Ac
         icon:   "🚀",
         color:  "text-emerald-400",
         label:  "In production",
+        nepali: "Production मा",
         detail: item.aiTitle,
         href:   "/vault/content/queue",
       });
     }
   });
 
-  return entries.sort((a, b) => b.time.localeCompare(a.time)).slice(0, 8);
+  return entries.sort((a, b) => b.time.localeCompare(a.time)).slice(0, 6);
 }
 
 function ActivityFeed({ docs, queue }: { docs: IntelligenceDocument[]; queue: QueueItem[] }) {
   const entries = useMemo(() => buildActivityFeed(docs, queue), [docs, queue]);
-
   if (entries.length === 0) return null;
 
   return (
-    <section className="mb-8">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Recent Activity</h2>
-        <span className="text-xs text-zinc-700">last {entries.length} events</span>
-      </div>
+    <section className="mb-5">
+      <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+        हालसालैका काम — Recent Activity
+      </h2>
       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
         {entries.map((e, i) => (
           <Link
@@ -224,7 +347,7 @@ function ActivityFeed({ docs, queue }: { docs: IntelligenceDocument[]; queue: Qu
             className="flex items-center gap-3 px-4 py-2.5 hover:bg-zinc-800/60 transition-colors border-b border-zinc-800/60 last:border-b-0 group"
           >
             <span className={`text-sm w-5 text-center shrink-0 ${e.color}`}>{e.icon}</span>
-            <span className="text-xs text-zinc-500 w-20 shrink-0">{e.label}</span>
+            <span className="text-xs text-zinc-500 w-24 shrink-0">{e.nepali}</span>
             <span className="text-xs text-zinc-300 flex-1 truncate group-hover:text-white transition-colors">{e.detail}</span>
             <span className="text-xs text-zinc-600 shrink-0 tabular-nums">{timeAgo(e.time)}</span>
           </Link>
@@ -234,281 +357,302 @@ function ActivityFeed({ docs, queue }: { docs: IntelligenceDocument[]; queue: Qu
   );
 }
 
-// ─── Main component ───────────────────────────────────────────────────────────
+// ─── Quick actions ────────────────────────────────────────────────────────────
 
-export default function VaultClient() {
-  const { user } = useVaultAuth();
-  const { docs,         error: docErr  } = useIntelligenceDocs(user?.uid ?? null);
-  const { items: queue, error: queueErr } = useQueueItems(user?.uid ?? null, "all");
+function QuickActions({
+  awaitingAI, pendingReview, queuePending,
+}: {
+  awaitingAI: number; pendingReview: number; queuePending: number;
+}) {
+  const actions = [
+    ...(pendingReview > 0
+      ? [{ href: "/vault/admin?tab=documents", label: `📋 Approve Documents (${pendingReview})`, color: "border-amber-800 bg-amber-950/30 text-amber-300 hover:bg-amber-950/60" }]
+      : []
+    ),
+    ...(awaitingAI > 0
+      ? [{ href: "/vault/documents", label: `🤖 Analyze Documents (${awaitingAI})`, color: "border-yellow-800 bg-yellow-950/30 text-yellow-300 hover:bg-yellow-950/60" }]
+      : [{ href: "/vault/documents", label: "📤 Upload Document", color: "border-zinc-700 bg-zinc-900 text-zinc-300 hover:text-white hover:border-zinc-500" }]
+    ),
+    ...(queuePending > 0
+      ? [{ href: "/vault/content/queue", label: `📥 Review Queue (${queuePending})`, color: "border-cyan-800 bg-cyan-950/30 text-cyan-300 hover:bg-cyan-950/60" }]
+      : [{ href: "/vault/content/queue", label: "📥 Content Queue", color: "border-zinc-700 bg-zinc-900 text-zinc-300 hover:text-white hover:border-zinc-500" }]
+    ),
+    { href: "/vault/content/ai-studio", label: "⚡ Generate Script",    color: "border-zinc-700 bg-zinc-900 text-zinc-300 hover:text-white hover:border-zinc-500" },
+    { href: "/vault/business",          label: "📊 Business Dashboard", color: "border-zinc-700 bg-zinc-900 text-zinc-300 hover:text-white hover:border-zinc-500" },
+    { href: "/vault/admin",             label: "🔐 Admin Vault",        color: "border-zinc-700 bg-zinc-900 text-zinc-300 hover:text-white hover:border-zinc-500" },
+  ];
 
-  const docCount     = docs.length;
-  const awaitingAI   = docs.filter(d => d.processingStatus === "ready").length;
-  const queuePending = queue.filter(i => i.status === "pending").length;
-  const queueApproved = queue.filter(i => i.status === "approved").length;
-  const inProduction = queue.filter(i => i.status === "in_production").length;
-  const queueActive  = queue.filter(i => i.status === "pending" || i.status === "approved").length;
+  return (
+    <section className="mb-5">
+      <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+        एक क्लिक Actions
+      </h2>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        {actions.map(a => (
+          <Link
+            key={a.label}
+            href={a.href}
+            className={`px-3 py-2.5 border rounded-xl text-xs font-medium transition-colors text-center ${a.color}`}
+          >
+            {a.label}
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
 
-  // ── Section groups (live-aware) ──────────────────────────────────────────
-  const SECTION_GROUPS = [
+// ─── Section grid ─────────────────────────────────────────────────────────────
+
+function SectionGrid({
+  docCount, awaitingAI, pendingReview, queuePending, queueApproved,
+}: {
+  docCount: number; awaitingAI: number; pendingReview: number;
+  queuePending: number; queueApproved: number;
+}) {
+  const GROUPS = [
     {
-      label: "Content",
-      sections: [
+      label: "Intelligence Pipeline",
+      nepali: "दस्तावेज → AI → Review → Content",
+      items: [
         {
-          href: "/vault/content",
-          icon: "🎬", label: "Content Pipeline",
-          desc: "YouTube · Shorts · Facebook",
-          stat: "Production hub", statColor: "text-zinc-400",
-          badge: "Active", badgeColor: "bg-zinc-800 text-zinc-400",
-          actions: [
-            { label: "First Video Brief", href: "/vault/content/youtube/first-video" },
-            { label: "Ideas",             href: "/vault/content/youtube/ideas" },
-          ],
+          href: "/vault/documents", icon: "📄", label: "Intelligence Library",
+          nepali: "NRB, EPF, SSF documents upload र AI analysis",
+          stat: docCount > 0
+            ? `${docCount} docs${awaitingAI > 0 ? ` · ${awaitingAI} AI pending` : pendingReview > 0 ? ` · ${pendingReview} review pending` : " · up to date"}`
+            : "कोही document छैन — upload गर्नुहोस्",
+          statColor: awaitingAI > 0 ? "text-yellow-400" : pendingReview > 0 ? "text-amber-400" : docCount > 0 ? "text-green-400" : "text-zinc-600",
+          badge: "Live", badgeColor: "bg-green-900/40 text-green-400",
+          tip: "NRB circulars, EPF/SSF policy documents, research files — AI ले analyze गर्छ र content ideas generate गर्छ",
         },
         {
-          href: "/vault/content/queue",
-          icon: "📥", label: "Validation Queue",
-          desc: "AI ideas → admin review → production",
+          href: "/vault/admin?tab=documents", icon: "📋", label: "Admin Approval",
+          nepali: "AI analysis भएका documents review र approve गर्नुहोस्",
+          stat: pendingReview > 0
+            ? `${pendingReview} document${pendingReview > 1 ? "s" : ""} review को पर्खाइमा`
+            : "Review queue खाली छ",
+          statColor: pendingReview > 0 ? "text-amber-400" : "text-zinc-600",
+          badge: pendingReview > 0 ? "Action needed" : "All clear",
+          badgeColor: pendingReview > 0 ? "bg-amber-900/40 text-amber-400" : "bg-zinc-800 text-zinc-500",
+          tip: "Document approve भएपछि मात्र content queue generation unlock हुन्छ",
+        },
+        {
+          href: "/vault/content/queue", icon: "📥", label: "Content Queue",
+          nepali: "Approved ideas — content production को लागि review",
           stat: queuePending > 0
-            ? `${queuePending} pending review`
+            ? `${queuePending} pending · ${queueApproved} approved`
             : queueApproved > 0
-            ? `${queueApproved} approved`
-            : queue.length > 0
-            ? `${queue.length} total`
-            : "No items yet",
+            ? `${queueApproved} approved — production ready`
+            : "Queue खाली छ",
           statColor: queuePending > 0 ? "text-cyan-400" : queueApproved > 0 ? "text-green-400" : "text-zinc-600",
-          badge: queuePending > 0 ? "Needs review" : "Live",
-          badgeColor: queuePending > 0 ? "bg-cyan-900/40 text-cyan-400" : "bg-green-900/40 text-green-400",
-          actions: [
-            {
-              label: queuePending > 0 ? `Review (${queuePending})` : queue.length > 0 ? "View Queue" : "Empty",
-              href: "/vault/content/queue",
-            },
-          ],
+          badge: "Live", badgeColor: "bg-green-900/40 text-green-400",
+          tip: "Document approve → queue items generate → admin approve → AI Studio मा script/thumbnail generate",
+        },
+      ],
+    },
+    {
+      label: "Content Production",
+      nepali: "Script, Thumbnail, YouTube, Shorts",
+      items: [
+        {
+          href: "/vault/content/ai-studio", icon: "⚡", label: "AI Studio",
+          nepali: "Script र thumbnail AI ले generate गर्छ",
+          stat: "Bedrock + Anthropic active",
+          statColor: "text-green-400",
+          badge: "Live", badgeColor: "bg-green-900/40 text-green-400",
+          tip: "Approved queue items लिएर AI Studio मा script र thumbnail prompt generate गर्नुहोस्",
         },
         {
-          href: "/vault/content/ai-studio",
-          icon: "⚡", label: "AI Studio",
-          desc: "Script · Thumbnail · Generation",
-          stat: "Bedrock + Anthropic live", statColor: "text-green-400",
-          badge: "Live", badgeColor: "bg-green-900/40 text-green-400",
-          actions: [
-            { label: "Generate Script",    href: "/vault/content/ai-studio" },
-            { label: "Generate Thumbnail", href: "/vault/content/ai-studio" },
-          ],
+          href: "/vault/content", icon: "🎬", label: "Content Pipeline",
+          nepali: "YouTube, Shorts, Facebook — सबै platforms",
+          stat: "YouTube · Facebook · Shorts",
+          statColor: "text-zinc-400",
+          badge: "Active", badgeColor: "bg-zinc-800 text-zinc-400",
+          tip: "Platform-specific content strategy र production workflow",
         },
         {
-          href: "/vault/media",
-          icon: "🎞", label: "Media",
-          desc: "Firebase Storage · Asset vault",
-          stat: "Upload zone active", statColor: "text-green-400",
+          href: "/vault/calendar", icon: "📅", label: "Calendar",
+          nepali: "Content publishing schedule — monthly view",
+          stat: "Publishing calendar",
+          statColor: "text-zinc-400",
           badge: "Live", badgeColor: "bg-green-900/40 text-green-400",
-          actions: [
-            { label: "Upload", href: "/vault/media" },
-            { label: "Browse", href: "/vault/media" },
-          ],
+          tip: "Queue items लाई date assign गरेर publishing schedule बनाउनुहोस्",
+        },
+      ],
+    },
+    {
+      label: "Business Intelligence",
+      nepali: "Revenue, खर्च, AI लागत, Analytics",
+      items: [
+        {
+          href: "/vault/business", icon: "📊", label: "Business Dashboard",
+          nepali: "Revenue, खर्च, NRB rate, Founder brief",
+          stat: "Live NRB rate · NPR/USD",
+          statColor: "text-blue-400",
+          badge: "Live", badgeColor: "bg-blue-900/40 text-blue-400",
+          tip: "Revenue track गर्नुहोस्, खर्च record गर्नुहोस्, AI ले financial brief दिन्छ",
+        },
+        {
+          href: "/vault/finance", icon: "💰", label: "Finance",
+          nepali: "P&L, runway, monthly burn rate",
+          stat: "Full P&L dashboard",
+          statColor: "text-green-400",
+          badge: "Live", badgeColor: "bg-green-900/40 text-green-400",
+          tip: "Revenue vs expenses, monthly trend, annual projection",
+        },
+        {
+          href: "/vault/analytics", icon: "📈", label: "Analytics",
+          nepali: "Pipeline throughput, AI usage, leads",
+          stat: "Platform intelligence",
+          statColor: "text-purple-400",
+          badge: "Live", badgeColor: "bg-green-900/40 text-green-400",
+          tip: "Document pipeline, recommendation clicks, audience leads",
         },
       ],
     },
     {
       label: "Operations",
-      sections: [
+      nepali: "Tasks, Deploy, AI Queue",
+      items: [
         {
-          href: "/vault/business",
-          icon: "📊", label: "Business BI",
-          desc: "Revenue · Expenses · AI costs",
-          stat: "Dashboard active", statColor: "text-blue-400",
-          badge: "Live", badgeColor: "bg-blue-900/40 text-blue-400",
-          actions: [{ label: "BI Dashboard", href: "/vault/business" }],
-        },
-        {
-          href: "/vault/analytics",
-          icon: "📈", label: "Analytics",
-          desc: "Traffic · Engagement · Conversions",
-          stat: "In roadmap", statColor: "text-zinc-600",
-          badge: "Soon", badgeColor: "bg-zinc-800 text-zinc-500",
-          actions: [],
-        },
-        {
-          href: "/vault/tasks",
-          icon: "✅", label: "Tasks",
-          desc: "Kanban · Sprint · Operations",
-          stat: "In roadmap", statColor: "text-zinc-600",
-          badge: "Soon", badgeColor: "bg-zinc-800 text-zinc-500",
-          actions: [],
-        },
-        {
-          href: "/vault/calendar",
-          icon: "📅", label: "Calendar",
-          desc: "Publishing · Scheduling · YT / IG / FB",
-          stat: "In roadmap", statColor: "text-zinc-600",
-          badge: "Soon", badgeColor: "bg-zinc-800 text-zinc-500",
-          actions: [],
-        },
-      ],
-    },
-    {
-      label: "System",
-      sections: [
-        {
-          href: "/vault/documents",
-          icon: "📄", label: "Intelligence Library",
-          desc: "NRB circulars · EPF docs · Research files",
-          stat: docCount > 0
-            ? `${docCount} doc${docCount !== 1 ? "s" : ""}${awaitingAI > 0 ? ` · ${awaitingAI} awaiting AI` : ""}`
-            : "No documents yet",
-          statColor: awaitingAI > 0 ? "text-yellow-400" : docCount > 0 ? "text-green-400" : "text-zinc-600",
+          href: "/vault/tasks", icon: "✅", label: "Tasks",
+          nepali: "Kanban board — content, tech, business tasks",
+          stat: "Todo · In Progress · Done",
+          statColor: "text-zinc-400",
           badge: "Live", badgeColor: "bg-green-900/40 text-green-400",
-          actions: [
-            { label: "Upload Document", href: "/vault/documents" },
-            ...(awaitingAI > 0 ? [{ label: `Analyze (${awaitingAI})`, href: "/vault/documents" }] : []),
-          ],
+          tip: "Priority, category, due date सहित task manage गर्नुहोस्",
         },
         {
-          href: "/vault/finance",
-          icon: "💰", label: "Finance",
-          desc: "Budget · Revenue · ROI · Runway",
-          stat: "In roadmap", statColor: "text-zinc-600",
-          badge: "Soon", badgeColor: "bg-zinc-800 text-zinc-500",
-          actions: [],
+          href: "/vault/ai-queue", icon: "🤖", label: "AI Queue",
+          nepali: "AI job log, cost, failed analysis retry",
+          stat: "Job log · Retry center",
+          statColor: "text-zinc-400",
+          badge: "Live", badgeColor: "bg-green-900/40 text-green-400",
+          tip: "Failed AI jobs retry गर्नुहोस्, cost per call हेर्नुहोस्",
         },
         {
-          href: "/vault/deploy",
-          icon: "🚀", label: "Deploy Monitor",
-          desc: "Cloudflare · Build status · Domain",
-          stat: "In roadmap", statColor: "text-zinc-600",
-          badge: "Soon", badgeColor: "bg-zinc-800 text-zinc-500",
-          actions: [],
-        },
-        {
-          href: "/vault/ai-queue",
-          icon: "🤖", label: "AI Queue",
-          desc: "Scheduled generation jobs",
-          stat: "In roadmap", statColor: "text-zinc-600",
-          badge: "Soon", badgeColor: "bg-zinc-800 text-zinc-500",
-          actions: [],
+          href: "/vault/deploy", icon: "🚀", label: "Deploy Monitor",
+          nepali: "API health, environment variables check",
+          stat: "API · Providers · Config",
+          statColor: "text-zinc-400",
+          badge: "Live", badgeColor: "bg-green-900/40 text-green-400",
+          tip: "Cloudflare Pages deploy status, AI provider health check",
         },
       ],
     },
   ];
 
-  // ── Quick actions (context-aware) ─────────────────────────────────────────
-  const QUICK_ACTIONS = [
-    ...(awaitingAI > 0
-      ? [{ href: "/vault/documents",       label: `🤖 Analyze (${awaitingAI})`,           color: "border-yellow-900/50 hover:border-yellow-500 text-yellow-300 hover:text-yellow-200" }]
-      : [{ href: "/vault/documents",       label: "📤 Upload Document",                    color: "border-zinc-800 hover:border-zinc-600 text-zinc-300 hover:text-white" }]
-    ),
-    ...(queuePending > 0
-      ? [{ href: "/vault/content/queue",   label: `📥 Review Queue (${queuePending})`,     color: "border-cyan-900/50 hover:border-cyan-500 text-cyan-300 hover:text-cyan-200" }]
-      : [{ href: "/vault/content/queue",   label: "📥 View Queue",                         color: "border-zinc-800 hover:border-zinc-600 text-zinc-300 hover:text-white" }]
-    ),
-    { href: "/vault/content/ai-studio",    label: "⚡ Generate Script",                    color: "border-green-900/50 hover:border-green-600 text-zinc-300 hover:text-white" },
-    { href: "/vault/content/ai-studio",    label: "🖼 Generate Thumbnail",                 color: "border-green-900/50 hover:border-green-600 text-zinc-300 hover:text-white" },
-    { href: "/vault/media",                label: "📤 Upload Asset",                       color: "border-zinc-800 hover:border-zinc-600 text-zinc-300 hover:text-white" },
-    { href: "/vault/business",             label: "📊 Business BI",                        color: "border-zinc-800 hover:border-zinc-600 text-zinc-300 hover:text-white" },
-  ];
+  return (
+    <section className="mb-6 space-y-5">
+      {GROUPS.map(group => (
+        <div key={group.label}>
+          <div className="flex items-baseline gap-2 mb-2">
+            <h2 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">{group.label}</h2>
+            <span className="text-xs text-zinc-600">{group.nepali}</span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {group.items.map(s => (
+              <Link
+                key={s.href + s.label}
+                href={s.href}
+                title={s.tip}
+                className="p-4 bg-zinc-900 border border-zinc-800 hover:border-zinc-600 rounded-xl transition-colors group block"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">{s.icon}</span>
+                    <span className="font-semibold text-sm text-white group-hover:text-green-400 transition-colors">
+                      {s.label}
+                    </span>
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${s.badgeColor}`}>{s.badge}</span>
+                </div>
+                <p className="text-xs text-zinc-500 mb-2 leading-relaxed">{s.nepali}</p>
+                <p className={`text-xs font-medium ${s.statColor}`}>{s.stat}</p>
+              </Link>
+            ))}
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+
+export default function VaultClient() {
+  const { user }  = useVaultAuth();
+  const uid       = user?.uid ?? null;
+
+  const { docs,         error: docErr   } = useIntelligenceDocs(uid);
+  const { items: queue, error: queueErr  } = useQueueItems(uid, "all");
+  const { signals }                        = useSourceSignals(uid, "all");
+
+  const docCount      = docs.length;
+  const awaitingAI    = docs.filter(d => d.processingStatus === "ready" || d.processingStatus === "ai_paused").length;
+  const pendingReview = docs.filter(d => d.adminApprovalStatus === "pending_review" && d.processingStatus === "ai_ready").length;
+  const queuePending  = queue.filter(i => i.status === "pending").length;
+  const queueApproved = queue.filter(i => i.status === "approved").length;
+  const inProduction  = queue.filter(i => i.status === "in_production").length;
+  const rawSignals    = signals.filter(s => s.status === "raw").length;
 
   return (
     <div className="p-4 sm:p-6 max-w-5xl mx-auto">
 
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white mb-0.5">Command Center</h1>
-        <p className="text-zinc-500 text-sm">ZZC Vault — private operations dashboard</p>
+      <div className="mb-5">
+        <div className="flex items-center gap-3 flex-wrap">
+          <h1 className="text-2xl font-black text-white">ZZC Vault</h1>
+          {rawSignals > 0 && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/40 text-blue-400 border border-blue-800">
+              {rawSignals} new signals
+            </span>
+          )}
+        </div>
+        <p className="text-zinc-500 text-sm mt-0.5">
+          Founder Operating System — Nepal&apos;s Civic Intelligence Platform
+        </p>
       </div>
 
-      {/* Firestore error banners */}
-      {docErr   && <div className="mb-4 flex items-start gap-2 bg-red-950/40 border border-red-900/60 rounded-xl px-4 py-3"><span className="text-red-400 text-sm">✕</span><p className="text-xs text-red-300/90">Intelligence library unavailable: {docErr}</p></div>}
-      {queueErr && <div className="mb-4 flex items-start gap-2 bg-red-950/40 border border-red-900/60 rounded-xl px-4 py-3"><span className="text-red-400 text-sm">✕</span><p className="text-xs text-red-300/90">Content queue unavailable: {queueErr}</p></div>}
+      {/* Error banners */}
+      {docErr   && <div className="mb-4 flex items-start gap-2 bg-red-950/40 border border-red-900/60 rounded-xl px-4 py-3 text-xs text-red-300/90">⚠ Intelligence library: {docErr}</div>}
+      {queueErr && <div className="mb-4 flex items-start gap-2 bg-red-950/40 border border-red-900/60 rounded-xl px-4 py-3 text-xs text-red-300/90">⚠ Content queue: {queueErr}</div>}
 
-      {/* Intelligence Flywheel — live pipeline state */}
-      <FlywheelBar
+      {/* TODAY'S PRIORITIES — always first */}
+      <FounderFocus
+        awaitingAI={awaitingAI}
+        pendingReview={pendingReview}
+        queuePending={queuePending}
+        docCount={docCount}
+      />
+
+      {/* Workflow breadcrumb */}
+      <WorkflowBreadcrumb
         docCount={docCount}
         awaitingAI={awaitingAI}
-        queueTotal={queue.length}
+        pendingReview={pendingReview}
         queuePending={queuePending}
         inProduction={inProduction}
       />
 
-      {/* Recent Activity Feed */}
+      {/* Recent activity */}
       <ActivityFeed docs={docs} queue={queue} />
 
-      {/* Quick actions */}
-      <section className="mb-8">
-        <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">Quick Actions</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-          {QUICK_ACTIONS.map(a => (
-            <Link
-              key={a.label}
-              href={a.href}
-              className={`px-4 py-3 bg-zinc-900 border rounded-xl text-sm transition-colors text-center ${a.color}`}
-            >
-              {a.label}
-            </Link>
-          ))}
-        </div>
-      </section>
+      {/* One-click actions */}
+      <QuickActions
+        awaitingAI={awaitingAI}
+        pendingReview={pendingReview}
+        queuePending={queuePending}
+      />
 
-      {/* Sections — grouped */}
-      <section className="mb-8 space-y-6">
-        {SECTION_GROUPS.map(group => (
-          <div key={group.label}>
-            <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">{group.label}</h2>
-            <div className="space-y-2">
-              {group.sections.map(s => (
-                <div key={s.href + s.label} className="p-4 bg-zinc-900 border border-zinc-800 rounded-xl">
-                  <div className="flex items-start justify-between mb-2">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xl">{s.icon}</span>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <Link href={s.href} className="font-semibold text-white text-sm hover:text-green-400 transition-colors">
-                            {s.label}
-                          </Link>
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${s.badgeColor}`}>{s.badge}</span>
-                        </div>
-                        <p className="text-xs text-zinc-500 mt-0.5">{s.desc}</p>
-                      </div>
-                    </div>
-                    <span className={`text-xs font-medium shrink-0 ml-2 ${s.statColor}`}>{s.stat}</span>
-                  </div>
-                  {s.actions.length > 0 && (
-                    <div className="flex gap-2 flex-wrap mt-3">
-                      {s.actions.map(a => (
-                        <Link
-                          key={a.href + a.label}
-                          href={a.href}
-                          className="text-xs px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg transition-colors"
-                        >
-                          {a.label}
-                        </Link>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </section>
-
-      {/* AI Pipeline Status */}
-      <section>
-        <h2 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-3">AI Pipeline Status</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {PIPELINE_STATUS.map(p => (
-            <div key={p.label} className="flex items-center gap-3 p-3 bg-zinc-900 border border-zinc-800 rounded-xl">
-              <span className={`w-2 h-2 rounded-full shrink-0 ${STATUS_DOT[p.status]}`} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm text-zinc-300 font-medium">{p.label}</p>
-                <p className="text-xs text-zinc-600 truncate">{p.note}</p>
-              </div>
-              <span className={`text-xs ${p.status === "live" ? "text-green-500" : "text-zinc-600"}`}>
-                {p.status}
-              </span>
-            </div>
-          ))}
-        </div>
-      </section>
+      {/* Section grid — all pages with Nepali explanations */}
+      <SectionGrid
+        docCount={docCount}
+        awaitingAI={awaitingAI}
+        pendingReview={pendingReview}
+        queuePending={queuePending}
+        queueApproved={queueApproved}
+      />
 
     </div>
   );

@@ -29,20 +29,20 @@
  */
 
 export const BEDROCK_MODELS = {
-  // Recommended default — best capability/cost ratio confirmed on Bedrock
-  SONNET:      "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-
-  // Fast/cheap — use for high-volume low-stakes tasks
+  // Recommended default — confirmed working on Bedrock as of 2026-05; $0.80/1M tokens
   HAIKU:       "us.anthropic.claude-3-5-haiku-20241022-v1:0",
 
-  // Previous Sonnet — stable fallback if 3-7 has issues
+  // Sonnet — EOL as of 2026-05, kept for reference only; do not use as default
+  SONNET:      "us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+
+  // Previous Sonnet — also EOL
   SONNET_PREV: "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
 } as const;
 
 export type BedrockModelKey = keyof typeof BEDROCK_MODELS;
 
 // Default model for Bedrock Workers — override with BEDROCK_MODEL_ID env var
-export const DEFAULT_BEDROCK_MODEL = BEDROCK_MODELS.SONNET;
+export const DEFAULT_BEDROCK_MODEL = BEDROCK_MODELS.HAIKU;
 
 /**
  * Resolve Bedrock model ID from env var or fall back to default.

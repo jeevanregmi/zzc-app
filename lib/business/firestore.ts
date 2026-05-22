@@ -18,20 +18,22 @@ import type {
   YouTubeSnapshot, PlayStoreSnapshot, AnalyticsSnapshot,
   ContentEntry, AffiliateEntry, BusinessGoal, Subscription,
 } from "./types";
+import type { ApprovalQueueItem } from "../types/economics";
 
 // ─── Collection names ────────────────────────────────────────────────────────
 
 const C = {
-  REVENUE:       "business_revenue",
-  EXPENSES:      "business_expenses",
-  AI_COSTS:      "business_ai_costs",
-  YOUTUBE:       "business_youtube",
-  PLAYSTORE:     "business_playstore",
-  ANALYTICS:     "business_analytics",
-  CONTENT:       "business_content",
-  AFFILIATES:    "business_affiliates",
-  GOALS:         "business_goals",
-  SUBSCRIPTIONS: "business_subscriptions",
+  REVENUE:        "business_revenue",
+  EXPENSES:       "business_expenses",
+  AI_COSTS:       "business_ai_costs",
+  YOUTUBE:        "business_youtube",
+  PLAYSTORE:      "business_playstore",
+  ANALYTICS:      "business_analytics",
+  CONTENT:        "business_content",
+  AFFILIATES:     "business_affiliates",
+  GOALS:          "business_goals",
+  SUBSCRIPTIONS:  "business_subscriptions",
+  APPROVAL_QUEUE: "vault_approval_queue",
 } as const;
 
 // ─── Timestamp helper ────────────────────────────────────────────────────────
@@ -108,4 +110,5 @@ export const analyticsAdapter    = makeAdapter<AnalyticsSnapshot>(C.ANALYTICS);
 export const contentAdapter      = makeAdapter<ContentEntry>(C.CONTENT);
 export const affiliateAdapter    = makeAdapter<AffiliateEntry>(C.AFFILIATES);
 export const goalAdapter         = makeAdapter<BusinessGoal>(C.GOALS);
-export const subscriptionAdapter = makeAdapter<Subscription>(C.SUBSCRIPTIONS);
+export const subscriptionAdapter  = makeAdapter<Subscription>(C.SUBSCRIPTIONS);
+export const approvalAdapter      = makeAdapter<ApprovalQueueItem>(C.APPROVAL_QUEUE);

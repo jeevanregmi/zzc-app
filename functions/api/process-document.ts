@@ -1,31 +1,36 @@
-import { anthropicErrorMessage, providerError, log } from "./_shared";
-
 /**
  * POST /api/process-document
  *
- * Vault-only endpoint. Fetches an uploaded intelligence document from Firebase
- * Storage, sends it to Claude for analysis, and returns structured intelligence.
+ * Fetches an uploaded vault document from R2 and extracts structured
+ * intelligence using the vault AI router (Gemini → Bedrock → Anthropic).
  *
- * The CLIENT is responsible for writing results back to Firestore via
- * updateIntelligenceDoc — this function only returns the extracted data.
+ * Upload status is ALWAYS independent of this function. A document is safe
+ * in R2 regardless of whether AI analysis succeeds.
  *
- * Supported formats: PDF, images (jpeg/png/webp/gif), TXT, MD
- * Max file size: 15 MB
+ * Response codes:
+ *   200  ok: true  + intelligence JSON     — AI succeeded
+ *   402  BILLING_EXHAUSTED                 — all providers hit quota; retry after top-up
+ *   503  AI_UNAVAILABLE / NO_PROVIDERS     — provider error or no keys configured
+ *   500  internal errors                   — fetch failure, parse failure, etc.
  *
- * Required Cloudflare Pages env var: ANTHROPIC_API_KEY
- * Set at: Pages dashboard → Settings → Environment variables
- *
- * Uses direct Anthropic API (not AWS Bedrock) because Bedrock's InvokeModel
- * endpoint does not support the PDF document content type.
+ * The CLIENT writes results to Firestore — this function only returns data.
+ * Failure responses include `processingStatus` so the client knows which
+ * Firestore state to set without parsing error messages.
  */
 
-interface Env {
-  ANTHROPIC_API_KEY: string;
+import { routeDocumentAnalysis }  from "../../lib/ai/vault-router";
+import { log }                    from "./_shared";
+import type { RouterEnv }         from "../../lib/ai/vault-router";
+
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+interface Env extends RouterEnv {
+  // RouterEnv already covers all AI provider vars; nothing extra needed here.
 }
 
 interface PagesContext {
   request: Request;
-  env: Env;
+  env:     Env;
 }
 
 interface ProcessRequest {
@@ -36,12 +41,43 @@ interface ProcessRequest {
 }
 
 interface IntelligenceResult {
-  aiSummary:       string;
-  aiKeyInsights:   string[];
-  detectedTopics:  string[];
-  contentIdeas:    string[];
-  language:        string;
-  confidence:      number;
+  aiSummary:             string;
+  aiKeyInsights:         string[];
+  detectedTopics:        string[];
+  contentIdeas:          string[];
+  language:              string;
+  confidence:            number;
+  // Civic intelligence fields
+  sourceType?:           string;
+  sourceAuthority?:      string;
+  affectedSectors?:      string[];
+  policyChanges?:        string[];
+  financialImplications?:string[];
+  youthImpact?:          string;
+  ssfEpfCitRelevance?:   string;
+  nepaliExplainer?:      string;
+}
+
+// ── Constants ──────────────────────────────────────────────────────────────────
+
+// Cost per 1M tokens (USD) — used for per-call cost estimation logged to Firestore
+const PROVIDER_RATES: Record<string, { input: number; output: number }> = {
+  "gemini-flash":    { input: 0.10,  output: 0.40  },
+  "bedrock-sonnet":  { input: 0.80,  output: 4.00  },
+  "anthropic-sonnet":{ input: 0.80,  output: 4.00  },
+};
+
+// Rough token estimator: 1 token ≈ 4 chars (English). Add system prompt overhead.
+function estimateTokens(contentByteLen: number, systemPromptLen: number): { input: number; output: number } {
+  const inputChars  = systemPromptLen + contentByteLen;
+  const input       = Math.ceil(inputChars / 4);
+  const output      = 800; // typical structured JSON response
+  return { input, output };
+}
+
+function estimateCostUSD(provider: string, input: number, output: number): number {
+  const rate = PROVIDER_RATES[provider] ?? { input: 1.0, output: 5.0 };
+  return (input / 1_000_000) * rate.input + (output / 1_000_000) * rate.output;
 }
 
 const CORS: Record<string, string> = {
@@ -51,247 +87,214 @@ const CORS: Record<string, string> = {
   "Content-Type":                 "application/json",
 };
 
-const MODEL        = "claude-sonnet-4-6";
 const MAX_BYTES    = 15 * 1024 * 1024;  // 15 MB
-const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+const TEXT_MIMES   = new Set(["text/plain", "text/markdown", "text/x-markdown"]);
 
-// ─── base64 helper (Cloudflare Workers — no Buffer) ──────────────────────────
+const SYSTEM_PROMPT = `You are Nepal's premier AI intelligence analyst for ZZC — the country's only AI-native financial and civic intelligence platform for Gen Z (age 18–35, salary NPR 30k–150k/month).
+
+Your job: extract structured intelligence from government, financial, and policy documents relevant to young Nepali workers and investors.
+
+FOCUS AREAS:
+- NRB (Nepal Rastra Bank) monetary policy, interest rate changes, bank directives
+- EPF/SSF/CIT: contribution rates, interest rates (EPF currently 8.5%), loan limits
+- Nepal government budget, tax policy, savings/investment rules
+- Parliament bills affecting workers, youth, housing, financial markets
+- NEPSE, SEBON: IPO rules, mutual fund regulations, capital market policy
+- Housing loan limits, education loan, margin lending rules
+
+OFFICIAL SOURCES (classify as official when document is from):
+nrb.org.np, epf.gov.np, ssf.gov.np, sebon.gov.np, ird.gov.np, mof.gov.np,
+parliament.gov.np, oag.gov.np, rajpatra.gov.np, customs.gov.np, nlc.gov.np
+
+Return ONLY valid JSON — no markdown, no explanation, nothing outside the JSON:
+{
+  "aiSummary": "3 sentences in English. Sentence 1: what document/event this is. Sentence 2: specific change or policy detail with numbers. Sentence 3: direct impact on a 25-year-old Nepali earning NPR 50,000/month.",
+  "aiKeyInsights": [
+    "specific fact with number/percentage/NPR amount/date from document",
+    "fact 2 — always include a number",
+    "fact 3",
+    "fact 4",
+    "fact 5"
+  ],
+  "detectedTopics": ["EPF", "interest rate", "housing loan"],
+  "language": "Nepali or English or Mixed",
+  "confidence": 0.0,
+  "sourceType": "official or unofficial or research or unknown",
+  "sourceAuthority": "Nepal Rastra Bank or Parliament of Nepal or Ministry of Finance or EPF Nepal or SSF Nepal or SEBON or Other — exact institution name",
+  "affectedSectors": ["banking", "EPF", "housing", "youth employment", "NEPSE"],
+  "policyChanges": [
+    "specific regulation change with before/after values if available",
+    "change 2"
+  ],
+  "financialImplications": [
+    "NPR/percentage amount with context (e.g. EPF housing loan limit increased to NPR 30 lakh)",
+    "implication 2"
+  ],
+  "youthImpact": "One paragraph (3-4 sentences) specifically explaining how this affects a 23-30 year old Nepali worker. Include: does this help or hurt them, what action should they consider, any deadline.",
+  "ssfEpfCitRelevance": "One paragraph: specific SSF, EPF, or CIT implications. If not relevant, write: Not directly relevant to SSF/EPF/CIT.",
+  "nepaliExplainer": "सरल नेपालीमा २-३ वाक्यमा: के भयो, किन महत्त्वपूर्ण छ, युवाहरूलाई के गर्नुपर्छ।",
+  "contentIdeas": [
+    "YouTube: [specific video title from this document's actual data]",
+    "Short: [15-60 second reel concept from this document]",
+    "Post: [Facebook/Instagram Nepali explainer concept]"
+  ]
+}
+
+RULES:
+- aiKeyInsights: specific numbers, NPR amounts, %, dates — NEVER generic statements like "this is important"
+- contentIdeas: specific to THIS document's actual data, not generic Nepal finance
+- confidence: 0.95 = official primary source with clear data; 0.7 = useful secondary; 0.3 = not finance-relevant
+- sourceType "official" only for documents from NRB, EPF, SSF, MoF, Parliament, SEBON, IRD, or Nepal government gazette
+- If document is not finance/policy relevant: confidence ≤ 0.3, sourceType = "unknown", minimal other fields
+- nepaliExplainer: must be actual Nepali text, not English. Simple language a student can understand.
+- policyChanges and financialImplications: empty array [] if not applicable`;
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 function toBase64(buffer: ArrayBuffer): string {
-  const bytes = new Uint8Array(buffer);
-  let binary  = "";
-  const chunk = 8192;
+  const bytes  = new Uint8Array(buffer);
+  let binary   = "";
+  const chunk  = 8192;
   for (let i = 0; i < bytes.length; i += chunk) {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
   }
   return btoa(binary);
 }
 
-// ─── Intelligence extraction prompt ──────────────────────────────────────────
-
-const SYSTEM_PROMPT = `You are an intelligence analyst for ZZC (Zeneration Z Chautari), Nepal's only AI-native fintech intelligence platform for Gen Z investors (age 18–35).
-
-Your job: extract actionable intelligence from documents relevant to young Nepali investors.
-
-Focus areas:
-- Interest rate changes: EPF (currently 8.5%), SSF contributions, CIT returns, NRB policy rate
-- Policy changes affecting workers' savings: EPF/SSF/CIT regulations
-- Nepal government budget implications (tax, savings, investment rules)
-- NEPSE market data, IPO regulations, mutual fund updates
-- NRB monetary policy decisions and their impact on personal finance
-- Loan limit changes: EPF housing loan, SSF education loan, bank lending limits
-
-Return ONLY valid JSON — no markdown fences, no explanation text, nothing before or after the JSON:
-{
-  "aiSummary": "3 clear sentences. What happened. Why it matters for a 25-year-old Nepali investor.",
-  "aiKeyInsights": ["specific fact with number/percentage/date", "fact 2", "fact 3", "fact 4", "fact 5"],
-  "detectedTopics": ["EPF", "interest rate", "housing loan"],
-  "language": "Nepali or English or Mixed",
-  "confidence": 0.0,
-  "contentIdeas": [
-    "YouTube: [specific video title based on this document]",
-    "Short: [15–60 second reel concept from this document]",
-    "Post: [Facebook/Instagram explainer concept from this document]"
-  ]
+function parseIntelligence(text: string): IntelligenceResult | null {
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) return null;
+  try { return JSON.parse(match[0]) as IntelligenceResult; } catch { return null; }
 }
 
-Rules:
-- aiKeyInsights must contain specific numbers, percentages, dates, or named amounts from the document — never generic statements
-- contentIdeas must reference content specific to THIS document's actual data, not generic Nepal finance
-- confidence: 0.9 = clear primary source with data; 0.5 = useful but partial; 0.1 = not readable or not finance-related
-- If document is not relevant to Nepal finance/investment, set confidence ≤ 0.3 and note it in aiSummary
-- aiSummary in English (for the admin dashboard); content ideas can be in English or Nepali`;
-
-// ─── Build message content blocks by file type ───────────────────────────────
-
-type ContentBlock =
-  | { type: "text"; text: string }
-  | { type: "image"; source: { type: "base64"; media_type: string; data: string } }
-  | { type: "document"; source: { type: "base64"; media_type: "application/pdf"; data: string } };
-
-function buildContent(
-  mimeType: string,
-  fileName: string,
-  base64OrText: string,
-  isText: boolean,
-): ContentBlock[] {
-  const prompt: ContentBlock = { type: "text", text: SYSTEM_PROMPT };
-
-  if (isText) {
-    return [
-      {
-        type: "text",
-        text: `${SYSTEM_PROMPT}\n\n--- DOCUMENT CONTENT ---\nFile: ${fileName}\n\n${base64OrText}`,
-      },
-    ];
-  }
-
-  if (mimeType === "application/pdf") {
-    return [
-      {
-        type: "document",
-        source: { type: "base64", media_type: "application/pdf", data: base64OrText },
-      },
-      prompt,
-    ];
-  }
-
-  // Image types
-  const imageTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
-  if (imageTypes.includes(mimeType)) {
-    return [
-      {
-        type: "image",
-        source: { type: "base64", media_type: mimeType, data: base64OrText },
-      },
-      {
-        type: "text",
-        text: `${SYSTEM_PROMPT}\n\nThis is an image file named "${fileName}". Extract any visible text and financial data.`,
-      },
-    ];
-  }
-
-  // Unsupported binary format — give Claude the filename context only
-  return [
-    {
-      type: "text",
-      text: `${SYSTEM_PROMPT}\n\nFile: "${fileName}" (${mimeType}) — binary format not directly readable. Based on the filename and extension alone, provide a best-effort analysis. Set confidence to 0.2.`,
-    },
-  ];
+function json(body: unknown, status: number): Response {
+  return new Response(JSON.stringify(body), { status, headers: CORS });
 }
 
-// ─── Request handlers ─────────────────────────────────────────────────────────
+// ── Handlers ───────────────────────────────────────────────────────────────────
 
 export const onRequestOptions = async (): Promise<Response> =>
   new Response(null, { status: 204, headers: CORS });
 
 export const onRequestPost = async (context: PagesContext): Promise<Response> => {
-  const { ANTHROPIC_API_KEY } = context.env;
-
-  if (!ANTHROPIC_API_KEY) {
-    return new Response(
-      JSON.stringify({ error: "ANTHROPIC_API_KEY not configured. Add it to Cloudflare Pages env vars.", code: "ENV_MISSING" }),
-      { status: 500, headers: CORS },
-    );
-  }
-
+  // ── Parse request ──────────────────────────────────────────────────────────
   let body: ProcessRequest;
   try {
     body = await context.request.json();
   } catch {
-    return new Response(JSON.stringify({ error: "Invalid request body", code: "BAD_REQUEST" }), { status: 400, headers: CORS });
+    return json({ error: "Invalid JSON body", code: "BAD_REQUEST" }, 400);
   }
 
-  const { downloadUrl, mimeType, fileName } = body;
+  const { docId, downloadUrl, mimeType, fileName } = body;
   if (!downloadUrl || !mimeType || !fileName) {
-    return new Response(
-      JSON.stringify({ error: "downloadUrl, mimeType, fileName required", code: "VALIDATION_ERROR" }),
-      { status: 400, headers: CORS },
-    );
+    return json({ error: "downloadUrl, mimeType, fileName required", code: "VALIDATION_ERROR" }, 400);
   }
 
-  // ── Fetch file from Firebase Storage ──────────────────────────────────────
-  let fileResponse: Response;
+  // ── Fetch file from R2 ─────────────────────────────────────────────────────
+  // Total budget: CF Pages Functions have a ~30s wall-clock timeout.
+  // We abort after 25s so we can return a clean error instead of being killed silently.
+  const abort   = new AbortController();
+  const abortId = setTimeout(() => abort.abort(), 25_000);
+
+  let fileRes: Response;
   try {
-    fileResponse = await fetch(downloadUrl);
-    if (!fileResponse.ok) throw new Error(`Storage returned HTTP ${fileResponse.status}`);
+    fileRes = await fetch(downloadUrl, { signal: abort.signal });
+    if (!fileRes.ok) throw new Error(`R2 returned HTTP ${fileRes.status}`);
   } catch (err) {
-    return new Response(
-      JSON.stringify({ error: `Could not fetch document from storage: ${String(err)}`, code: "STORAGE_FETCH_ERROR" }),
-      { status: 500, headers: CORS },
-    );
+    clearTimeout(abortId);
+    const isTimeout = err instanceof Error && err.name === "AbortError";
+    return json({
+      error:            isTimeout
+        ? "Request timeout — document is safe. Large PDFs (>500KB) can take up to 30s. Retry using the button on the card."
+        : `Could not fetch document: ${String(err)}`,
+      code:             isTimeout ? "TIMEOUT" : "FETCH_ERROR",
+      processingStatus: "ai_paused",
+    }, isTimeout ? 504 : 500);
   }
+  clearTimeout(abortId);
 
-  const contentLength = Number(fileResponse.headers.get("content-length") ?? 0);
-  if (contentLength > MAX_BYTES) {
-    return new Response(
-      JSON.stringify({ error: `File too large (${(contentLength / 1024 / 1024).toFixed(1)} MB). Max 15 MB.`, code: "FILE_TOO_LARGE" }),
-      { status: 413, headers: CORS },
-    );
-  }
-
-  // ── Determine text vs binary ───────────────────────────────────────────────
-  const isText = mimeType === "text/plain" || mimeType === "text/markdown" || mimeType === "text/x-markdown";
-
-  let contentBlocks: ContentBlock[];
+  // ── Build DocumentPayload ──────────────────────────────────────────────────
+  const isText = TEXT_MIMES.has(mimeType);
+  let textBody: string | undefined;
+  let base64:   string | undefined;
 
   if (isText) {
-    const text = await fileResponse.text();
-    contentBlocks = buildContent(mimeType, fileName, text.slice(0, 80_000), true);
+    textBody = (await fileRes.text()).slice(0, 80_000);
   } else {
-    const buffer    = await fileResponse.arrayBuffer();
-    const actualLen = buffer.byteLength;
-    if (actualLen > MAX_BYTES) {
-      return new Response(
-        JSON.stringify({ error: `File too large (${(actualLen / 1024 / 1024).toFixed(1)} MB). Max 15 MB.`, code: "FILE_TOO_LARGE" }),
-        { status: 413, headers: CORS },
-      );
+    const buf = await fileRes.arrayBuffer();
+    if (buf.byteLength > MAX_BYTES) {
+      return json({ error: `File too large (${(buf.byteLength / 1024 / 1024).toFixed(1)} MB). Max 15 MB.`, code: "FILE_TOO_LARGE" }, 413);
     }
-    const base64 = toBase64(buffer);
-    contentBlocks = buildContent(mimeType, fileName, base64, false);
+    base64 = toBase64(buf);
   }
 
-  // ── Call Anthropic API ─────────────────────────────────────────────────────
-  let anthropicRes: Response;
-  try {
-    anthropicRes = await fetch(ANTHROPIC_URL, {
-      method:  "POST",
-      headers: {
-        "Content-Type":    "application/json",
-        "x-api-key":       ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "anthropic-beta":  "pdfs-2024-09-25",
-      },
-      body: JSON.stringify({
-        model:      MODEL,
-        max_tokens: 2048,
-        messages:   [{ role: "user", content: contentBlocks }],
-      }),
-    });
-  } catch (err) {
-    return new Response(
-      JSON.stringify({ error: `Anthropic API unreachable: ${String(err)}`, code: "ANTHROPIC_UNREACHABLE" }),
-      { status: 500, headers: CORS },
-    );
-  }
-
-  if (!anthropicRes.ok) {
-    const errText = await anthropicRes.text().catch(() => "");
-    log("process-document", "anthropic_error", { status: anthropicRes.status, details: errText.slice(0, 200) });
-    return providerError(
-      anthropicErrorMessage(anthropicRes.status),
-      "ANTHROPIC_ERROR",
-      errText.slice(0, 300),
-    );
-  }
-
-  const raw = (await anthropicRes.json()) as { content: Array<{ type: string; text: string }> };
-  const text = raw.content?.[0]?.text?.trim() ?? "";
-
-  // ── Parse JSON response ────────────────────────────────────────────────────
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    log("process-document", "parse_error", { docId: body.docId, preview: text.slice(0, 100) });
-    return new Response(
-      JSON.stringify({ error: "AI returned unparseable response. Retry.", code: "AI_PARSE_ERROR", rawPreview: text.slice(0, 400) }),
-      { status: 500, headers: CORS },
-    );
-  }
-
-  let result: IntelligenceResult;
-  try {
-    result = JSON.parse(jsonMatch[0]);
-  } catch {
-    log("process-document", "parse_error", { docId: body.docId, preview: text.slice(0, 100) });
-    return new Response(
-      JSON.stringify({ error: "AI response was not valid JSON. Retry.", code: "AI_PARSE_ERROR", rawPreview: text.slice(0, 400) }),
-      { status: 500, headers: CORS },
-    );
-  }
-
-  log("process-document", "ok", { model: MODEL, docId: body.docId, confidence: result.confidence });
-  return new Response(
-    JSON.stringify({ ok: true, ...result, model: MODEL }),
-    { headers: CORS },
+  // ── Route to AI provider ───────────────────────────────────────────────────
+  const result = await routeDocumentAnalysis(
+    context.env,
+    SYSTEM_PROMPT,
+    { mimeType, fileName, textBody, base64 },
   );
+
+  if (!result.ok) {
+    log("process-document", "ai_failed", {
+      docId,
+      reason:    result.reason,
+      tried:     result.tried,
+      lastError: result.lastError,
+    });
+
+    const isBilling = result.reason === "billing_exhausted";
+    const code      = isBilling ? "BILLING_EXHAUSTED" : result.reason === "no_providers" ? "NO_PROVIDERS" : "AI_UNAVAILABLE";
+    const status    = isBilling ? 402 : 503;
+
+    const errorMsg = isBilling
+      ? "Document uploaded successfully. AI analysis paused — all providers have exhausted their quota/credits. Top up at console.anthropic.com/billing or add a GEMINI_API_KEY. Upload सफल भयो तर AI analysis रोकिएको छ।"
+      : result.reason === "no_providers"
+        ? "No AI provider is configured. Add GEMINI_API_KEY (recommended), AWS credentials for Bedrock, or ANTHROPIC_API_KEY in Cloudflare Pages env vars."
+        : `Document uploaded. AI analysis temporarily unavailable (tried: ${result.tried.join(", ")}). Retry in a few minutes.`;
+
+    return json({
+      error:            errorMsg,
+      code,
+      processingStatus: "ai_paused",
+      tried:            result.tried,
+      details:          result.lastError.slice(0, 300),
+    }, status);
+  }
+
+  // ── Parse AI response ──────────────────────────────────────────────────────
+  const intelligence = parseIntelligence(result.text);
+  if (!intelligence) {
+    log("process-document", "parse_error", { docId, provider: result.provider, preview: result.text.slice(0, 100) });
+    return json({
+      error:      "AI returned unparseable response. Retry.",
+      code:       "AI_PARSE_ERROR",
+      rawPreview: result.text.slice(0, 400),
+    }, 500);
+  }
+
+  // Estimate cost for Firestore bookkeeping (client writes the log entry)
+  const contentLen    = textBody ? textBody.length : (base64 ? Math.ceil(base64.length * 0.75) : 0);
+  const { input: estInput, output: estOutput } = estimateTokens(contentLen, SYSTEM_PROMPT.length);
+  const estCostUSD    = estimateCostUSD(result.provider, estInput, estOutput);
+
+  log("process-document", "ok", {
+    docId,
+    provider:    result.provider,
+    model:       result.model,
+    retries:     result.retries,
+    confidence:  intelligence.confidence,
+    estCostUSD:  estCostUSD.toFixed(6),
+  });
+
+  return json({
+    ok:              true,
+    provider:        result.provider,
+    model:           result.model,
+    retries:         result.retries,
+    estInputTokens:  estInput,
+    estOutputTokens: estOutput,
+    estCostUSD,
+    ...intelligence,
+  }, 200);
 };

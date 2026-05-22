@@ -5,12 +5,18 @@ import { useVaultAuth } from "../../../hooks/vault/useVaultAuth";
 import { useIntelligenceDocs } from "../../../hooks/vault/useIntelligenceDocs";
 import { useDocumentUpload } from "../../../hooks/vault/useDocumentUpload";
 import { deleteIntelligenceDoc, updateIntelligenceDoc, createQueueItem } from "../../../lib/vault/firestore";
+import { aiCostAdapter } from "../../../lib/business/firestore";
+import { collection, addDoc, Timestamp, deleteField } from "firebase/firestore";
+import { db } from "../../firebase";
+import type { AIService } from "../../../lib/business/types";
 import Link from "next/link";
 import { useQueueItems } from "../../../hooks/vault/useQueueItems";
 import { deleteStorageFile } from "../../../lib/vault/storage";
 import { DocumentCard } from "../../../components/vault/documents/DocumentCard";
 import { DocumentUploadModal } from "../../../components/vault/documents/DocumentUploadModal";
 import { DocumentViewer } from "../../../components/vault/documents/DocumentViewer";
+import { LearnBlock } from "../../../components/vault/LearnTip";
+import { useLearningMode } from "../../../contexts/LearningModeContext";
 import type { IntelligenceDocument } from "../../../lib/types/documents";
 import type { QueueContentType, QueuePlatform } from "../../../lib/types/queue";
 
@@ -47,6 +53,7 @@ const CAT_LABEL: Record<FilterCategory, string> = {
 };
 
 export default function DocumentsClient() {
+  const { on: learn } = useLearningMode();
   const { user } = useVaultAuth();
   const { docs, loading } = useIntelligenceDocs(user?.uid ?? null);
   const { tasks, uploadDoc, clearDone, dismissTask, summary } = useDocumentUpload(user?.uid ?? "");
@@ -68,7 +75,9 @@ export default function DocumentsClient() {
   const [showUpload,    setShowUpload]   = useState(false);
   const [viewing,       setViewing]      = useState<IntelligenceDocument | null>(null);
   const [processingId,  setProcessingId] = useState<string | null>(null);
-  const [processError,  setProcessError] = useState<string | null>(null);
+  const [processError,        setProcessError]        = useState<string | null>(null);
+  const [processErrorCode,    setProcessErrorCode]    = useState<string | null>(null);
+  const [processErrorDetails, setProcessErrorDetails] = useState<string | null>(null);
   const [uploadToast,   setUploadToast]  = useState<{ type: "success" | "error"; msg: string } | null>(null);
 
   // Show a toast when a batch of uploads finishes — cleared after 5s
@@ -97,6 +106,14 @@ export default function DocumentsClient() {
     return matchCat && matchSearch;
   });
 
+  // Reset a stuck doc (processing_ai with no active session) back to "ready" so it can be retried
+  const handleResetStuck = async (doc: IntelligenceDocument) => {
+    await updateIntelligenceDoc(doc.id, {
+      processingStatus:  "ready",
+      aiProcessingError: "Reset after stuck processing_ai state — retry when ready.",
+    });
+  };
+
   const handleDelete = async (doc: IntelligenceDocument) => {
     if (!confirm(`Delete "${doc.title}"?`)) return;
     await Promise.all([
@@ -108,6 +125,8 @@ export default function DocumentsClient() {
   const handleProcess = async (doc: IntelligenceDocument) => {
     setProcessingId(doc.id);
     setProcessError(null);
+    setProcessErrorCode(null);
+    setProcessErrorDetails(null);
 
     await updateIntelligenceDoc(doc.id, { processingStatus: "processing_ai" });
 
@@ -124,36 +143,113 @@ export default function DocumentsClient() {
       });
 
       const data = await res.json() as {
-        ok?:             boolean;
-        error?:          string;
-        aiSummary?:      string;
-        aiKeyInsights?:  string[];
-        detectedTopics?: string[];
-        contentIdeas?:   string[];
-        language?:       string;
-        confidence?:     number;
+        ok?:                    boolean;
+        error?:                 string;
+        code?:                  string;
+        details?:               string;
+        tried?:                 string[];
+        provider?:              string;
+        model?:                 string;
+        retries?:               number;
+        estInputTokens?:        number;
+        estOutputTokens?:       number;
+        estCostUSD?:            number;
+        aiSummary?:             string;
+        aiKeyInsights?:         string[];
+        detectedTopics?:        string[];
+        contentIdeas?:          string[];
+        language?:              string;
+        confidence?:            number;
+        // Civic intelligence fields
+        sourceType?:            string;
+        sourceAuthority?:       string;
+        affectedSectors?:       string[];
+        policyChanges?:         string[];
+        financialImplications?: string[];
+        youthImpact?:           string;
+        ssfEpfCitRelevance?:    string;
+        nepaliExplainer?:       string;
       };
 
       if (!res.ok || data.error) {
-        await updateIntelligenceDoc(doc.id, { processingStatus: "error" });
-        setProcessError(data.error ?? "Processing failed. Try again.");
+        // Upload is always safe — only mark ai_paused, never error, for AI failures.
+        // error codes: BILLING_EXHAUSTED | NO_PROVIDERS | AI_UNAVAILABLE | AI_PARSE_ERROR
+        const aiPaused = ["BILLING_EXHAUSTED", "NO_PROVIDERS", "AI_UNAVAILABLE", "TIMEOUT"].includes(data.code ?? "");
+        await updateIntelligenceDoc(doc.id, {
+          processingStatus: aiPaused ? "ai_paused" : "ready",
+          aiProcessingError: (data.error ?? "AI processing failed.").slice(0, 300),
+        });
+        setProcessErrorCode(data.code ?? null);
+        setProcessErrorDetails(data.details ?? null);
+        setProcessError(data.error ?? "Document uploaded. AI analysis temporarily unavailable.");
         return;
       }
 
-      // AI complete — set to pending_review so admin must approve before queue items are created.
+      // AI complete — write intelligence + civic fields + provider attribution
       await updateIntelligenceDoc(doc.id, {
-        processingStatus:    "ai_ready",
-        adminApprovalStatus: "pending_review",
-        aiSummary:           data.aiSummary,
-        aiKeyInsights:       data.aiKeyInsights,
-        detectedTopics:      data.detectedTopics,
-        contentIdeas:        data.contentIdeas,
-        language:            data.language,
-        confidence:          data.confidence,
+        processingStatus:     "ai_ready",
+        adminApprovalStatus:  "pending_review",
+        aiProvider:           data.provider,
+        aiRetryCount:         data.retries ?? 0,
+        aiProcessingError:    deleteField() as unknown as undefined,
+        // Base AI fields
+        aiSummary:            data.aiSummary,
+        aiKeyInsights:        data.aiKeyInsights,
+        detectedTopics:       data.detectedTopics,
+        contentIdeas:         data.contentIdeas,
+        language:             data.language,
+        confidence:           data.confidence,
+        // Civic intelligence fields
+        sourceType:           data.sourceType as "official" | "unofficial" | "research" | "unknown" | undefined,
+        sourceAuthority:      data.sourceAuthority,
+        affectedSectors:      data.affectedSectors,
+        policyChanges:        data.policyChanges,
+        financialImplications:data.financialImplications,
+        youthImpact:          data.youthImpact,
+        ssfEpfCitRelevance:   data.ssfEpfCitRelevance,
+        nepaliExplainer:      data.nepaliExplainer,
       });
 
+      // Log AI cost to business_ai_costs (per-user BI) + vault_ai_usage (admin global log)
+      const providerServiceMap: Record<string, AIService> = {
+        "gemini-flash":    "google-ai",
+        "bedrock-sonnet":  "aws-bedrock",
+        "anthropic-sonnet":"anthropic",
+      };
+      if (data.provider && user?.uid) {
+        const today = new Date().toISOString().slice(0, 10);
+        // Per-user BI log
+        aiCostAdapter.add(user.uid, {
+          service:        providerServiceMap[data.provider] ?? "other",
+          operation:      "analysis",
+          model:          data.model ?? data.provider,
+          inputTokens:    data.estInputTokens  ?? 0,
+          outputTokens:   data.estOutputTokens ?? 0,
+          costUSD:        data.estCostUSD ?? 0,
+          relatedFeature: "/vault/documents",
+          date:           today,
+        }).catch(() => {});
+        // Admin global log — vault_ai_usage
+        addDoc(collection(db, "vault_ai_usage"), {
+          provider:      data.provider,
+          model:         data.model ?? data.provider,
+          tokensIn:      data.estInputTokens  ?? 0,
+          tokensOut:     data.estOutputTokens ?? 0,
+          estimatedCost: data.estCostUSD ?? 0,
+          documentId:    doc.id,
+          userId:        user.uid,
+          date:          today,
+          status:        "success",
+          createdAt:     Timestamp.now(),
+        }).catch(() => {});
+      }
+
     } catch (err) {
-      await updateIntelligenceDoc(doc.id, { processingStatus: "error" });
+      // Network-level failure — document is safe, AI just didn't run.
+      await updateIntelligenceDoc(doc.id, {
+        processingStatus: "ready",
+        aiProcessingError: `Network error: ${String(err)}`.slice(0, 200),
+      });
       setProcessError(`Network error: ${String(err)}`);
     } finally {
       setProcessingId(null);
@@ -214,6 +310,7 @@ export default function DocumentsClient() {
           onClear={clearDone}
           onDismiss={dismissTask}
           onClose={() => setShowUpload(false)}
+          ownerId={user?.uid}
         />
       )}
 
@@ -224,27 +321,20 @@ export default function DocumentsClient() {
         />
       )}
 
-      <div className="p-6 lg:p-8">
+      <div className="p-4 sm:p-6 lg:p-8">
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 mb-8 flex-wrap">
+        <div className="flex items-center justify-between gap-3 mb-5">
           <div>
-            <h1 className="text-3xl font-black text-white">Intelligence Library</h1>
-            <p className="text-zinc-500 text-sm mt-1">
-              {docs.length} document{docs.length !== 1 ? "s" : ""}
-              {awaitingReview > 0 && (
-                <Link href="/vault/admin?tab=documents" className="text-amber-400 ml-2 hover:text-amber-300">
-                  · {awaitingReview} pending admin review →
-                </Link>
-              )}
-              {approvedDocs > 0 && <span className="text-green-400 ml-2">· {approvedDocs} approved</span>}
-              {readyCount > 0 && <span className="text-zinc-500 ml-2">· {readyCount} awaiting AI</span>}
+            <h1 className="text-2xl font-black text-white">Documents</h1>
+            <p className="text-zinc-500 text-xs mt-0.5">
+              Nepal government र finance documents — AI ले analyze गर्छ
             </p>
           </div>
           <button
             onClick={() => setShowUpload(true)}
-            className="inline-flex items-center gap-2 bg-green-500 hover:bg-green-400 text-black font-black px-5 py-2.5 rounded-xl text-sm transition-colors"
+            className="inline-flex items-center gap-2 bg-green-500 hover:bg-green-400 text-black font-black px-4 py-2 rounded-xl text-sm transition-colors shrink-0"
           >
-            + Upload Documents
+            + Upload
           </button>
         </div>
 
@@ -262,46 +352,118 @@ export default function DocumentsClient() {
           </div>
         )}
 
-        {/* Process error banner */}
-        {processError && (
-          <div className="mb-6 bg-red-950 border border-red-800 rounded-2xl px-5 py-3 flex items-center justify-between gap-4">
-            <p className="text-red-400 text-sm">{processError}</p>
-            <button onClick={() => setProcessError(null)} className="text-red-600 hover:text-red-400 text-lg leading-none shrink-0">×</button>
-          </div>
+        {/* AI processing banner — amber for billing/quota, red only for real errors */}
+        {processError && (() => {
+          const isBilling  = processErrorCode === "BILLING_EXHAUSTED";
+          const isNoConfig = processErrorCode === "NO_PROVIDERS";
+          const isTimeout  = processErrorCode === "TIMEOUT";
+          const isWarn     = isBilling || isNoConfig || processErrorCode === "AI_UNAVAILABLE" || isTimeout;
+          return (
+            <div className={`mb-6 border rounded-2xl px-5 py-4 flex items-start justify-between gap-4 ${
+              isWarn ? "bg-amber-950/60 border-amber-800" : "bg-red-950/80 border-red-800"
+            }`}>
+              <div className="flex-1 min-w-0 space-y-1">
+                <p className={`text-sm font-medium ${isWarn ? "text-amber-300" : "text-red-400"}`}>
+                  {isWarn
+                    ? "Document uploaded successfully. AI analysis temporarily paused."
+                    : "AI analysis failed. Your document is safe — retry when ready."}
+                </p>
+                <p className={`text-xs ${isWarn ? "text-amber-500/80" : "text-red-500/80"}`}>
+                  {processError}
+                </p>
+                {processErrorDetails && (
+                  <p className="text-xs text-zinc-500 font-mono mt-1 break-all">
+                    {processErrorDetails}
+                  </p>
+                )}
+                {isBilling && (
+                  <div className="flex gap-3 pt-1">
+                    <a href="https://console.anthropic.com/billing" target="_blank" rel="noopener noreferrer"
+                       className="text-xs text-amber-400 underline hover:text-amber-300">Anthropic billing ↗</a>
+                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer"
+                       className="text-xs text-amber-400 underline hover:text-amber-300">Add Gemini key ↗</a>
+                  </div>
+                )}
+                {isNoConfig && (
+                  <a href="/vault/system" className="text-xs text-amber-400 underline hover:text-amber-300 pt-1 inline-block">
+                    Configure AI providers in /vault/system →
+                  </a>
+                )}
+                {isTimeout && (
+                  <p className="text-xs text-amber-400 pt-1">
+                    Document card मा "Reset गरेर फेरि Analyze" थिच्नुहोस् — document सुरक्षित छ।
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => { setProcessError(null); setProcessErrorCode(null); setProcessErrorDetails(null); }}
+                className={`text-lg leading-none shrink-0 mt-0.5 ${isWarn ? "text-amber-700 hover:text-amber-500" : "text-red-600 hover:text-red-400"}`}
+              >×</button>
+            </div>
+          );
+        })()}
+
+        {/* Learning mode guide */}
+        {learn && docs.length > 0 && (
+          <LearnBlock
+            title="Intelligence Library — कसरी काम गर्छ?"
+            nepali="Nepal को government र financial documents यहाँ upload गर्नुहोस् — AI ले automatically analyze गरेर content ideas बनाउँछ।"
+            steps={[
+              "Document upload गर्नुहोस् (NRB, EPF, SSF, research papers)",
+              "'AI ले Analyze' थिच्नुहोस् — AI ले summary र content ideas बनाउँछ",
+              "Admin Vault मा गएर review गरेर approve गर्नुहोस्",
+              "Approved document का ideas Content Queue मा automatically जान्छन्",
+            ]}
+          />
         )}
 
-        {/* Stats row */}
+        {/* Pipeline status flow */}
         {docs.length > 0 && (
-          <div className="grid grid-cols-4 gap-3 mb-8">
-            {[
-              { label: "Total Docs",     value: docs.length },
-              { label: "Pending Review", value: awaitingReview },
-              { label: "Approved",       value: approvedDocs },
-              { label: "Awaiting AI",    value: readyCount },
-            ].map(stat => (
-              <div key={stat.label} className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 text-center">
-                <p className="text-2xl font-black text-white">{stat.value}</p>
-                <p className="text-zinc-500 text-xs mt-1">{stat.label}</p>
-              </div>
-            ))}
+          <div className="mb-5">
+            {/* Mini pipeline flow bar */}
+            <div className="flex items-center gap-1 overflow-x-auto pb-1">
+              {[
+                { label: "Uploaded",   nepali: "Upload",   value: docs.length,    color: "text-zinc-300",   dot: "bg-zinc-500",   href: null },
+                { label: "Analyzed",   nepali: "AI done",  value: aiReadyCount,   color: "text-blue-400",   dot: "bg-blue-500",   href: null },
+                { label: "Review",     nepali: "Review",   value: awaitingReview, color: "text-amber-400",  dot: "bg-amber-500",  href: "/vault/admin?tab=documents" },
+                { label: "Approved",   nepali: "Approved", value: approvedDocs,   color: "text-green-400",  dot: "bg-green-500",  href: null },
+              ].map((step, i, arr) => (
+                <div key={step.label} className="flex items-center gap-1 shrink-0">
+                  <div
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium ${
+                      step.value > 0 && step.href ? "border-amber-800 bg-amber-950/30" : "border-zinc-800 bg-zinc-900/60"
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${step.dot} shrink-0`} />
+                    <span className="text-zinc-500">{step.nepali}</span>
+                    <span className={`font-black ${step.color}`}>{step.value}</span>
+                    {step.href && step.value > 0 && (
+                      <Link href={step.href} className="text-amber-400 hover:text-amber-300 ml-0.5">→</Link>
+                    )}
+                  </div>
+                  {i < arr.length - 1 && <span className="text-zinc-700 text-xs">›</span>}
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
         {/* Search + filter */}
-        <div className="flex flex-col sm:flex-row gap-3 mb-6">
+        <div className="flex flex-col gap-2 mb-5">
           <input
             type="text"
-            placeholder="Search titles, tags, topics…"
+            placeholder="Search documents…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-600"
+            className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-600"
           />
-          <div className="flex gap-2 flex-wrap">
+          {/* Horizontal-scroll filter chips — mobile friendly */}
+          <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
             {ALL_CATEGORIES.map(cat => (
               <button
                 key={cat}
                 onClick={() => setFilter(cat)}
-                className={`text-xs px-3 py-1.5 rounded-full font-semibold transition-colors ${
+                className={`text-xs px-3 py-1 rounded-full font-semibold transition-colors whitespace-nowrap shrink-0 ${
                   filter === cat
                     ? "bg-white text-black"
                     : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
@@ -319,29 +481,48 @@ export default function DocumentsClient() {
             <p className="text-zinc-600 text-sm">Loading…</p>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 gap-4">
+          <div className="flex flex-col items-center justify-center py-12 gap-4">
             {docs.length === 0 ? (
-              <>
-                <span className="text-6xl">📄</span>
-                <p className="text-zinc-500 text-sm">No documents yet.</p>
-                <p className="text-zinc-600 text-xs">Upload NRB circulars, EPF policy docs, research files, or images.</p>
+              /* First-use onboarding */
+              <div className="w-full max-w-md mx-auto space-y-4">
+                <div className="text-center">
+                  <p className="text-4xl mb-3">📄</p>
+                  <p className="text-white font-bold text-lg">पहिलो document upload गर्नुहोस्</p>
+                  <p className="text-zinc-500 text-sm mt-1">AI ले automatically analyze गर्नेछ</p>
+                </div>
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 space-y-3">
+                  {[
+                    { step: "1", icon: "📤", title: "Document Upload गर्नुहोस्", detail: "NRB circular, EPF/SSF policy, research PDF — जुनसुकै" },
+                    { step: "2", icon: "🤖", title: "AI ले Analyze गर्छ", detail: "Summary, insights, र content ideas automatically निकाल्छ" },
+                    { step: "3", icon: "📋", title: "Review गरेर Approve गर्नुहोस्", detail: "Admin Vault मा AI output check गरेर approve गर्नुहोस्" },
+                    { step: "4", icon: "🚀", title: "Content Queue मा जान्छ", detail: "YouTube, Instagram, Facebook को लागि content ready हुन्छ" },
+                  ].map(s => (
+                    <div key={s.step} className="flex items-start gap-3">
+                      <span className="w-6 h-6 rounded-full bg-zinc-800 text-zinc-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">{s.step}</span>
+                      <div>
+                        <p className="text-white text-sm font-medium">{s.icon} {s.title}</p>
+                        <p className="text-zinc-500 text-xs mt-0.5">{s.detail}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
                 <button
                   onClick={() => setShowUpload(true)}
-                  className="mt-2 text-green-400 hover:text-green-300 text-sm font-semibold"
+                  className="w-full bg-green-500 hover:bg-green-400 text-black font-black py-3 rounded-xl text-sm transition-colors"
                 >
-                  Upload your first document →
+                  + पहिलो Document Upload गर्नुहोस्
                 </button>
-              </>
+              </div>
             ) : (
-              <>
+              <div className="text-center">
                 <p className="text-zinc-500 text-sm">No documents match your search.</p>
                 <button
                   onClick={() => { setSearch(""); setFilter("all"); }}
-                  className="text-zinc-600 text-xs hover:text-zinc-400"
+                  className="text-zinc-600 text-xs hover:text-zinc-400 mt-2"
                 >
                   Clear filters
                 </button>
-              </>
+              </div>
             )}
           </div>
         ) : (
@@ -356,6 +537,7 @@ export default function DocumentsClient() {
                 onProcess={handleProcess}
                 onDelete={handleDelete}
                 onGenerateQueue={handleGenerateQueueItems}
+                onResetStuck={handleResetStuck}
               />
             ))}
           </div>

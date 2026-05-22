@@ -9,26 +9,35 @@ import { useQueueItems }           from "../../hooks/vault/useQueueItems";
 import { useIntelligenceDocs }     from "../../hooks/vault/useIntelligenceDocs";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ProviderStatus = "configured" | "unconfigured" | "ok" | "error" | "loading";
+type ProviderStatus = "configured" | "unconfigured" | "ok" | "error" | "credit_low" | "loading";
+
+interface ProviderHealth {
+  status:    ProviderStatus;
+  model?:    string;
+  error?:    string;
+  latencyMs?:number;
+  costTier?: "cheap" | "standard" | "premium";
+}
 
 interface HealthData {
   ok:        boolean;
   timestamp: string;
-  bedrock:   { status: ProviderStatus };
-  anthropic: { status: ProviderStatus };
+  gemini:    ProviderHealth;
+  bedrock:   ProviderHealth;
+  anthropic: ProviderHealth;
   r2:        { status: "ok" | "unconfigured" };
   probe:     boolean;
 }
 
-// ─── AI workers (model IDs must match functions/api/*.ts) ────────────────────
+// ─── AI workers ───────────────────────────────────────────────────────────────
 
 const AI_WORKERS = [
-  { name: "recommend",             provider: "anthropic" as const, model: "claude-opus-4-7" },
-  { name: "ingest-url",            provider: "anthropic" as const, model: "claude-haiku-4-5-20251001" },
-  { name: "process-document",      provider: "anthropic" as const, model: "claude-sonnet-4-6" },
-  { name: "generate-content-idea", provider: "anthropic" as const, model: "claude-haiku-4-5-20251001" },
-  { name: "generate-script",       provider: "bedrock"   as const, model: "us.anthropic.claude-3-7-sonnet-20250219-v1:0" },
-  { name: "generate-thumbnail",    provider: "bedrock"   as const, model: "us.anthropic.claude-3-7-sonnet-20250219-v1:0" },
+  { name: "process-document",      provider: "gemini"    as const, model: "gemini-2.0-flash (→ bedrock-haiku → anthropic)", primary: true },
+  { name: "recommend",             provider: "anthropic" as const, model: "claude-opus-4-7",                                primary: false },
+  { name: "ingest-url",            provider: "anthropic" as const, model: "claude-haiku-4-5-20251001",                      primary: false },
+  { name: "generate-content-idea", provider: "anthropic" as const, model: "claude-haiku-4-5-20251001",                      primary: false },
+  { name: "generate-script",       provider: "bedrock"   as const, model: "us.anthropic.claude-3-5-haiku-20241022-v1:0",    primary: false },
+  { name: "generate-thumbnail",    provider: "bedrock"   as const, model: "us.anthropic.claude-3-5-haiku-20241022-v1:0",    primary: false },
 ];
 
 // ─── Small components ─────────────────────────────────────────────────────────
@@ -45,11 +54,12 @@ function Stat({ label, value, sub }: { label: string; value: string | number; su
 
 function ProviderBadge({ status }: { status: ProviderStatus }) {
   const cfg: Record<ProviderStatus, { label: string; cls: string }> = {
-    loading:      { label: "checking…",      cls: "bg-zinc-800 text-zinc-400 border-zinc-700" },
-    configured:   { label: "configured",     cls: "bg-emerald-900/40 text-emerald-400 border-emerald-800" },
-    ok:           { label: "live ✓",         cls: "bg-emerald-900/40 text-emerald-400 border-emerald-800" },
-    unconfigured: { label: "not configured", cls: "bg-red-900/40 text-red-400 border-red-800" },
-    error:        { label: "error",          cls: "bg-red-900/40 text-red-400 border-red-800" },
+    loading:      { label: "checking…",     cls: "bg-zinc-800 text-zinc-400 border-zinc-700" },
+    configured:   { label: "configured",    cls: "bg-emerald-900/40 text-emerald-400 border-emerald-800" },
+    ok:           { label: "live ✓",   cls: "bg-emerald-900/40 text-emerald-400 border-emerald-800" },
+    unconfigured: { label: "not set",       cls: "bg-zinc-800 text-zinc-500 border-zinc-700" },
+    error:        { label: "error",         cls: "bg-red-900/40 text-red-400 border-red-800" },
+    credit_low:   { label: "credit low ⚠", cls: "bg-amber-900/40 text-amber-400 border-amber-800" },
   };
   const { label, cls } = cfg[status] ?? cfg.loading;
   return (
@@ -60,13 +70,19 @@ function ProviderBadge({ status }: { status: ProviderStatus }) {
 }
 
 function WorkerRow({ w, health }: { w: typeof AI_WORKERS[number]; health: HealthData | null }) {
-  const status: ProviderStatus = health ? health[w.provider].status : "loading";
+  const providerHealth = health
+    ? (w.provider === "gemini" ? health.gemini : w.provider === "bedrock" ? health.bedrock : health.anthropic)
+    : null;
+  const status: ProviderStatus = providerHealth?.status ?? "loading";
   return (
     <div className="flex items-center justify-between py-3 border-b border-zinc-800 last:border-0">
-      <div>
-        <div className="text-sm font-mono text-zinc-200">/api/{w.name}</div>
-        <div className="text-xs text-zinc-500 mt-0.5">
-          {w.provider === "bedrock" ? "AWS Bedrock" : "Anthropic"} · <span className="font-mono">{w.model}</span>
+      <div className="min-w-0 flex-1 mr-3">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-mono text-zinc-200">/api/{w.name}</span>
+          {w.primary && <span className="text-xs px-1.5 py-0.5 rounded bg-cyan-900/40 text-cyan-400 border border-cyan-800">primary</span>}
+        </div>
+        <div className="text-xs text-zinc-500 mt-0.5 truncate">
+          {w.provider === "bedrock" ? "AWS Bedrock" : w.provider === "gemini" ? "Google Gemini" : "Anthropic"} &middot; <span className="font-mono">{w.model}</span>
         </div>
       </div>
       <ProviderBadge status={status} />
@@ -152,8 +168,15 @@ export default function SystemStatusClient() {
 
   // ── Checklist items ─────────────────────────────────────────────────────────
 
-  const anthropicOk = health ? health.anthropic.status === "ok" || health.anthropic.status === "configured" : null;
-  const bedrockOk   = health ? health.bedrock.status   === "ok" || health.bedrock.status   === "configured" : null;
+  const isUsable  = (s?: ProviderStatus) => s === "ok" || s === "configured";
+  const geminiOk  = isUsable(health?.gemini.status);
+  const bedrockOk = isUsable(health?.bedrock.status);
+  const anthropicOk = isUsable(health?.anthropic.status);
+  const anyAiOk   = geminiOk || bedrockOk || anthropicOk;
+  const geminiCredit    = health?.gemini.status    === "credit_low";
+  const bedrockCredit   = health?.bedrock.status   === "credit_low";
+  const anthropicCredit = health?.anthropic.status === "credit_low";
+  const anyCredit = geminiCredit || bedrockCredit || anthropicCredit;
 
   const checks: CheckItem[] = [
     {
@@ -211,38 +234,44 @@ export default function SystemStatusClient() {
       ) : undefined,
     },
     {
-      label:  "Anthropic API",
+      label:  "AI Providers (document analysis)",
       status: health === null ? "loading"
-             : anthropicOk    ? "ok"
+             : anyAiOk        ? "ok"
+             : anyCredit       ? "warn"
              :                  "error",
-      detail: health === null   ? "Checking…"
-             : anthropicOk      ? `Connected (${health.anthropic.status})`
-             :                    "Anthropic API not configured or unreachable.",
-      fix: health && !anthropicOk ? (
+      detail: health === null
+        ? "Checking…"
+        : anyAiOk
+          ? `Active: ${[geminiOk && "Gemini", bedrockOk && "Bedrock", anthropicOk && "Anthropic"].filter(Boolean).join(" + ")}`
+          : anyCredit
+            ? "All configured providers have exhausted credits. Documents are safe. Top up to resume AI analysis."
+            : "No AI provider is configured. Add at least one provider key to enable document analysis.",
+      fix: health && !anyAiOk ? (
         <FixBox>
-          <p>Set <code className="bg-zinc-800 px-1 rounded">ANTHROPIC_API_KEY</code> in Cloudflare Pages:</p>
-          <FixLink href="https://dash.cloudflare.com">Cloudflare Dashboard → Pages → zzc-app → Settings → Environment variables</FixLink>
-          <p className="mt-1">After adding, redeploy the project for the change to take effect.</p>
+          <p className="font-semibold text-zinc-300">Add at least one provider (cheapest first):</p>
+          <div className="mt-2 space-y-2">
+            <div className="border border-emerald-900/60 rounded-lg p-2">
+              <p className="text-emerald-400 font-semibold text-xs">1. Gemini Flash — Recommended ($0.10/1M tokens, free tier available)</p>
+              <p className="mt-0.5">Get key: <FixLink href="https://aistudio.google.com/app/apikey">aistudio.google.com → Get API key</FixLink></p>
+              <p className="mt-0.5">Add <code className="bg-zinc-800 px-1 rounded">GEMINI_API_KEY</code> to Cloudflare Pages env vars</p>
+            </div>
+            <div className="border border-zinc-700 rounded-lg p-2">
+              <p className="text-zinc-300 font-semibold text-xs">2. AWS Bedrock ($3/1M tokens, no PDF support)</p>
+              <p className="mt-0.5">Add <code className="bg-zinc-800 px-1 rounded">AWS_ACCESS_KEY_ID</code>, <code className="bg-zinc-800 px-1 rounded">AWS_SECRET_ACCESS_KEY</code>, <code className="bg-zinc-800 px-1 rounded">AWS_REGION</code></p>
+            </div>
+            <div className="border border-zinc-700 rounded-lg p-2">
+              <p className="text-zinc-300 font-semibold text-xs">3. Anthropic ($3/1M tokens, best PDF support)</p>
+              <p className="mt-0.5">Add <code className="bg-zinc-800 px-1 rounded">ANTHROPIC_API_KEY</code> — <FixLink href="https://console.anthropic.com/billing">Top up at console.anthropic.com/billing</FixLink></p>
+            </div>
+          </div>
+          <p className="mt-2 text-zinc-500">After adding keys, redeploy: <code className="bg-zinc-800 px-1 rounded">npm run deploy</code></p>
         </FixBox>
-      ) : undefined,
-    },
-    {
-      label:  "AWS Bedrock (script generation)",
-      status: health === null ? "loading"
-             : bedrockOk      ? "ok"
-             :                  "warn",
-      detail: health === null ? "Checking…"
-             : bedrockOk      ? `Connected (${health.bedrock.status})`
-             :                  "Bedrock not configured — script/thumbnail generation unavailable.",
-      fix: health && !bedrockOk ? (
+      ) : health && anyCredit && !anyAiOk ? (
         <FixBox>
-          <p>Set in Cloudflare Pages environment variables:</p>
-          <ul className="list-disc list-inside space-y-0.5 mt-1">
-            <li><code className="bg-zinc-800 px-1 rounded">AWS_ACCESS_KEY_ID</code></li>
-            <li><code className="bg-zinc-800 px-1 rounded">AWS_SECRET_ACCESS_KEY</code></li>
-            <li><code className="bg-zinc-800 px-1 rounded">AWS_REGION</code> (e.g. <code className="bg-zinc-800 px-1 rounded">us-east-1</code>)</li>
-          </ul>
-          <p className="mt-1">Model must use cross-region profile format: <code className="bg-zinc-800 px-1 rounded">us.anthropic.claude-3-7-sonnet-20250219-v1:0</code></p>
+          <p className="font-semibold text-amber-300">AI analysis paused — सबै providers को credit सकियो।</p>
+          {anthropicCredit && <p className="mt-1">Anthropic: <FixLink href="https://console.anthropic.com/billing">console.anthropic.com/billing</FixLink></p>}
+          {geminiCredit    && <p className="mt-1">Gemini: <FixLink href="https://console.cloud.google.com/billing">console.cloud.google.com/billing</FixLink></p>}
+          <p className="mt-1 text-zinc-500">Documents are safe in R2. AI analysis resumes automatically once any provider has credits.</p>
         </FixBox>
       ) : undefined,
     },
@@ -370,6 +399,89 @@ export default function SystemStatusClient() {
             <Stat label="Approved" value={approvedQueue} sub="ready for AI Studio" />
           </div>
         )}
+      </section>
+
+      {/* ── AI Provider Diagnostics ── */}
+      <section>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-500">
+            AI Provider Diagnostics
+          </h2>
+          {health && (
+            <a href="/api/health?probe=true" target="_blank" rel="noopener noreferrer"
+               className="text-xs text-zinc-500 hover:text-zinc-300 underline">
+              Run live probe ↗
+            </a>
+          )}
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {[
+            {
+              key:      "gemini" as const,
+              label:    "Gemini Flash",
+              tier:     "cheap",
+              tierColor:"text-emerald-400",
+              cost:     "$0.075 / 1M tokens",
+              supports: "Text · PDF · Images",
+              setupLink:"https://aistudio.google.com/app/apikey",
+              setupVar: "GEMINI_API_KEY",
+            },
+            {
+              key:      "bedrock" as const,
+              label:    "Bedrock Haiku",
+              tier:     "standard",
+              tierColor:"text-blue-400",
+              cost:     "$0.80 / 1M tokens",
+              supports: "Text · Images (no PDF)",
+              setupLink:"https://console.aws.amazon.com/bedrock",
+              setupVar: "AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY + AWS_REGION",
+            },
+            {
+              key:      "anthropic" as const,
+              label:    "Anthropic Sonnet",
+              tier:     "premium",
+              tierColor:"text-purple-400",
+              cost:     "$3 / 1M tokens",
+              supports: "Text · PDF · Images",
+              setupLink:"https://console.anthropic.com/billing",
+              setupVar: "ANTHROPIC_API_KEY",
+            },
+          ].map(p => {
+            const h      = health ? health[p.key] : null;
+            const status = h?.status ?? "loading";
+            const isCredit = status === "credit_low";
+            const isOk     = status === "ok" || status === "configured";
+            const isUnset  = status === "unconfigured";
+            return (
+              <div key={p.key} className={`bg-zinc-900 border rounded-xl p-4 space-y-2 ${
+                isCredit ? "border-amber-800/60" : isOk ? "border-zinc-700" : "border-zinc-800"
+              }`}>
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-sm font-semibold text-white">{p.label}</span>
+                  <ProviderBadge status={status} />
+                </div>
+                <div className={`text-xs font-medium ${p.tierColor}`}>{p.cost}</div>
+                <div className="text-xs text-zinc-500">{p.supports}</div>
+                {h?.model && <div className="text-xs text-zinc-600 font-mono truncate">{h.model}</div>}
+                {h?.latencyMs && <div className="text-xs text-zinc-600">{h.latencyMs}ms</div>}
+                {isCredit && (
+                  <a href={p.setupLink} target="_blank" rel="noopener noreferrer"
+                     className="block text-xs text-amber-400 underline hover:text-amber-300">
+                    Top up credits ↗
+                  </a>
+                )}
+                {isUnset && (
+                  <div className="text-xs text-zinc-600">
+                    <span className="font-mono bg-zinc-800 px-1 rounded">{p.setupVar}</span>
+                  </div>
+                )}
+                {h?.error && !isCredit && (
+                  <div className="text-xs text-red-400 truncate">{h.error}</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </section>
 
       {/* ── AI workers ── */}

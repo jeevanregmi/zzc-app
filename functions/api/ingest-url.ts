@@ -1,28 +1,29 @@
 /**
  * POST /api/ingest-url
  *
- * Phase 6B — URL Intelligence Ingestion Worker
+ * URL Intelligence Ingestion Worker.
  *
- * Accepts a URL, fetches the page content, extracts text, and runs it through
- * Claude to produce a structured SourceSignal intelligence payload.
+ * Accepts a URL, fetches content, extracts intelligence via vault-router
+ * (Gemini Flash → Bedrock Haiku → Anthropic Haiku). Provider-independent —
+ * continues working if any single provider is unavailable or over quota.
  *
- * The CALLER is responsible for writing the result to Firestore as a SourceSignal
- * document (consistent with how /api/process-document works).
+ * Handles:
+ *   - HTML pages + RSS/Atom feeds → text extraction → AI analysis
+ *   - PDF URLs (application/pdf) → base64 → AI analysis (via Gemini/Anthropic PDF support)
+ *   - Plain text
  *
- * Supports: HTML pages, RSS/Atom feeds, plain text
- * Max content passed to Claude: 40,000 chars (truncated after that)
- *
- * Required Cloudflare Pages env var: ANTHROPIC_API_KEY
+ * Supports: nrb.org.np, parliament.gov.np, mof.gov.np, epf.gov.np, ssf.gov.np
+ * Max content passed to AI: 40,000 chars for HTML; 10 MB for PDFs
  */
 
+import { routeDocumentAnalysis }                               from "../../lib/ai/vault-router";
 import { matchTopics, matchSectors, taxonomySummaryForPrompt } from "../../lib/data/taxonomy";
-import { anthropicErrorMessage, providerError, log } from "./_shared";
+import { log }                                                 from "./_shared";
+import type { RouterEnv }                                      from "../../lib/ai/vault-router";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface Env {
-  ANTHROPIC_API_KEY: string;
-}
+interface Env extends RouterEnv {}
 
 interface PagesContext {
   request: Request;
@@ -69,7 +70,7 @@ const MAX_TEXT_CHARS = 40_000;            // chars sent to Claude
 
 // Domains classified as high credibility for Nepal finance
 const HIGH_CREDIBILITY_DOMAINS = [
-  "nrb.org.np", "epf.gov.np", "ssf.gov.np", "sebon.gov.np",
+  "nrb.org.np", "epf.gov.np", "epf.org.np", "ssf.gov.np", "sebon.gov.np",
   "ird.gov.np", "mof.gov.np", "sharesansar.com", "merolagani.com",
   "nepsefloor.com", "moneynepal.com",
 ];
@@ -226,16 +227,7 @@ export const onRequestOptions = async (): Promise<Response> =>
   new Response(null, { status: 204, headers: CORS });
 
 export const onRequestPost = async (context: PagesContext): Promise<Response> => {
-  const { ANTHROPIC_API_KEY } = context.env;
-
-  if (!ANTHROPIC_API_KEY) {
-    return new Response(
-      JSON.stringify({ error: "ANTHROPIC_API_KEY not configured in Cloudflare Pages env vars", code: "ENV_MISSING" }),
-      { status: 500, headers: CORS },
-    );
-  }
-
-  // ── Parse request ──────────────────────────────────────────────────────────
+  // ── Parse request ────────────────────────────────────────────────────────────
   let body: IngestRequest;
   try {
     body = await context.request.json();
@@ -243,7 +235,7 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     return new Response(JSON.stringify({ error: "Invalid request body", code: "BAD_REQUEST" }), { status: 400, headers: CORS });
   }
 
-  const { url, sourceName, topics = [], tags = [] } = body;
+  const { url, sourceName, topics = [] } = body;
 
   if (!url || !sourceName) {
     return new Response(
@@ -252,7 +244,6 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     );
   }
 
-  // Basic URL validation
   let parsedUrl: URL;
   try {
     parsedUrl = new URL(url);
@@ -261,114 +252,150 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     return new Response(JSON.stringify({ error: "Invalid URL — must be http or https", code: "INVALID_URL" }), { status: 400, headers: CORS });
   }
 
-  // ── Fetch the URL ──────────────────────────────────────────────────────────
+  // ── Fetch the URL ────────────────────────────────────────────────────────────
   let fetchRes: Response;
   try {
     fetchRes = await fetch(url, {
       headers: {
         "User-Agent": "ZZCBot/1.0 (Nepal finance intelligence; +https://zzc.jeevanregmi.com.np)",
-        "Accept":     "text/html,application/xhtml+xml,application/xml,application/rss+xml,text/plain;q=0.9,*/*;q=0.8",
+        "Accept":     "application/pdf,text/html,application/xhtml+xml,application/xml,application/rss+xml,text/plain;q=0.9,*/*;q=0.8",
       },
       redirect: "follow",
     });
   } catch (err) {
-    return new Response(
-      JSON.stringify({ error: `Could not fetch URL: ${String(err)}`, code: "FETCH_ERROR" }),
-      { status: 500, headers: CORS },
-    );
+    return new Response(JSON.stringify({ error: `Could not fetch URL: ${String(err)}`, code: "FETCH_ERROR" }), { status: 500, headers: CORS });
   }
 
   if (!fetchRes.ok) {
-    return new Response(
-      JSON.stringify({ error: `URL returned HTTP ${fetchRes.status}`, code: "FETCH_ERROR" }),
-      { status: 500, headers: CORS },
-    );
+    return new Response(JSON.stringify({ error: `URL returned HTTP ${fetchRes.status}`, code: "FETCH_ERROR" }), { status: 500, headers: CORS });
   }
 
-  // Guard against huge responses
-  const rawLen = Number(fetchRes.headers.get("content-length") ?? 0);
-  if (rawLen > MAX_FETCH_SIZE) {
-    return new Response(
-      JSON.stringify({ error: `Page too large (${(rawLen / 1024 / 1024).toFixed(1)} MB). Max 2 MB.`, code: "PAGE_TOO_LARGE" }),
-      { status: 413, headers: CORS },
-    );
-  }
-
-  const rawText = await fetchRes.text();
   const contentType = fetchRes.headers.get("content-type") ?? "";
+  const domainCred  = domainCredibility(url);
 
-  // ── Extract text ───────────────────────────────────────────────────────────
+  // ── Branch: PDF URL vs HTML/RSS ───────────────────────────────────────────────
+  // NRB, Parliament, EPF publish most policy documents as direct PDF links.
+  // PDF binary cannot be processed by stripHtml — must be decoded and sent as
+  // base64 to an AI provider that supports PDF (Gemini, Anthropic).
+  const isPdf = contentType.includes("application/pdf") ||
+                parsedUrl.pathname.toLowerCase().endsWith(".pdf");
+
+  let aiText: string;
+  let usedModel = MODEL;
+  let claudeText = "";    // extracted text for taxonomy matching (HTML path only)
   let extractedTitle = "";
-  let extractedText  = "";
   let extractedDate: string | undefined;
 
-  if (isRssOrAtom(contentType, rawText)) {
-    const { title, items } = parseRssFeed(rawText);
-    extractedTitle = title;
-    extractedText  = items.join("\n\n---\n\n");
-  } else if (contentType.includes("text/plain")) {
-    extractedTitle = parsedUrl.pathname.split("/").pop() ?? url;
-    extractedText  = rawText;
+  if (isPdf) {
+    // ── PDF URL path ──────────────────────────────────────────────────────────
+    const MAX_PDF = 10 * 1024 * 1024;
+    const rawLen  = Number(fetchRes.headers.get("content-length") ?? 0);
+    if (rawLen > MAX_PDF) {
+      return new Response(
+        JSON.stringify({ error: `PDF too large (${(rawLen / 1024 / 1024).toFixed(1)} MB). Max 10 MB.`, code: "FILE_TOO_LARGE" }),
+        { status: 413, headers: CORS },
+      );
+    }
+    const buf    = await fetchRes.arrayBuffer();
+    const bytes  = new Uint8Array(buf);
+    let binary   = "";
+    const chunk  = 8192;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    const base64   = btoa(binary);
+    const fileName = parsedUrl.pathname.split("/").pop() || sourceName;
+
+    const systemPrompt = buildPrompt(url, sourceName, "", "", topics);
+
+    const result = await routeDocumentAnalysis(
+      context.env,
+      systemPrompt,
+      { mimeType: "application/pdf", fileName, base64 },
+      2048,
+    );
+
+    if (!result.ok) {
+      const isBilling = result.reason === "billing_exhausted";
+      return new Response(
+        JSON.stringify({
+          error: isBilling
+            ? "AI quota exhausted. Top up at console.anthropic.com/billing or enable Gemini billing."
+            : `AI unavailable (tried: ${result.tried.join(", ")}). Retry in a few minutes.`,
+          code: isBilling ? "BILLING_EXHAUSTED" : "AI_UNAVAILABLE",
+        }),
+        { status: isBilling ? 402 : 503, headers: CORS },
+      );
+    }
+    aiText    = result.text;
+    usedModel = result.model;
+    claudeText = `PDF: ${fileName}`;  // fallback for taxonomy matching
+    extractedTitle = fileName.replace(/\.[^.]+$/, "").replace(/[-_]/g, " ");
+
   } else {
-    // HTML (default)
-    extractedTitle = extractTitle(rawText);
-    extractedDate  = extractPublishedAt(rawText);
-    extractedText  = stripHtml(rawText);
-  }
+    // ── HTML / RSS / text path ────────────────────────────────────────────────
+    const rawLen = Number(fetchRes.headers.get("content-length") ?? 0);
+    if (rawLen > MAX_FETCH_SIZE) {
+      return new Response(
+        JSON.stringify({ error: `Page too large (${(rawLen / 1024 / 1024).toFixed(1)} MB). Max 2 MB.`, code: "PAGE_TOO_LARGE" }),
+        { status: 413, headers: CORS },
+      );
+    }
 
-  // Truncate before sending to Claude
-  const clauceText = extractedText.slice(0, MAX_TEXT_CHARS);
+    const rawHtml = await fetchRes.text();
 
-  if (clauceText.trim().length < 100) {
-    return new Response(
-      JSON.stringify({ error: "Could not extract meaningful text from this URL. The page may require JavaScript or authentication.", code: "EXTRACT_FAILED" }),
-      { status: 422, headers: CORS },
+    if (isRssOrAtom(contentType, rawHtml)) {
+      const { title, items } = parseRssFeed(rawHtml);
+      extractedTitle = title;
+      claudeText     = items.join("\n\n---\n\n");
+    } else if (contentType.includes("text/plain")) {
+      extractedTitle = parsedUrl.pathname.split("/").pop() ?? url;
+      claudeText     = rawHtml;
+    } else {
+      extractedTitle = extractTitle(rawHtml);
+      extractedDate  = extractPublishedAt(rawHtml);
+      claudeText     = stripHtml(rawHtml);
+    }
+
+    const trimmed = claudeText.slice(0, MAX_TEXT_CHARS);
+
+    if (trimmed.trim().length < 100) {
+      return new Response(
+        JSON.stringify({
+          error: "Could not extract meaningful text from this URL. The page may require JavaScript or login.",
+          code:  "EXTRACT_FAILED",
+        }),
+        { status: 422, headers: CORS },
+      );
+    }
+
+    claudeText = trimmed;
+    const systemPrompt = buildPrompt(url, sourceName, claudeText, extractedTitle, topics);
+
+    const result = await routeDocumentAnalysis(
+      context.env,
+      systemPrompt,
+      { mimeType: "text/plain", fileName: sourceName, textBody: claudeText },
+      2048,
     );
+
+    if (!result.ok) {
+      const isBilling = result.reason === "billing_exhausted";
+      return new Response(
+        JSON.stringify({
+          error: isBilling
+            ? "AI quota exhausted. Top up at console.anthropic.com/billing or enable Gemini billing."
+            : `AI unavailable (tried: ${result.tried.join(", ")}). Retry in a few minutes.`,
+          code: isBilling ? "BILLING_EXHAUSTED" : "AI_UNAVAILABLE",
+        }),
+        { status: isBilling ? 402 : 503, headers: CORS },
+      );
+    }
+    aiText    = result.text;
+    usedModel = result.model;
   }
 
-  // Auto-detect credibility from domain before Claude confirms
-  const domainCred = domainCredibility(url);
-
-  // ── Build prompt ───────────────────────────────────────────────────────────
-  const prompt = buildPrompt(url, sourceName, clauceText, extractedTitle, topics);
-
-  // ── Call Claude ────────────────────────────────────────────────────────────
-  let anthropicRes: Response;
-  try {
-    anthropicRes = await fetch(ANTHROPIC_URL, {
-      method:  "POST",
-      headers: {
-        "Content-Type":      "application/json",
-        "x-api-key":         ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model:      MODEL,
-        max_tokens: 2048,
-        messages:   [{ role: "user", content: prompt }],
-      }),
-    });
-  } catch (err) {
-    return new Response(
-      JSON.stringify({ error: `Anthropic API unreachable: ${String(err)}`, code: "ANTHROPIC_UNREACHABLE" }),
-      { status: 500, headers: CORS },
-    );
-  }
-
-  if (!anthropicRes.ok) {
-    const errText = await anthropicRes.text().catch(() => "");
-    log("ingest-url", "anthropic_error", { status: anthropicRes.status, url: body.url });
-    return providerError(
-      anthropicErrorMessage(anthropicRes.status),
-      "ANTHROPIC_ERROR",
-      errText.slice(0, 300),
-    );
-  }
-
-  const rawResponse = (await anthropicRes.json()) as { content: Array<{ type: string; text: string }> };
-  const aiText = rawResponse.content?.[0]?.text?.trim() ?? "";
-
-  // ── Parse JSON response ────────────────────────────────────────────────────
+  // ── Parse AI response ─────────────────────────────────────────────────────────
   const jsonMatch = aiText.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
     return new Response(
@@ -398,17 +425,13 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     );
   }
 
-  // ── Taxonomy classification ────────────────────────────────────────────────
+  // ── Taxonomy classification ───────────────────────────────────────────────────
+  const localMatches = matchTopics(claudeText, 8);
 
-  // 1. Local keyword matching against extracted text (deterministic, fast)
-  const localMatches = matchTopics(clauceText, 8);
-
-  // 2. Validate Claude's taxonomy IDs and merge (Claude may hallucinate IDs)
   const aiTopicIds: string[] = (ai.taxonomyTopicIds ?? []).filter(
     id => localMatches.some(m => m.topic.id === id) || matchTopics(id, 1).length > 0,
   );
 
-  // 3. Build final taxonomy tags — union of local + AI, deduped, sorted by score
   const tagMap = new Map<string, { topicId: string; sectorId: string; score: number }>();
   for (const m of localMatches) {
     tagMap.set(m.topic.id, { topicId: m.topic.id, sectorId: m.topic.sectorId, score: m.score });
@@ -416,52 +439,41 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
   for (const id of aiTopicIds) {
     if (!tagMap.has(id)) {
       const existing = localMatches.find(m => m.topic.id === id);
-      if (existing) {
-        tagMap.set(id, { topicId: id, sectorId: existing.topic.sectorId, score: existing.score });
-      }
+      if (existing) tagMap.set(id, { topicId: id, sectorId: existing.topic.sectorId, score: existing.score });
     }
   }
-  const taxonomyTags = Array.from(tagMap.values())
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 6);
-
-  // 4. Derive primary sector from highest-scoring tags
-  const sectorRouting = matchSectors(taxonomyTags.map(t => t.topicId));
+  const taxonomyTags    = Array.from(tagMap.values()).sort((a, b) => b.score - a.score).slice(0, 6);
+  const sectorRouting   = matchSectors(taxonomyTags.map(t => t.topicId));
   const primarySectorId = sectorRouting[0]?.sector.id;
 
-  // ── Credibility resolution ─────────────────────────────────────────────────
+  // ── Credibility resolution ────────────────────────────────────────────────────
   const resolvedCredibility = ((): IngestResult["credibility"] => {
-    const aiCred = ai.credibility ?? "unverified";
     if (domainCred === "high") return "high";
-    if (["high", "medium", "low", "unverified"].includes(aiCred)) {
-      return aiCred as IngestResult["credibility"];
-    }
+    const aiCred = ai.credibility ?? "unverified";
+    if (["high", "medium", "low", "unverified"].includes(aiCred)) return aiCred as IngestResult["credibility"];
     return "unverified";
   })();
 
-  // Merge detected topics with admin-tracked topics that appear in content
   const allTopics = Array.from(new Set([
     ...(ai.detectedTopics ?? []),
-    ...topics.filter(t => clauceText.toLowerCase().includes(t.toLowerCase())),
+    ...topics.filter(t => claudeText.toLowerCase().includes(t.toLowerCase())),
   ]));
 
   const result: IngestResult = {
-    title:           ai.title        || extractedTitle || url,
-    summary:         ai.summary      || "",
-    body:            clauceText.slice(0, 8_000),
-    publishedAt:     ai.publishedAt  || extractedDate || undefined,
-    relevanceScore:  typeof ai.relevanceScore === "number"
-                     ? Math.max(0, Math.min(1, ai.relevanceScore))
-                     : 0.5,
-    credibility:     resolvedCredibility,
-    aiInsights:      ai.aiInsights   ?? [],
-    contentIdeas:    ai.contentIdeas ?? [],
-    detectedTopics:  allTopics,
+    title:          ai.title        || extractedTitle || url,
+    summary:        ai.summary      || "",
+    body:           claudeText.slice(0, 8_000),
+    publishedAt:    ai.publishedAt  || extractedDate  || undefined,
+    relevanceScore: typeof ai.relevanceScore === "number" ? Math.max(0, Math.min(1, ai.relevanceScore)) : 0.5,
+    credibility:    resolvedCredibility,
+    aiInsights:     ai.aiInsights   ?? [],
+    contentIdeas:   ai.contentIdeas ?? [],
+    detectedTopics: allTopics,
     taxonomyTags,
     primarySectorId,
-    model:           MODEL,
+    model:          usedModel,
   };
 
-  log("ingest-url", "ok", { model: MODEL, url: body.url, relevanceScore: result.relevanceScore, primarySectorId: result.primarySectorId });
+  log("ingest-url", "ok", { model: usedModel, url: body.url, isPdf, relevanceScore: result.relevanceScore, primarySectorId });
   return new Response(JSON.stringify({ ok: true, ...result }), { headers: CORS });
 };

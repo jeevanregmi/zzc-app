@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { collection, query, where, getDocs, limit, orderBy } from "firebase/firestore";
+import { db } from "../../firebase";
 import { subscribeMarketRates, subscribeStructuredSchemes, type MarketRateDoc, type StructuredScheme } from "../../../lib/vault/firestore";
 import { RATE_DEFINITIONS } from "../../../hooks/vault/usePublicDataControl";
 
@@ -90,9 +92,23 @@ function PageCard({ status }: { status: PageStatus }) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function PublicPreviewClient() {
-  const [rates,   setRates]   = useState<MarketRateDoc[]>([]);
-  const [schemes, setSchemes] = useState<StructuredScheme[]>([]);
-  const [ready,   setReady]   = useState(false);
+  const [rates,        setRates]        = useState<MarketRateDoc[]>([]);
+  const [schemes,      setSchemes]      = useState<StructuredScheme[]>([]);
+  const [ready,        setReady]        = useState(false);
+  const [heroImageUrl, setHeroImageUrl] = useState<string | null>(null);
+
+  // Fetch first image document from vault for hero background
+  useEffect(() => {
+    getDocs(query(
+      collection(db, "vault_intelligence_docs"),
+      where("fileType", "==", "image"),
+      orderBy("uploadedAt", "desc"),
+      limit(1),
+    )).then(snap => {
+      const url = snap.docs[0]?.data()?.downloadUrl as string | undefined;
+      if (url) setHeroImageUrl(url);
+    }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     let ratesReady   = false;
@@ -209,6 +225,59 @@ export default function PublicPreviewClient() {
   const emptyCount   = pageStatuses.filter(p => p.readiness === "empty").length;
 
   return (
+    <div className="space-y-0">
+
+    {/* ── Hero Banner ────────────────────────────────────────────────────────── */}
+    <div
+      className="relative w-full min-h-[420px] flex items-center justify-center overflow-hidden"
+      style={heroImageUrl ? {
+        backgroundImage: `url(${heroImageUrl})`,
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      } : undefined}
+    >
+      {/* Cyber gradient base (always shown; image layered on top if available) */}
+      <div className="absolute inset-0 bg-gradient-to-br from-black via-zinc-950 to-green-950/30" />
+      {/* Grid overlay */}
+      <div
+        className="absolute inset-0 opacity-10"
+        style={{ backgroundImage: "linear-gradient(rgba(0,255,100,0.15) 1px,transparent 1px),linear-gradient(90deg,rgba(0,255,100,0.15) 1px,transparent 1px)", backgroundSize: "40px 40px" }}
+      />
+      {/* Dark scrim over image */}
+      {heroImageUrl && <div className="absolute inset-0 bg-black/60" />}
+      {/* Neon glow blobs */}
+      <div className="absolute top-10 left-10 w-64 h-64 bg-green-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-10 right-10 w-48 h-48 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+
+      {/* Content */}
+      <div className="relative z-10 text-center px-6 py-16 max-w-3xl mx-auto">
+        <div className="inline-flex items-center gap-2 bg-green-500/10 border border-green-500/30 rounded-full px-4 py-1.5 mb-6">
+          <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+          <span className="text-green-400 text-xs font-semibold tracking-widest uppercase">Nepal&apos;s AI Intelligence Platform</span>
+        </div>
+        <h1 className="text-4xl sm:text-5xl font-black text-white leading-tight mb-4">
+          नेपालको AI वित्तीय<br />
+          <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-cyan-400">
+            Intelligence Platform
+          </span>
+        </h1>
+        <p className="text-zinc-400 text-lg mb-8 font-medium">
+          AI for Nepal. By Nepal. For Nepal.
+        </p>
+        <Link
+          href="/vault"
+          className="inline-flex items-center gap-2 bg-green-500 hover:bg-green-400 text-black font-bold px-8 py-3.5 rounded-xl transition-all hover:scale-105 text-base shadow-lg shadow-green-500/25"
+        >
+          ⚡ Dashboard खोल्नुहोस्
+        </Link>
+        {heroImageUrl && (
+          <p className="text-zinc-700 text-[10px] mt-6 font-mono">
+            Hero image: R2 document
+          </p>
+        )}
+      </div>
+    </div>
+
     <div className="p-6 max-w-3xl mx-auto space-y-8">
 
       {/* Header */}
@@ -289,6 +358,7 @@ export default function PublicPreviewClient() {
           </div>
         </section>
       )}
+    </div>
     </div>
   );
 }

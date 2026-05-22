@@ -3,7 +3,8 @@
 import { useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import type { UploadDocMeta } from "../../../hooks/vault/useDocumentUpload";
-import type { DocUploadTask } from "../../../lib/types/documents";
+import type { DocUploadTask, DocCategory } from "../../../lib/types/documents";
+import { createIntelligenceDoc } from "../../../lib/vault/firestore";
 
 const ALLOWED_MIME = [
   "application/pdf",
@@ -24,10 +25,189 @@ interface Props {
   onClear:    () => void;
   onClose:    () => void;
   onDismiss?: (localId: string) => void;
+  ownerId?:   string;
 }
 
-export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismiss }: Props) {
+// ── URL ingest result preview ─────────────────────────────────────────────────
+
+interface IngestPreview {
+  title:         string;
+  summary:       string;
+  credibility:   string;
+  relevanceScore:number;
+  detectedTopics:string[];
+  aiInsights:    string[];
+  contentIdeas:  string[];
+  sourceType?:   string;
+  sourceAuthority?: string;
+}
+
+function UrlIngestPanel({ ownerId, onClose }: { ownerId: string; onClose: () => void }) {
+  const [url,       setUrl]       = useState("");
+  const [source,    setSource]    = useState("");
+  const [category,  setCategory]  = useState<DocCategory>("intelligence");
+  const [fetching,  setFetching]  = useState(false);
+  const [saving,    setSaving]    = useState(false);
+  const [preview,   setPreview]   = useState<IngestPreview | null>(null);
+  const [error,     setError]     = useState<string | null>(null);
+  const [saved,     setSaved]     = useState(false);
+
+  const handleIngest = async () => {
+    if (!url.trim() || !source.trim()) return;
+    setFetching(true);
+    setError(null);
+    setPreview(null);
+    try {
+      const res = await fetch("/api/ingest-url", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ url: url.trim(), sourceName: source.trim() }),
+      });
+      const data = await res.json() as { ok?: boolean; error?: string } & IngestPreview;
+      if (!res.ok || data.error) {
+        setError(data.error ?? "Failed to fetch URL");
+        return;
+      }
+      setPreview(data);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setFetching(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!preview || !ownerId) return;
+    setSaving(true);
+    try {
+      await createIntelligenceDoc({
+        ownerId,
+        title:            preview.title || source,
+        description:      preview.summary.slice(0, 200),
+        fileName:         url,
+        fileType:         "other",
+        mimeType:         "text/html",
+        fileSize:         0,
+        storagePath:      url,
+        downloadUrl:      url,
+        folder:           "government-sources",
+        tags:             preview.detectedTopics.slice(0, 5),
+        category,
+        processingStatus: "ai_ready",
+        adminApprovalStatus: "pending_review",
+        // AI fields
+        aiSummary:        preview.summary,
+        aiKeyInsights:    preview.aiInsights,
+        detectedTopics:   preview.detectedTopics,
+        contentIdeas:     preview.contentIdeas,
+        confidence:       preview.relevanceScore,
+        sourceCredibility:preview.credibility as "high" | "medium" | "low" | "unverified",
+        sourceType:       (preview.sourceType ?? "unknown") as "official" | "unofficial" | "research" | "unknown",
+        sourceAuthority:  preview.sourceAuthority,
+        sourceUrl:        url,
+        language:         "English",
+        aiProvider:       "anthropic-sonnet",
+        aiRetryCount:     0,
+        uploadedAt:       new Date().toISOString(),
+        updatedAt:        new Date().toISOString(),
+      });
+      setSaved(true);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (saved) {
+    return (
+      <div className="flex flex-col items-center gap-4 py-8">
+        <p className="text-green-400 font-semibold">Saved to Intelligence Library</p>
+        <p className="text-zinc-500 text-sm text-center">Pending admin review. You can re-run AI analysis from the Documents page.</p>
+        <button onClick={onClose} className="bg-green-500 hover:bg-green-400 text-black font-black px-6 py-2.5 rounded-xl text-sm">Done</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <input
+          type="url"
+          placeholder="https://nrb.org.np/publications/... or parliament.gov.np/..."
+          value={url}
+          onChange={e => setUrl(e.target.value)}
+          className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-green-500"
+        />
+        <input
+          type="text"
+          placeholder="Source name (e.g. Nepal Rastra Bank, Parliament of Nepal)"
+          value={source}
+          onChange={e => setSource(e.target.value)}
+          className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-green-500"
+        />
+        <select
+          value={category}
+          onChange={e => setCategory(e.target.value as DocCategory)}
+          className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500"
+        >
+          {(["intelligence", "research", "finance", "legal", "strategy", "other"] as DocCategory[]).map(c => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+      </div>
+
+      <p className="text-zinc-600 text-xs">Works with: NRB circulars, parliament bills, MoF notices, EPF/SSF pages, news articles, RSS feeds</p>
+
+      {error && <p className="text-red-400 text-sm bg-red-950/40 border border-red-900 rounded-xl px-3 py-2">{error}</p>}
+
+      {!preview ? (
+        <button
+          onClick={handleIngest}
+          disabled={fetching || !url.trim() || !source.trim()}
+          className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-40 text-black font-black py-2.5 rounded-xl text-sm transition-colors"
+        >
+          {fetching ? "Fetching + Analyzing…" : "Fetch & Analyze →"}
+        </button>
+      ) : (
+        <div className="space-y-3">
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-2">
+            <p className="text-white font-semibold text-sm">{preview.title}</p>
+            <p className="text-zinc-400 text-xs line-clamp-3">{preview.summary}</p>
+            <div className="flex gap-2 flex-wrap">
+              {preview.detectedTopics.slice(0, 4).map(t => (
+                <span key={t} className="text-xs bg-cyan-950 text-cyan-400 border border-cyan-900 px-2 py-0.5 rounded-full">{t}</span>
+              ))}
+            </div>
+            <p className="text-zinc-600 text-xs">
+              Relevance: {Math.round(preview.relevanceScore * 100)}% · Credibility: {preview.credibility}
+              {preview.sourceAuthority && ` · ${preview.sourceAuthority}`}
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-black font-black py-2.5 rounded-xl text-sm transition-colors"
+            >
+              {saving ? "Saving…" : "Save to Library →"}
+            </button>
+            <button
+              onClick={() => setPreview(null)}
+              className="px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold py-2.5 rounded-xl text-sm"
+            >
+              Re-fetch
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismiss, ownerId }: Props) {
   const inputRef   = useRef<HTMLInputElement>(null);
+  const [tab,      setTab]     = useState<"file" | "url">("file");
   const [dragging, setDragging] = useState(false);
   const [staged,   setStaged]   = useState<File[]>([]);
   const [meta, setMeta] = useState<UploadDocMeta>({
@@ -77,11 +257,37 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismi
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
       <div className="bg-zinc-950 border border-zinc-800 rounded-3xl w-full max-w-lg flex flex-col gap-5 p-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-white font-black text-lg">Upload Documents</h2>
+          <h2 className="text-white font-black text-lg">Add to Intelligence Library</h2>
           <button onClick={onClose} className="text-zinc-500 hover:text-white text-xl leading-none">×</button>
         </div>
 
-        {/* Drop zone */}
+        {/* Tab switcher */}
+        <div className="flex gap-1 bg-zinc-900 p-1 rounded-xl">
+          <button
+            onClick={() => setTab("file")}
+            className={`flex-1 text-sm font-semibold py-1.5 rounded-lg transition-colors ${tab === "file" ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-white"}`}
+          >
+            Upload File
+          </button>
+          <button
+            onClick={() => setTab("url")}
+            className={`flex-1 text-sm font-semibold py-1.5 rounded-lg transition-colors ${tab === "url" ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-white"}`}
+          >
+            Paste URL
+          </button>
+        </div>
+
+        {/* URL ingestion panel */}
+        {tab === "url" && ownerId && (
+          <UrlIngestPanel ownerId={ownerId} onClose={onClose} />
+        )}
+        {tab === "url" && !ownerId && (
+          <p className="text-zinc-500 text-sm text-center py-4">Authentication required</p>
+        )}
+
+        {/* Drop zone — only in file tab */}
+        {tab === "file" && (
+        <>
         <div
           onDragOver={e => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
@@ -228,7 +434,6 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismi
         {/* Footer */}
         <div className="flex gap-3">
           {allSucceeded ? (
-            // All uploads truly succeeded — safe to close
             <button
               onClick={() => { onClear(); onClose(); }}
               className="flex-1 bg-green-500 hover:bg-green-400 text-black font-black py-2.5 rounded-xl text-sm transition-colors"
@@ -236,7 +441,6 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismi
               Done — {successCount} saved
             </button>
           ) : allSettled && anyError ? (
-            // Some/all failed — never auto-close, let founder decide
             <>
               {successCount > 0 && (
                 <button
@@ -271,6 +475,8 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismi
             </button>
           )}
         </div>
+        </>
+        )}
       </div>
     </div>
   );
