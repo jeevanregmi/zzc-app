@@ -83,42 +83,42 @@ Output the image prompt only:` }],
     const imagePrompt = promptResult.text.trim();
     if (!imagePrompt) throw new Error("Empty image prompt from Gemini");
 
-    // Step 2: Gemini Imagen 3 Fast → generate image
-    const imagenRes = await fetch(
-      `${GEMINI_BASE}/imagen-3.0-fast-generate-001:predict?key=${env.GEMINI_API_KEY.trim()}`,
+    // Step 2: Gemini 2.0 Flash Exp → generate image via responseModalities
+    // (Imagen 3 predict endpoint only works on Vertex AI, not Gemini Developer API)
+    const imageRes = await fetch(
+      `${GEMINI_BASE}/gemini-2.0-flash-exp:generateContent?key=${env.GEMINI_API_KEY.trim()}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          instances: [{ prompt: imagePrompt }],
-          parameters: {
-            sampleCount:    1,
-            aspectRatio:    "16:9",
-            safetySetting:  "block_only_high",
-            personGeneration: "allow_adult",
+          contents: [{ parts: [{ text: imagePrompt }] }],
+          generationConfig: {
+            responseModalities: ["IMAGE"],
           },
         }),
       }
     );
 
-    if (!imagenRes.ok) {
-      const errText = await imagenRes.text().catch(() => "");
-      throw new Error(`Imagen ${imagenRes.status}: ${errText.slice(0, 200)}`);
+    if (!imageRes.ok) {
+      const errText = await imageRes.text().catch(() => "");
+      throw new Error(`Gemini image gen ${imageRes.status}: ${errText.slice(0, 300)}`);
     }
 
-    const imagenData = await imagenRes.json() as {
-      predictions?: Array<{ bytesBase64Encoded: string; mimeType: string }>;
+    const imageData = await imageRes.json() as {
+      candidates?: Array<{
+        content: { parts: Array<{ inlineData?: { data: string; mimeType: string }; text?: string }> };
+      }>;
     };
 
-    const prediction = imagenData.predictions?.[0];
-    if (!prediction?.bytesBase64Encoded) {
-      throw new Error("No image returned from Imagen API");
+    const imagePart = imageData.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+    if (!imagePart?.inlineData) {
+      throw new Error("No image returned from Gemini Flash image generation");
     }
 
     return Response.json({
       ok:           true,
-      imageBase64:  prediction.bytesBase64Encoded,
-      mimeType:     prediction.mimeType ?? "image/png",
+      imageBase64:  imagePart.inlineData.data,
+      mimeType:     imagePart.inlineData.mimeType ?? "image/png",
       promptUsed:   imagePrompt,
     }, { headers: cors });
 
