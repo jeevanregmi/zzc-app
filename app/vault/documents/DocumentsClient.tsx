@@ -7,8 +7,7 @@ import { useDocumentUpload } from "../../../hooks/vault/useDocumentUpload";
 import { deleteIntelligenceDoc, updateIntelligenceDoc, createQueueItem } from "../../../lib/vault/firestore";
 import { aiCostAdapter } from "../../../lib/business/firestore";
 import { collection, addDoc, Timestamp, deleteField } from "firebase/firestore";
-import { ref, uploadString, getDownloadURL } from "firebase/storage";
-import { db, storage } from "../../firebase";
+import { db } from "../../firebase";
 import type { AIService } from "../../../lib/business/types";
 import Link from "next/link";
 import { useQueueItems } from "../../../hooks/vault/useQueueItems";
@@ -310,16 +309,9 @@ export default function DocumentsClient() {
           aiKeyInsights:   doc.aiKeyInsights,
         }),
       });
-      const data = await res.json() as { ok: boolean; imageBase64?: string; mimeType?: string; error?: string };
-      if (!data.ok || !data.imageBase64) throw new Error(data.error ?? "Image generation failed");
-
-      const ext = (data.mimeType ?? "image/png").includes("jpeg") ? "jpg" : "png";
-      const storagePath = `vault/${user.uid}/janta-hero/${doc.id}.${ext}`;
-      const storageRef = ref(storage, storagePath);
-      await uploadString(storageRef, data.imageBase64, "base64", { contentType: data.mimeType ?? "image/png" });
-      const heroImageUrl = await getDownloadURL(storageRef);
-
-      await updateIntelligenceDoc(doc.id, { heroImageUrl });
+      const data = await res.json() as { ok: boolean; heroImageUrl?: string; error?: string };
+      if (!data.ok || !data.heroImageUrl) throw new Error(data.error ?? "Image generation failed");
+      await updateIntelligenceDoc(doc.id, { heroImageUrl: data.heroImageUrl });
     } catch (err) {
       alert(`Hero image generate गर्न सकिएन: ${err instanceof Error ? err.message : String(err)}`);
     } finally {

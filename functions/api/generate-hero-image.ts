@@ -83,35 +83,17 @@ Output the image prompt only:` }],
     const imagePrompt = promptResult.text.trim();
     if (!imagePrompt) throw new Error("Empty image prompt from Gemini");
 
-    // Step 2: Pollinations.ai (free, no API key, Flux model) → fetch image as base64
-    const encodedPrompt = encodeURIComponent(imagePrompt);
-    const pollinationsUrl =
-      `https://image.pollinations.ai/prompt/${encodedPrompt}` +
-      `?width=1280&height=720&model=flux&nologo=true&seed=${Date.now() % 9999}`;
-
-    const imgRes = await fetch(pollinationsUrl, {
-      headers: { "User-Agent": "ZZC-Janta/1.0" },
-    });
-
-    if (!imgRes.ok) {
-      throw new Error(`Pollinations image fetch failed: ${imgRes.status}`);
-    }
-
-    const imgBuffer   = await imgRes.arrayBuffer();
-    const imgBytes    = new Uint8Array(imgBuffer);
-    const contentType = imgRes.headers.get("content-type") ?? "image/jpeg";
-
-    // Convert to base64
-    let binary = "";
-    for (let i = 0; i < imgBytes.length; i++) {
-      binary += String.fromCharCode(imgBytes[i]);
-    }
-    const imageBase64 = btoa(binary);
+    // Step 2: Return a Pollinations.ai URL directly — no image download in Worker
+    // (Downloading binary in CF Worker hits 30s timeout for slow Flux generations)
+    // The client stores this URL directly as heroImageUrl — no Firebase Storage needed.
+    const seed = Math.floor(Math.random() * 99999);
+    const heroImageUrl =
+      `https://image.pollinations.ai/prompt/${encodeURIComponent(imagePrompt)}` +
+      `?width=1280&height=720&model=flux&nologo=true&seed=${seed}`;
 
     return Response.json({
       ok:           true,
-      imageBase64,
-      mimeType:     contentType.split(";")[0],
+      heroImageUrl,
       promptUsed:   imagePrompt,
     }, { headers: cors });
 
