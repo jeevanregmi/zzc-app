@@ -123,18 +123,35 @@ function getSectorMeta(sectors: string[]) {
   return { bg: "#0f0f0f", border: "#27272a", text: "#a1a1aa", dot: "#52525b", emoji: "📋" };
 }
 
+// ─── Slide image URLs (Pollinations.ai, client-side, no API key) ──────────────
+
+const NEPAL_SUFFIX = "Nepal Kathmandu cinematic editorial professional photograph warm light no text no charts";
+
+function slideImageUrl(prompt: string, seed: number): string {
+  const full = `${prompt.slice(0, 180)}, ${NEPAL_SUFFIX}`;
+  return `https://image.pollinations.ai/prompt/${encodeURIComponent(full)}?width=1280&height=720&model=flux&nologo=true&seed=${seed}`;
+}
+
+function getSlideImage(slide: Slide & { doc: IntelligenceDocument }, idx: number): string {
+  const sectors = (slide.doc.affectedSectors ?? []).join(", ") || "Nepal government policy";
+  if (slide.type === "cover")   return slide.doc.heroImageUrl ?? slideImageUrl(`Nepal government policy ${slide.doc.title} ${sectors}`, idx);
+  if (slide.type === "insight") return slideImageUrl(`Nepal policy visual: ${slide.text} sector: ${sectors}`, idx * 7 + 13);
+  if (slide.type === "impact")  return slideImageUrl(`Young Nepali professionals career employment opportunity modern office ${sectors}`, 42);
+  return slideImageUrl("ZZC Nepal digital finance intelligence platform Kathmandu young professionals", 99);
+}
+
 // ─── Slide Deck ───────────────────────────────────────────────────────────────
 
 type SlideType = "cover" | "insight" | "impact" | "cta";
 interface Slide { type: SlideType; text: string; num?: number; total?: number }
 
-function buildSlides(doc: IntelligenceDocument): Slide[] {
-  const slides: Slide[] = [];
-  slides.push({ type: "cover", text: doc.nepaliExplainer ?? doc.aiSummary ?? doc.title });
+function buildSlides(doc: IntelligenceDocument): (Slide & { doc: IntelligenceDocument })[] {
+  const slides: (Slide & { doc: IntelligenceDocument })[] = [];
+  slides.push({ type: "cover",   text: doc.nepaliExplainer ?? doc.aiSummary ?? doc.title, doc });
   const insights = doc.aiKeyInsights ?? [];
-  insights.forEach((ins, i) => slides.push({ type: "insight", text: ins, num: i + 1, total: insights.length }));
-  if (doc.youthImpact) slides.push({ type: "impact", text: doc.youthImpact });
-  slides.push({ type: "cta", text: "नेपाल सरकारका नीतिहरूको AI विश्लेषण — ZZC Janta" });
+  insights.forEach((ins, i) => slides.push({ type: "insight", text: ins, num: i + 1, total: insights.length, doc }));
+  if (doc.youthImpact) slides.push({ type: "impact", text: doc.youthImpact, doc });
+  slides.push({ type: "cta", text: "नेपाल सरकारका नीतिहरूको AI विश्लेषण — ZZC Janta", doc });
   return slides;
 }
 
@@ -147,6 +164,7 @@ function SlideShow({ doc, onClose }: { doc: IntelligenceDocument; onClose: () =>
   const slide = slides[current];
   const isFirst = current === 0;
   const isLast  = current === slides.length - 1;
+  const imgUrl  = getSlideImage(slide, current);
 
   const go = (n: number) => { window.speechSynthesis?.cancel(); setSpeaking(false); setCurrent(n); };
   const prev = () => { if (!isFirst) go(current - 1); };
@@ -171,18 +189,27 @@ function SlideShow({ doc, onClose }: { doc: IntelligenceDocument; onClose: () =>
   return (
     <div
       className="fixed inset-0 z-50 flex flex-col select-none"
-      style={{ background: slide.type === "cta" ? "#000" : slide.type === "impact" ? "#05101f" : meta.bg }}
+      style={{ background: "#000" }}
       onTouchStart={e => { touchStart.current = e.touches[0].clientX; }}
       onTouchEnd={e => { const d = touchStart.current - e.changedTouches[0].clientX; if (d > 50) next(); if (d < -50) prev(); }}
     >
-      {/* Hero image bg on cover slide */}
-      {slide.type === "cover" && doc.heroImageUrl && (
-        <>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={doc.heroImageUrl} alt="" className="absolute inset-0 w-full h-full object-cover" />
-          <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom,rgba(0,0,0,.35) 0%,rgba(0,0,0,.85) 100%)" }} />
-        </>
-      )}
+      {/* Full-bleed background image on every slide */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        key={imgUrl}
+        src={imgUrl}
+        alt=""
+        className="absolute inset-0 w-full h-full object-cover transition-opacity duration-700"
+        style={{ opacity: 0.55 }}
+      />
+      {/* Gradient overlay — bottom-heavy so text is always readable */}
+      <div className="absolute inset-0" style={{
+        background: slide.type === "insight"
+          ? "linear-gradient(to bottom, rgba(0,0,0,.6) 0%, rgba(0,0,0,.75) 50%, rgba(0,0,0,.92) 100%)"
+          : "linear-gradient(to bottom, rgba(0,0,0,.5) 0%, rgba(0,0,0,.8) 100%)"
+      }} />
+      {/* Sector color accent strip at top */}
+      <div className="absolute top-0 left-0 right-0 h-1" style={{ background: meta.dot }} />
 
       {/* Top bar */}
       <div className="relative z-10 flex items-center justify-between px-5 pt-5 pb-2">
