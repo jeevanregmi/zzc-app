@@ -108,30 +108,30 @@ parliament.gov.np, oag.gov.np, rajpatra.gov.np, customs.gov.np, nlc.gov.np
 
 Return ONLY valid JSON — no markdown, no explanation, nothing outside the JSON:
 {
-  "aiSummary": "3 sentences in English. Sentence 1: what document/event this is. Sentence 2: specific change or policy detail with numbers. Sentence 3: direct impact on a 25-year-old Nepali earning NPR 50,000/month.",
+  "aiSummary": "३ वाक्यमा नेपालीमा। वाक्य १: यो कागजात के हो। वाक्य २: मुख्य परिवर्तन वा नीति विवरण सङ्ख्यासहित। वाक्य ३: महिना रु ५०,००० कमाउने २५ वर्षीय नेपालीलाई प्रत्यक्ष असर।",
   "aiKeyInsights": [
-    "specific fact with number/percentage/NPR amount/date from document",
-    "fact 2 — always include a number",
-    "fact 3",
-    "fact 4",
-    "fact 5"
+    "सङ्ख्या/प्रतिशत/रकम/मिति सहितको तथ्य — सरल नेपालीमा",
+    "तथ्य २ — सधैं सङ्ख्या समावेश गर्नुहोस्",
+    "तथ्य ३",
+    "तथ्य ४",
+    "तथ्य ५"
   ],
-  "detectedTopics": ["EPF", "interest rate", "housing loan"],
+  "detectedTopics": ["EPF", "ब्याजदर", "आवास ऋण"],
   "language": "Nepali or English or Mixed",
   "confidence": 0.0,
   "sourceType": "official or unofficial or research or unknown",
   "sourceAuthority": "Nepal Rastra Bank or Parliament of Nepal or Ministry of Finance or EPF Nepal or SSF Nepal or SEBON or Other — exact institution name",
   "affectedSectors": ["banking", "EPF", "housing", "youth employment", "NEPSE"],
   "policyChanges": [
-    "specific regulation change with before/after values if available",
-    "change 2"
+    "नेपालीमा: के परिवर्तन भयो — अघिल्लो र नयाँ व्यवस्था सहित",
+    "परिवर्तन २"
   ],
   "financialImplications": [
-    "NPR/percentage amount with context (e.g. EPF housing loan limit increased to NPR 30 lakh)",
-    "implication 2"
+    "रु/प्रतिशत रकम सन्दर्भसहित (जस्तै: EPF आवास ऋण सीमा रु ३० लाख पुग्यो)",
+    "निहितार्थ २"
   ],
-  "youthImpact": "One paragraph (3-4 sentences) specifically explaining how this affects a 23-30 year old Nepali worker. Include: does this help or hurt them, what action should they consider, any deadline.",
-  "ssfEpfCitRelevance": "One paragraph: specific SSF, EPF, or CIT implications. If not relevant, write: Not directly relevant to SSF/EPF/CIT.",
+  "youthImpact": "२३-३० वर्षका नेपाली युवा कामदारलाई कसरी असर पर्छ भनी नेपालीमा एक अनुच्छेद (३-४ वाक्य)। समावेश गर्नुहोस्: फाइदा/बेफाइदा, के कदम चाल्ने, कुनै deadline छ भने।",
+  "ssfEpfCitRelevance": "नेपालीमा एक अनुच्छेद: SSF, EPF, वा CIT सम्बन्धी विशेष निहितार्थ। सम्बन्धित नभएमा लेख्नुहोस्: SSF/EPF/CIT सँग प्रत्यक्ष सम्बन्ध छैन।",
   "nepaliExplainer": "सरल नेपालीमा २-३ वाक्यमा: के भयो, किन महत्त्वपूर्ण छ, युवाहरूलाई के गर्नुपर्छ।",
   "contentIdeas": [
     "YouTube: [specific video title from this document's actual data]",
@@ -141,7 +141,8 @@ Return ONLY valid JSON — no markdown, no explanation, nothing outside the JSON
 }
 
 RULES:
-- aiKeyInsights: specific numbers, NPR amounts, %, dates — NEVER generic statements like "this is important"
+- aiKeyInsights: नेपालीमा लेख्नुहोस् — specific numbers, NPR amounts, %, dates — NEVER generic statements
+- aiSummary, youthImpact, ssfEpfCitRelevance, policyChanges, financialImplications: सबै नेपालीमा
 - contentIdeas: specific to THIS document's actual data, not generic Nepal finance
 - confidence: 0.95 = official primary source with clear data; 0.7 = useful secondary; 0.3 = not finance-relevant
 - sourceType "official" only for documents from NRB, EPF, SSF, MoF, Parliament, SEBON, IRD, or Nepal government gazette

@@ -82,6 +82,37 @@ const SECTOR_EMOJI: Record<string, string> = {
   remittance: "✈️", investment: "📊", governance: "🏛️", nrn: "🌍",
 };
 
+const SECTOR_NP: Record<string, string> = {
+  banking:           "बैंकिङ",
+  epf:               "संचय कोष",
+  ssf:               "सामाजिक सुरक्षा कोष",
+  cit:               "नागरिक लगानी कोष",
+  taxation:          "करप्रणाली",
+  tax:               "कर",
+  "tax policy":      "कर नीति",
+  "capital market":  "पुँजी बजार",
+  housing:           "आवास",
+  employment:        "रोजगार",
+  education:         "शिक्षा",
+  energy:            "ऊर्जा",
+  digitalization:    "डिजिटलाइजेशन",
+  infrastructure:    "पूर्वाधार",
+  agriculture:       "कृषि",
+  remittance:        "रेमिट्यान्स",
+  investment:        "लगानी",
+  governance:        "सुशासन",
+  nrn:               "गैर-आवासीय नेपाली",
+  "social security": "सामाजिक सुरक्षा",
+  tourism:           "पर्यटन",
+  "economic growth": "आर्थिक वृद्धि",
+  "economic policy": "आर्थिक नीति",
+};
+
+function toNepaliSector(s: string): string {
+  const key = s.toLowerCase();
+  return SECTOR_NP[key] ?? s;
+}
+
 function getSectorMeta(sectors: string[]) {
   for (const s of sectors) {
     const k = s.toLowerCase();
@@ -232,7 +263,7 @@ function TimelineCard({ doc, isLast }: { doc: IntelligenceDocument; isLast: bool
                 className="text-[9px] font-semibold px-2 py-0.5 rounded-full"
                 style={{ background: `${meta.dot}15`, color: meta.text, border: `1px solid ${meta.dot}30` }}
               >
-                {s}
+                {toNepaliSector(s)}
               </span>
             ))}
           </div>
