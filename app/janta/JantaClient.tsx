@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
@@ -123,9 +123,159 @@ function getSectorMeta(sectors: string[]) {
   return { bg: "#0f0f0f", border: "#27272a", text: "#a1a1aa", dot: "#52525b", emoji: "📋" };
 }
 
+// ─── Slide Deck ───────────────────────────────────────────────────────────────
+
+type SlideType = "cover" | "insight" | "impact" | "cta";
+interface Slide { type: SlideType; text: string; num?: number; total?: number }
+
+function buildSlides(doc: IntelligenceDocument): Slide[] {
+  const slides: Slide[] = [];
+  slides.push({ type: "cover", text: doc.nepaliExplainer ?? doc.aiSummary ?? doc.title });
+  const insights = doc.aiKeyInsights ?? [];
+  insights.forEach((ins, i) => slides.push({ type: "insight", text: ins, num: i + 1, total: insights.length }));
+  if (doc.youthImpact) slides.push({ type: "impact", text: doc.youthImpact });
+  slides.push({ type: "cta", text: "नेपाल सरकारका नीतिहरूको AI विश्लेषण — ZZC Janta" });
+  return slides;
+}
+
+function SlideShow({ doc, onClose }: { doc: IntelligenceDocument; onClose: () => void }) {
+  const [current, setCurrent] = useState(0);
+  const [speaking, setSpeaking] = useState(false);
+  const touchStart = useRef<number>(0);
+  const slides = buildSlides(doc);
+  const meta = getSectorMeta(doc.affectedSectors ?? []);
+  const slide = slides[current];
+  const isFirst = current === 0;
+  const isLast  = current === slides.length - 1;
+
+  const go = (n: number) => { window.speechSynthesis?.cancel(); setSpeaking(false); setCurrent(n); };
+  const prev = () => { if (!isFirst) go(current - 1); };
+  const next = () => { if (!isLast)  go(current + 1); };
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if (e.key === "ArrowRight" || e.key === "ArrowDown") next();
+      if (e.key === "ArrowLeft"  || e.key === "ArrowUp")   prev();
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  });
+
+  const handleSpeak = () => {
+    if (speaking) { window.speechSynthesis?.cancel(); setSpeaking(false); return; }
+    setSpeaking(true);
+    speakText(slide.text, () => setSpeaking(false));
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex flex-col select-none"
+      style={{ background: slide.type === "cta" ? "#000" : slide.type === "impact" ? "#05101f" : meta.bg }}
+      onTouchStart={e => { touchStart.current = e.touches[0].clientX; }}
+      onTouchEnd={e => { const d = touchStart.current - e.changedTouches[0].clientX; if (d > 50) next(); if (d < -50) prev(); }}
+    >
+      {/* Hero image bg on cover slide */}
+      {slide.type === "cover" && doc.heroImageUrl && (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={doc.heroImageUrl} alt="" className="absolute inset-0 w-full h-full object-cover" />
+          <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom,rgba(0,0,0,.35) 0%,rgba(0,0,0,.85) 100%)" }} />
+        </>
+      )}
+
+      {/* Top bar */}
+      <div className="relative z-10 flex items-center justify-between px-5 pt-5 pb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-mono text-white/40">{toNp(current + 1)}/{toNp(slides.length)}</span>
+          <div className="flex gap-1 ml-1">
+            {slides.map((_, i) => (
+              <button key={i} onClick={() => go(i)}
+                className="rounded-full transition-all"
+                style={{ width: i === current ? 16 : 6, height: 6, background: i === current ? meta.dot : `${meta.dot}40` }}
+              />
+            ))}
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={handleSpeak}
+            className="w-9 h-9 rounded-full flex items-center justify-center text-sm transition-all"
+            style={speaking ? { background: meta.dot, color: "#000" } : { background: `${meta.dot}22`, color: meta.text }}
+          >{speaking ? "⏸" : "🔊"}</button>
+          <button onClick={onClose}
+            className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xl leading-none transition-all"
+          >×</button>
+        </div>
+      </div>
+
+      {/* Slide body */}
+      <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-8 text-center gap-4">
+        {slide.type === "cover" && (
+          <>
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+              <span className="text-5xl">{meta.emoji}</span>
+              {doc.sourceType === "official" && (
+                <span className="text-[10px] font-black px-3 py-1 rounded-full border"
+                  style={{ background: `${meta.dot}18`, color: meta.text, borderColor: `${meta.dot}44` }}>
+                  ✓ OFFICIAL
+                </span>
+              )}
+            </div>
+            <h2 className="text-2xl sm:text-3xl font-black text-white leading-tight">{doc.title}</h2>
+            <p className="text-sm sm:text-base leading-relaxed max-w-lg font-medium" style={{ color: meta.text }}>{slide.text}</p>
+            {doc.sourceAuthority && <p className="text-xs text-white/30">{doc.sourceAuthority}</p>}
+          </>
+        )}
+
+        {slide.type === "insight" && (
+          <>
+            <div className="text-7xl font-black leading-none" style={{ color: `${meta.dot}25` }}>
+              {toNp(slide.num!).padStart(2, "०")}
+            </div>
+            <p className="text-xl sm:text-2xl font-bold text-white leading-relaxed max-w-xl">{slide.text}</p>
+            <p className="text-[10px] text-white/25 mt-2">
+              {toNp(slide.num!)} / {toNp(slide.total!)} insights
+            </p>
+          </>
+        )}
+
+        {slide.type === "impact" && (
+          <>
+            <span className="text-5xl">⚡</span>
+            <p className="text-[11px] font-black tracking-widest uppercase text-amber-400">युवाहरूलाई असर</p>
+            <p className="text-base sm:text-lg text-white/90 leading-relaxed max-w-xl">{slide.text}</p>
+          </>
+        )}
+
+        {slide.type === "cta" && (
+          <>
+            <p className="text-green-400 font-black text-5xl">ZZC</p>
+            <p className="text-white font-black text-xl">जनता Intelligence</p>
+            <p className="text-zinc-500 text-sm leading-relaxed max-w-xs">{slide.text}</p>
+            <p className="text-green-400/60 text-xs mt-2">zzc.jeevanregmi.com.np/janta</p>
+          </>
+        )}
+      </div>
+
+      {/* Nav */}
+      <div className="relative z-10 flex items-center justify-between px-6 pb-8">
+        <button onClick={prev} disabled={isFirst}
+          className="w-14 h-14 rounded-full flex items-center justify-center text-3xl font-bold transition-all disabled:opacity-15"
+          style={{ background: `${meta.dot}20`, color: meta.text }}
+        >‹</button>
+        <p className="text-white/20 text-xs">swipe गर्नुस्</p>
+        <button onClick={next} disabled={isLast}
+          className="w-14 h-14 rounded-full flex items-center justify-center text-3xl font-bold transition-all disabled:opacity-15"
+          style={{ background: isLast ? `${meta.dot}20` : meta.dot, color: isLast ? meta.text : "#000" }}
+        >›</button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Timeline Card ────────────────────────────────────────────────────────────
 
-function TimelineCard({ doc, isLast }: { doc: IntelligenceDocument; isLast: boolean }) {
+function TimelineCard({ doc, isLast, onSlides }: { doc: IntelligenceDocument; isLast: boolean; onSlides: (doc: IntelligenceDocument) => void }) {
   const [expanded, setExpanded] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const meta = getSectorMeta(doc.affectedSectors ?? []);
@@ -278,6 +428,19 @@ function TimelineCard({ doc, isLast }: { doc: IntelligenceDocument; isLast: bool
           )}
         </div>
 
+        {/* Slides button */}
+        {(doc.aiKeyInsights?.length ?? 0) > 0 && (
+          <div className="px-3 pb-1">
+            <button
+              onClick={() => onSlides(doc)}
+              className="w-full py-2 rounded-xl text-xs font-black tracking-wide transition-all hover:scale-[1.02]"
+              style={{ background: `${meta.dot}18`, color: meta.text, border: `1px solid ${meta.dot}33` }}
+            >
+              📊 Slides हेर्नुस् — {toNp(doc.aiKeyInsights!.length + (doc.youthImpact ? 3 : 2))} slides
+            </button>
+          </div>
+        )}
+
         {/* Social content pipeline chips */}
         {doc.contentIdeas && doc.contentIdeas.length > 0 && (
           <div
@@ -325,25 +488,20 @@ function TimelineCard({ doc, isLast }: { doc: IntelligenceDocument; isLast: bool
 
 // ─── Month Section ────────────────────────────────────────────────────────────
 
-function MonthSection({ label, year, docs }: { label: string; year: string; docs: IntelligenceDocument[] }) {
+function MonthSection({ label, docs, onSlides }: { label: string; year: string; docs: IntelligenceDocument[]; onSlides: (doc: IntelligenceDocument) => void }) {
   return (
     <div className="relative">
-      {/* Vertical spine */}
       <div className="absolute left-[6px] top-6 bottom-0 w-px bg-zinc-800" />
-
-      {/* Month label */}
       <div className="flex items-center gap-3 mb-5">
         <div className="w-3.5 h-3.5 rounded-full bg-zinc-700 border-2 border-zinc-500 z-10" />
         <div>
           <span className="text-sm font-black text-white">{label}</span>
-          <span className="ml-2 text-[10px] text-zinc-600">{docs.length} document{docs.length !== 1 ? "s" : ""}</span>
+          <span className="ml-2 text-[10px] text-zinc-600">{toNp(docs.length)} document{docs.length !== 1 ? "s" : ""}</span>
         </div>
       </div>
-
-      {/* Cards */}
       <div>
         {docs.map((doc, i) => (
-          <TimelineCard key={doc.id} doc={doc} isLast={i === docs.length - 1} />
+          <TimelineCard key={doc.id} doc={doc} isLast={i === docs.length - 1} onSlides={onSlides} />
         ))}
       </div>
     </div>
@@ -461,6 +619,7 @@ export default function JantaClient() {
   const [docs, setDocs] = useState<IntelligenceDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "official" | "epf" | "budget">("all");
+  const [slideDoc, setSlideDoc] = useState<IntelligenceDocument | null>(null);
 
   useEffect(() => {
     getDocs(
@@ -512,6 +671,7 @@ export default function JantaClient() {
 
   return (
     <div className="min-h-screen bg-black text-white">
+      {slideDoc && <SlideShow doc={slideDoc} onClose={() => setSlideDoc(null)} />}
       <Hero count={filtered.length} span={span} />
 
       {/* Sticky nav */}
@@ -566,7 +726,7 @@ export default function JantaClient() {
               return (
                 <div key={label}>
                   {showYear && <YearDivider year={year} />}
-                  <MonthSection label={label} year={year} docs={mdocs} />
+                  <MonthSection label={label} year={year} docs={mdocs} onSlides={setSlideDoc} />
                   <div className="mt-6" />
                 </div>
               );
