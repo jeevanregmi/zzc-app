@@ -28,6 +28,6 @@ jobs:
           NODE_ENV: production
 
       - name: Deploy to Cloudflare Pages
-        run: npx wrangler pages deploy out --project-name zeneration-z-chautari --commit-dirty=true
+        run: npx wrangler pages deploy out --project-name zeneration-z-chautari --commit-dirty=true --commit-message="deploy $(date +%Y%m%d-%H%M%S)"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
