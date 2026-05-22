@@ -329,6 +329,16 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
         </button>
       )}
 
+      {/* Re-analyze for approved docs — to get Nepali content */}
+      {isApproved && !isProcessing && (
+        <button
+          onClick={() => onProcess(doc)}
+          className="w-full text-xs py-1.5 rounded-xl text-zinc-500 hover:text-amber-400 border border-zinc-800 hover:border-amber-900 transition-colors"
+        >
+          🔄 नेपालीमा Re-analyze गर्नुहोस्
+        </button>
+      )}
+
       {canGenerateQueue && !isProcessing && (
         <button
           onClick={() => onGenerateQueue!(doc)}
