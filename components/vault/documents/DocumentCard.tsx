@@ -58,6 +58,9 @@ interface Props {
   onResetStuck?:     (doc: IntelligenceDocument) => void;
   onGenerateImage?:  (doc: IntelligenceDocument) => void;
   isGeneratingImage?: boolean;
+  onExtractPoints?:  (doc: IntelligenceDocument) => void;
+  isExtractingPoints?: boolean;
+  pointCount?:       number;
 }
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -73,7 +76,7 @@ const SOURCE_TYPE_BADGE: Record<SourceType, { label: string; cls: string }> = {
   unknown:    { label: "? Unknown",    cls: "bg-zinc-800   text-zinc-500   border border-zinc-700"   },
 };
 
-export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onGenerateQueue, onResetStuck, onGenerateImage, isGeneratingImage = false }: Props) {
+export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onGenerateQueue, onResetStuck, onGenerateImage, isGeneratingImage = false, onExtractPoints, isExtractingPoints = false, pointCount = 0 }: Props) {
   const [showFullNotes, setShowFullNotes] = useState(false);
   const displayStatus  = isProcessing ? "processing_ai" : doc.processingStatus;
 
@@ -364,6 +367,32 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
       {isApproved && doc.heroImageUrl && (
         <div className="w-full text-xs py-2 rounded-xl bg-green-900/30 text-green-400 border border-green-800 text-center">
           ✅ Hero Image ready — /janta मा देखिन्छ
+        </div>
+      )}
+
+      {/* Policy point extraction — for complex multi-point docs like "100 नीति" */}
+      {isApproved && !!onExtractPoints && !isExtractingPoints && pointCount === 0 && (
+        <button
+          onClick={() => onExtractPoints!(doc)}
+          className="w-full text-xs font-bold py-2 rounded-xl bg-amber-900/40 hover:bg-amber-900 text-amber-300 border border-amber-800 transition-colors"
+        >
+          🎯 Policy Points निकाल्नुहोस् (Gaming Cards)
+        </button>
+      )}
+      {isExtractingPoints && (
+        <div className="w-full text-xs py-2 rounded-xl bg-amber-900/20 text-amber-400 border border-amber-800 text-center animate-pulse">
+          🎯 Points निकाल्दैछ — Gemini ले analyze गर्दैछ…
+        </div>
+      )}
+      {isApproved && pointCount > 0 && !isExtractingPoints && (
+        <div className="w-full text-xs py-2 rounded-xl bg-amber-900/20 text-amber-400 border border-amber-800 text-center flex items-center justify-center gap-2">
+          <span>🎯 {pointCount} gaming points ready</span>
+          <button
+            onClick={() => onExtractPoints?.(doc)}
+            className="underline text-amber-500 hover:text-amber-300 text-xs"
+          >
+            Re-extract
+          </button>
         </div>
       )}
 

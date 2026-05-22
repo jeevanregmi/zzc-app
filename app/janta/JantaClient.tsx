@@ -6,6 +6,7 @@ import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
 import type { IntelligenceDocument } from "../../lib/types/documents";
 import type { QueueItem } from "../../lib/types/queue";
+import type { PolicyPoint } from "../../lib/types/policy-points";
 
 // ─── Date helpers (Nepali numerals + month names) ─────────────────────────────
 
@@ -578,6 +579,205 @@ function ContentCard({ item, isLast }: { item: QueueItem; isLast: boolean }) {
   );
 }
 
+// ─── Policy Point Gaming Card ─────────────────────────────────────────────────
+
+function PolicyPointCard({ point, index, total, unlocked, onUnlock }: {
+  point: PolicyPoint;
+  index: number;
+  total: number;
+  unlocked: boolean;
+  onUnlock: (id: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const meta = getSectorMeta(point.sectors ?? []);
+  const lvl  = String(point.pointNumber).padStart(2, "0");
+
+  const handleTap = () => {
+    if (!unlocked) onUnlock(point.id);
+    setExpanded(e => !e);
+  };
+
+  const handleSpeak = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (speaking) { window.speechSynthesis.cancel(); setSpeaking(false); return; }
+    setSpeaking(true);
+    speakText([point.title, point.simpleSummary, point.youthImpact, point.keyFact].filter(Boolean).join(". "), () => setSpeaking(false));
+  };
+
+  return (
+    <div
+      className="rounded-2xl border overflow-hidden cursor-pointer transition-all active:scale-[0.99]"
+      style={{
+        background:   unlocked ? meta.bg         : "#0a0a0a",
+        borderColor:  unlocked ? meta.border      : "#27272a",
+        opacity:      unlocked || expanded ? 1   : 0.75,
+      }}
+      onClick={handleTap}
+    >
+      {/* Progress strip at top */}
+      <div className="h-0.5 w-full" style={{ background: "#18181b" }}>
+        <div className="h-full transition-all duration-500"
+          style={{ width: `${Math.round((index / total) * 100)}%`, background: meta.dot }} />
+      </div>
+
+      <div className="px-4 py-3">
+        <div className="flex items-start justify-between gap-2">
+          {/* Level badge + title */}
+          <div className="flex items-start gap-3 min-w-0">
+            <div
+              className="shrink-0 w-10 h-10 rounded-xl flex flex-col items-center justify-center border"
+              style={unlocked
+                ? { background: `${meta.dot}18`, borderColor: `${meta.dot}44` }
+                : { background: "#18181b", borderColor: "#27272a" }}
+            >
+              <span className="text-[8px] font-black tracking-widest" style={{ color: unlocked ? meta.dot : "#52525b" }}>LVL</span>
+              <span className="text-sm font-black leading-none" style={{ color: unlocked ? meta.text : "#71717a" }}>{lvl}</span>
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-black leading-snug" style={{ color: unlocked ? meta.text : "#a1a1aa" }}>
+                {unlocked ? point.title : "🔒 " + point.title}
+              </p>
+              <p className="text-[9px] mt-0.5 truncate" style={{ color: "#52525b" }}>
+                {point.parentDocTitle}
+              </p>
+            </div>
+          </div>
+
+          {/* TTS + unlock indicator */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {unlocked && (
+              <button onClick={handleSpeak}
+                className="w-7 h-7 rounded-full flex items-center justify-center text-xs transition-all"
+                style={speaking ? { background: meta.dot, color: "#000" } : { background: `${meta.dot}18`, color: meta.text }}
+              >{speaking ? "⏸" : "🔊"}</button>
+            )}
+            <span className="text-xs" style={{ color: unlocked ? meta.dot : "#52525b" }}>
+              {unlocked ? (expanded ? "▲" : "▼") : "›"}
+            </span>
+          </div>
+        </div>
+
+        {/* Sectors */}
+        <div className="flex flex-wrap gap-1 mt-2">
+          {(point.sectors ?? []).slice(0, 3).map(s => (
+            <span key={s} className="text-[8px] font-semibold px-2 py-0.5 rounded-full"
+              style={{ background: `${meta.dot}12`, color: `${meta.text}90`, border: `1px solid ${meta.dot}25` }}>
+              {toNepaliSector(s)}
+            </span>
+          ))}
+        </div>
+
+        {/* Expanded content (unlocked only) */}
+        {expanded && unlocked && (
+          <div className="mt-3 space-y-2">
+            <div className="rounded-xl px-3 py-2.5" style={{ background: `${meta.dot}0c`, border: `1px solid ${meta.dot}20` }}>
+              <p className="text-[9px] font-black uppercase tracking-widest mb-1" style={{ color: meta.dot }}>🇳🇵 के हो यो?</p>
+              <p className="text-xs leading-relaxed text-white/80">{point.simpleSummary}</p>
+            </div>
+
+            {point.keyFact && (
+              <div className="rounded-xl px-3 py-2.5 flex items-start gap-2"
+                style={{ background: "#ffffff06", border: "1px solid #ffffff0f" }}>
+                <span className="text-base shrink-0">📌</span>
+                <p className="text-xs text-white/60 leading-snug">{point.keyFact}</p>
+              </div>
+            )}
+
+            {point.youthImpact && (
+              <div className="rounded-xl px-3 py-2.5" style={{ background: "#27180b", border: "1px solid #b4530933" }}>
+                <p className="text-[9px] font-black uppercase tracking-widest mb-1 text-amber-500">⚡ युवाहरूलाई असर</p>
+                <p className="text-xs leading-relaxed text-white/70">{point.youthImpact}</p>
+              </div>
+            )}
+
+            <div className="flex items-center justify-center pt-1">
+              <span className="text-[9px] font-black tracking-widest text-green-500/60">✓ LEVEL UNLOCKED</span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Gaming Mode View ─────────────────────────────────────────────────────────
+
+function GamingView({ points }: { points: PolicyPoint[] }) {
+  const [unlocked, setUnlocked] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem("janta_unlocked_points");
+      return new Set(saved ? (JSON.parse(saved) as string[]) : []);
+    } catch { return new Set(); }
+  });
+
+  const unlock = (id: string) => {
+    setUnlocked(prev => {
+      const next = new Set(prev);
+      next.add(id);
+      try { localStorage.setItem("janta_unlocked_points", JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  };
+
+  const sorted = [...points].sort((a, b) => a.pointNumber - b.pointNumber);
+  const unlockedCount = sorted.filter(p => unlocked.has(p.id)).length;
+  const pct = points.length ? Math.round((unlockedCount / points.length) * 100) : 0;
+
+  if (points.length === 0) {
+    return (
+      <div className="py-24 text-center space-y-3">
+        <p className="text-5xl">🎯</p>
+        <p className="text-white font-black text-xl">Gaming Cards छैनन् अझै</p>
+        <p className="text-zinc-500 text-sm max-w-xs mx-auto">
+          Admin Vault मा approved document बाट "Policy Points निकाल्नुहोस्" button थिच्नुस् — तब यहाँ gaming cards आउँछन्।
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Progress header */}
+      <div className="bg-zinc-950 border border-zinc-800 rounded-2xl px-5 py-4">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <p className="text-white font-black text-sm">तपाईंको Progress</p>
+            <p className="text-zinc-500 text-xs">{toNp(unlockedCount)}/{toNp(points.length)} levels unlock भयो</p>
+          </div>
+          <div className="text-right">
+            <p className="text-green-400 font-black text-2xl">{toNp(pct)}%</p>
+            <p className="text-zinc-600 text-[10px]">completed</p>
+          </div>
+        </div>
+        <div className="w-full bg-zinc-900 rounded-full h-2 overflow-hidden">
+          <div
+            className="h-full rounded-full transition-all duration-700"
+            style={{ width: `${pct}%`, background: "linear-gradient(90deg, #22c55e, #06b6d4)" }}
+          />
+        </div>
+        {pct === 100 && (
+          <p className="text-green-400 text-xs font-black text-center mt-2">
+            🏆 तपाईंले सबै {toNp(points.length)} niti बुझ्नुभयो!
+          </p>
+        )}
+      </div>
+
+      {/* Cards */}
+      {sorted.map((pt, i) => (
+        <PolicyPointCard
+          key={pt.id}
+          point={pt}
+          index={i}
+          total={sorted.length}
+          unlocked={unlocked.has(pt.id)}
+          onUnlock={unlock}
+        />
+      ))}
+    </div>
+  );
+}
+
 // ─── Month Section ────────────────────────────────────────────────────────────
 
 type TimelineEntry =
@@ -716,8 +916,9 @@ function Hero({ count, span }: { count: number; span: string }) {
 export default function JantaClient() {
   const [docs,         setDocs]         = useState<IntelligenceDocument[]>([]);
   const [contentItems, setContentItems] = useState<QueueItem[]>([]);
+  const [policyPoints, setPolicyPoints] = useState<PolicyPoint[]>([]);
   const [loading,      setLoading]      = useState(true);
-  const [filter,       setFilter]       = useState<"all" | "official" | "epf" | "budget" | "content">("all");
+  const [filter,       setFilter]       = useState<"all" | "official" | "epf" | "budget" | "content" | "points">("all");
   const [slideDoc,     setSlideDoc]     = useState<IntelligenceDocument | null>(null);
 
   useEffect(() => {
@@ -732,23 +933,30 @@ export default function JantaClient() {
     )).then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as QueueItem)))
       .catch(() => [] as QueueItem[]);
 
-    Promise.all([docsPromise, contentPromise])
-      .then(([docItems, queueItems]) => {
+    const pointsPromise = getDocs(query(
+      collection(db, "vault_policy_points"),
+      where("publishToJanta", "==", true),
+    )).then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as PolicyPoint)))
+      .catch(() => [] as PolicyPoint[]);
+
+    Promise.all([docsPromise, contentPromise, pointsPromise])
+      .then(([docItems, queueItems, pts]) => {
         setDocs(docItems.sort((a, b) => (b.uploadedAt ?? "").localeCompare(a.uploadedAt ?? "")));
         setContentItems(queueItems.sort((a, b) => (b.jantaPublishedAt ?? b.createdAt ?? "").localeCompare(a.jantaPublishedAt ?? a.createdAt ?? "")));
+        setPolicyPoints(pts.sort((a, b) => a.pointNumber - b.pointNumber));
         setLoading(false);
       })
       .catch(err => { console.error("janta fetch:", err); setLoading(false); });
   }, []);
 
   const filteredDocs = docs.filter(d => {
-    if (filter === "content")  return false;
+    if (filter === "content" || filter === "points") return false;
     if (filter === "official") return d.sourceType === "official";
     if (filter === "epf")      return d.detectedTopics?.some(t => /epf|ssf|cit/i.test(t));
     if (filter === "budget")   return d.detectedTopics?.some(t => /budget|बजेट|fiscal/i.test(t));
     return true;
   });
-  const filteredContent = filter === "all" || filter === "content" ? contentItems : [];
+  const filteredContent = (filter === "all" || filter === "content") ? contentItems : [];
 
   // Merge into unified timeline entries
   const allEntries: TimelineEntry[] = [
@@ -791,7 +999,8 @@ export default function JantaClient() {
     { key: "official"as const, label: "✓ Official" },
     { key: "epf"     as const, label: "EPF / SSF" },
     { key: "budget"  as const, label: "बजेट" },
-    { key: "content" as const, label: "🎬 ZZC Content" },
+    { key: "content" as const, label: "🎬 Content" },
+    { key: "points"  as const, label: `🎯 ${policyPoints.length > 0 ? toNp(policyPoints.length) + " Levels" : "Gaming"}` },
   ];
 
   return (
@@ -829,6 +1038,8 @@ export default function JantaClient() {
             <div className="w-10 h-10 border-2 border-green-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
             <p className="text-zinc-500 text-sm">Timeline load हुँदैछ…</p>
           </div>
+        ) : filter === "points" ? (
+          <GamingView points={policyPoints} />
         ) : allEntries.length === 0 ? (
           <div className="py-24 text-center space-y-4">
             <p className="text-6xl">🏛️</p>

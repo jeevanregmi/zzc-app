@@ -76,6 +76,8 @@ export default function DocumentsClient() {
   const [viewing,       setViewing]      = useState<IntelligenceDocument | null>(null);
   const [processingId,  setProcessingId] = useState<string | null>(null);
   const [generatingImageId, setGeneratingImageId] = useState<string | null>(null);
+  const [extractingPointsId, setExtractingPointsId] = useState<string | null>(null);
+  const [pointCountByDoc, setPointCountByDoc] = useState<Record<string, number>>({});
   const [processError,        setProcessError]        = useState<string | null>(null);
   const [processErrorCode,    setProcessErrorCode]    = useState<string | null>(null);
   const [processErrorDetails, setProcessErrorDetails] = useState<string | null>(null);
@@ -291,6 +293,53 @@ export default function DocumentsClient() {
       ));
     } finally {
       setProcessingId(null);
+    }
+  };
+
+  const handleExtractPoints = async (doc: IntelligenceDocument) => {
+    if (!user?.uid) return;
+    setExtractingPointsId(doc.id);
+    try {
+      const res = await fetch("/api/extract-policy-points", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          docId:         doc.id,
+          title:         doc.title,
+          ocrText:       (doc as unknown as Record<string, unknown>).ocrText as string | undefined,
+          aiSummary:     doc.aiSummary,
+          aiKeyInsights: doc.aiKeyInsights,
+          policyChanges: doc.policyChanges,
+          ownerId:       user.uid,
+        }),
+      });
+      const data = await res.json() as { ok: boolean; points?: Array<{
+        pointNumber: number; title: string; simpleSummary: string;
+        youthImpact: string; keyFact: string; sectors: string[];
+      }>; error?: string };
+      if (!data.ok || !data.points) throw new Error(data.error ?? "Extraction failed");
+
+      const now = new Date().toISOString();
+      await Promise.all(data.points.map(pt =>
+        addDoc(collection(db, "vault_policy_points"), {
+          parentDocId:    doc.id,
+          parentDocTitle: doc.title,
+          ownerId:        user.uid,
+          pointNumber:    pt.pointNumber,
+          title:          pt.title,
+          simpleSummary:  pt.simpleSummary,
+          youthImpact:    pt.youthImpact,
+          keyFact:        pt.keyFact,
+          sectors:        pt.sectors,
+          publishToJanta: true,
+          createdAt:      now,
+        }),
+      ));
+      setPointCountByDoc(prev => ({ ...prev, [doc.id]: data.points!.length }));
+    } catch (err) {
+      alert(`Policy points निकाल्न सकिएन: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setExtractingPointsId(null);
     }
   };
 
@@ -566,6 +615,9 @@ export default function DocumentsClient() {
                 onResetStuck={handleResetStuck}
                 onGenerateImage={handleGenerateImage}
                 isGeneratingImage={generatingImageId === doc.id}
+                onExtractPoints={handleExtractPoints}
+                isExtractingPoints={extractingPointsId === doc.id}
+                pointCount={pointCountByDoc[doc.id] ?? 0}
               />
             ))}
           </div>
