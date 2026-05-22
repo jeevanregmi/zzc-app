@@ -5,6 +5,7 @@ import Link from "next/link";
 import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
 import type { IntelligenceDocument } from "../../lib/types/documents";
+import type { QueueItem } from "../../lib/types/queue";
 
 // ─── Date helpers (Nepali numerals + month names) ─────────────────────────────
 
@@ -513,9 +514,77 @@ function TimelineCard({ doc, isLast, onSlides }: { doc: IntelligenceDocument; is
   );
 }
 
+// ─── Content Card (AI Studio published content) ───────────────────────────────
+
+const PLATFORM_ICON: Record<string, string> = {
+  youtube:   "▶️", instagram: "📸", facebook: "👥", all: "📲",
+};
+const TYPE_LABEL: Record<string, string> = {
+  "youtube-long": "YouTube", shorts: "Short/Reel", "facebook-post": "Facebook Post",
+  carousel: "Carousel", explainer: "Explainer", other: "Content",
+};
+
+function ContentCard({ item, isLast }: { item: QueueItem; isLast: boolean }) {
+  const [speaking, setSpeaking] = useState(false);
+  const preview = item.brief ?? item.sourceInsights?.[0] ?? "";
+
+  const handleSpeak = () => {
+    if (speaking) { window.speechSynthesis.cancel(); setSpeaking(false); return; }
+    setSpeaking(true);
+    speakText([item.aiTitle, preview].filter(Boolean).join(". "), () => setSpeaking(false));
+  };
+
+  return (
+    <div className={`relative pl-8 ${isLast ? "" : "pb-6"}`}>
+      {/* Timeline dot — green for content */}
+      <div className="absolute left-0 top-4 w-3.5 h-3.5 rounded-full border-2 z-10"
+        style={{ background: "#22c55e", borderColor: "#22c55e", boxShadow: "0 0 8px #22c55e66" }} />
+
+      <div className="rounded-2xl overflow-hidden border border-green-900/60 bg-[#051a0f]">
+        <div className="px-4 pt-4 pb-3">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xl">{PLATFORM_ICON[item.platform] ?? "📲"}</span>
+              <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-green-950 text-green-400 border border-green-800">
+                ZZC {TYPE_LABEL[item.contentType] ?? "Content"}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="text-[10px] text-green-900">
+                {fmtDay(item.jantaPublishedAt ?? item.createdAt)}
+              </span>
+              <button onClick={handleSpeak}
+                className="w-7 h-7 rounded-full flex items-center justify-center text-sm transition-all"
+                style={speaking ? { background: "#22c55e", color: "#000" } : { background: "#22c55e18", color: "#86efac" }}
+              >{speaking ? "⏸" : "🔊"}</button>
+            </div>
+          </div>
+          <h3 className="font-black text-sm leading-snug mt-2 text-green-300">{item.aiTitle}</h3>
+        </div>
+
+        {preview && (
+          <div className="mx-3 mb-3 rounded-xl px-4 py-3 bg-green-950/30 border border-green-900/40">
+            <p className="text-xs leading-snug text-white/70 line-clamp-3">{preview}</p>
+          </div>
+        )}
+
+        {item.sourceDocTitle && (
+          <div className="px-3 pb-3">
+            <span className="text-[9px] text-green-900">📄 {item.sourceDocTitle}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Month Section ────────────────────────────────────────────────────────────
 
-function MonthSection({ label, docs, onSlides }: { label: string; year: string; docs: IntelligenceDocument[]; onSlides: (doc: IntelligenceDocument) => void }) {
+type TimelineEntry =
+  | { kind: "doc";     item: IntelligenceDocument; date: string }
+  | { kind: "content"; item: QueueItem;             date: string };
+
+function MonthSection({ label, entries, onSlides }: { label: string; year: string; entries: TimelineEntry[]; onSlides: (doc: IntelligenceDocument) => void }) {
   return (
     <div className="relative">
       <div className="absolute left-[6px] top-6 bottom-0 w-px bg-zinc-800" />
@@ -523,13 +592,15 @@ function MonthSection({ label, docs, onSlides }: { label: string; year: string; 
         <div className="w-3.5 h-3.5 rounded-full bg-zinc-700 border-2 border-zinc-500 z-10" />
         <div>
           <span className="text-sm font-black text-white">{label}</span>
-          <span className="ml-2 text-[10px] text-zinc-600">{toNp(docs.length)} document{docs.length !== 1 ? "s" : ""}</span>
+          <span className="ml-2 text-[10px] text-zinc-600">{toNp(entries.length)} items</span>
         </div>
       </div>
       <div>
-        {docs.map((doc, i) => (
-          <TimelineCard key={doc.id} doc={doc} isLast={i === docs.length - 1} onSlides={onSlides} />
-        ))}
+        {entries.map((entry, i) =>
+          entry.kind === "doc"
+            ? <TimelineCard key={entry.item.id} doc={entry.item} isLast={i === entries.length - 1} onSlides={onSlides} />
+            : <ContentCard  key={entry.item.id} item={entry.item} isLast={i === entries.length - 1} />
+        )}
       </div>
     </div>
   );
@@ -643,63 +714,90 @@ function Hero({ count, span }: { count: number; span: string }) {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function JantaClient() {
-  const [docs, setDocs] = useState<IntelligenceDocument[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "official" | "epf" | "budget">("all");
-  const [slideDoc, setSlideDoc] = useState<IntelligenceDocument | null>(null);
+  const [docs,         setDocs]         = useState<IntelligenceDocument[]>([]);
+  const [contentItems, setContentItems] = useState<QueueItem[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [filter,       setFilter]       = useState<"all" | "official" | "epf" | "budget" | "content">("all");
+  const [slideDoc,     setSlideDoc]     = useState<IntelligenceDocument | null>(null);
 
   useEffect(() => {
-    getDocs(
-      query(
-        collection(db, "vault_intelligence_docs"),
-        where("adminApprovalStatus", "==", "approved"),
-      )
-    ).then(snap => {
-      const items = snap.docs
-        .map(d => ({ id: d.id, ...d.data() } as IntelligenceDocument))
-        .sort((a, b) =>
-          (b.uploadedAt ?? "").localeCompare(a.uploadedAt ?? "")
-        );
-      setDocs(items);
-      setLoading(false);
-    }).catch(err => { console.error("janta fetch:", err); setLoading(false); });
+    const docsPromise = getDocs(query(
+      collection(db, "vault_intelligence_docs"),
+      where("adminApprovalStatus", "==", "approved"),
+    )).then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as IntelligenceDocument)));
+
+    const contentPromise = getDocs(query(
+      collection(db, "vault_content_queue"),
+      where("publishToJanta", "==", true),
+    )).then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as QueueItem)))
+      .catch(() => [] as QueueItem[]);
+
+    Promise.all([docsPromise, contentPromise])
+      .then(([docItems, queueItems]) => {
+        setDocs(docItems.sort((a, b) => (b.uploadedAt ?? "").localeCompare(a.uploadedAt ?? "")));
+        setContentItems(queueItems.sort((a, b) => (b.jantaPublishedAt ?? b.createdAt ?? "").localeCompare(a.jantaPublishedAt ?? a.createdAt ?? "")));
+        setLoading(false);
+      })
+      .catch(err => { console.error("janta fetch:", err); setLoading(false); });
   }, []);
 
-  const filtered = docs.filter(d => {
-    if (filter === "all")      return true;
+  const filteredDocs = docs.filter(d => {
+    if (filter === "content")  return false;
     if (filter === "official") return d.sourceType === "official";
     if (filter === "epf")      return d.detectedTopics?.some(t => /epf|ssf|cit/i.test(t));
     if (filter === "budget")   return d.detectedTopics?.some(t => /budget|बजेट|fiscal/i.test(t));
     return true;
   });
+  const filteredContent = filter === "all" || filter === "content" ? contentItems : [];
 
-  // Compute time span label
+  // Merge into unified timeline entries
+  const allEntries: TimelineEntry[] = [
+    ...filteredDocs.map(d => ({ kind: "doc"     as const, item: d, date: d.uploadedAt })),
+    ...filteredContent.map(c => ({ kind: "content" as const, item: c, date: c.jantaPublishedAt ?? c.createdAt })),
+  ].sort((a, b) => b.date.localeCompare(a.date));
+
+  const totalCount = allEntries.length;
+
+  // Compute time span
   const span = (() => {
-    if (filtered.length < 2) return "";
-    const oldest = filtered[filtered.length - 1]?.uploadedAt ?? "";
-    const newest = filtered[0]?.uploadedAt ?? "";
+    if (allEntries.length < 2) return "";
+    const oldest = allEntries[allEntries.length - 1]?.date ?? "";
+    const newest = allEntries[0]?.date ?? "";
     const diffDays = Math.floor((new Date(newest).getTime() - new Date(oldest).getTime()) / 86400000);
     if (diffDays < 30) return `${toNp(diffDays)} days`;
     if (diffDays < 365) return `${toNp(Math.floor(diffDays / 30))} months`;
     return `${toNp(Math.floor(diffDays / 365))}+ years`;
   })();
 
-  const grouped = groupByMonth(filtered);
+  // Group merged entries by month
+  const groupedEntries = (() => {
+    const map = new Map<string, { label: string; year: string; entries: TimelineEntry[] }>();
+    for (const entry of allEntries) {
+      const key = monthKey(entry.date);
+      if (!map.has(key)) {
+        const d = new Date(entry.date);
+        map.set(key, { label: fmtMonthYear(entry.date), year: toNp(d.getFullYear()), entries: [] });
+      }
+      map.get(key)!.entries.push(entry);
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => b.localeCompare(a)).map(([, v]) => v);
+  })();
 
   // Track which years we've shown a divider for
   const shownYears = new Set<string>();
 
   const FILTERS = [
-    { key: "all" as const,      label: "सबै" },
-    { key: "official" as const, label: "✓ Official" },
-    { key: "epf" as const,      label: "EPF / SSF" },
-    { key: "budget" as const,   label: "बजेट" },
+    { key: "all"     as const, label: "सबै" },
+    { key: "official"as const, label: "✓ Official" },
+    { key: "epf"     as const, label: "EPF / SSF" },
+    { key: "budget"  as const, label: "बजेट" },
+    { key: "content" as const, label: "🎬 ZZC Content" },
   ];
 
   return (
     <div className="min-h-screen bg-black text-white">
       {slideDoc && <SlideShow doc={slideDoc} onClose={() => setSlideDoc(null)} />}
-      <Hero count={filtered.length} span={span} />
+      <Hero count={totalCount} span={span} />
 
       {/* Sticky nav */}
       <div className="sticky top-0 z-20 bg-black/90 backdrop-blur border-b border-zinc-900">
@@ -731,29 +829,29 @@ export default function JantaClient() {
             <div className="w-10 h-10 border-2 border-green-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
             <p className="text-zinc-500 text-sm">Timeline load हुँदैछ…</p>
           </div>
-        ) : filtered.length === 0 ? (
+        ) : allEntries.length === 0 ? (
           <div className="py-24 text-center space-y-4">
             <p className="text-6xl">🏛️</p>
             <p className="text-white font-black text-2xl">
-              {docs.length === 0 ? "Timeline खाली छ" : "यस filter मा छैन"}
+              {docs.length === 0 && contentItems.length === 0 ? "Timeline खाली छ" : "यस filter मा छैन"}
             </p>
             <p className="text-zinc-500 text-sm">
-              {docs.length === 0
+              {docs.length === 0 && contentItems.length === 0
                 ? "Admin Vault मा approve गरेपछि timeline मा देखिन्छ।"
                 : "अर्को filter try गर्नुस्।"}
             </p>
           </div>
         ) : (
           <>
-            <QuickRail docs={filtered} />
+            <QuickRail docs={filteredDocs} />
 
-            {grouped.map(({ label, year, docs: mdocs }) => {
+            {groupedEntries.map(({ label, year, entries }) => {
               const showYear = !shownYears.has(year);
               if (showYear) shownYears.add(year);
               return (
                 <div key={label}>
                   {showYear && <YearDivider year={year} />}
-                  <MonthSection label={label} year={year} docs={mdocs} onSlides={setSlideDoc} />
+                  <MonthSection label={label} year={year} entries={entries} onSlides={setSlideDoc} />
                   <div className="mt-6" />
                 </div>
               );
@@ -761,7 +859,7 @@ export default function JantaClient() {
 
             <div className="py-8 text-center">
               <p className="text-zinc-700 text-xs">
-                {toNp(filtered.length)} documents · Timeline continues as new policies are added
+                {toNp(totalCount)} items · Timeline continues as new policies are added
               </p>
               <div className="w-px h-8 bg-zinc-800 mx-auto mt-4" />
               <div className="w-3 h-3 rounded-full border-2 border-zinc-700 mx-auto" />

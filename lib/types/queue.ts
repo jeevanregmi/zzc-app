@@ -59,6 +59,15 @@ export interface QueueItem {
   adminNotes?: string;           // admin comments when reviewing
   expiresAt?:  string;           // auto-archive if pending past this date (7 days)
 
+  // ── AI Studio generated script ────────────────────────────────────────────────
+  generatedScript?: string;     // full script from AI Studio
+  generatedAt?:     string;
+
+  // ── Janta publishing ──────────────────────────────────────────────────────────
+  publishToJanta?:   boolean;   // admin toggles to publish this content card to /janta
+  jantaPublishedAt?: string;    // when it was published to /janta
+  jantaHeroImageUrl?: string;   // optional image for the /janta content card
+
   // ── Timestamps ────────────────────────────────────────────────────────────────
   createdAt:          string;
   updatedAt:          string;

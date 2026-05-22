@@ -168,6 +168,17 @@ export default function AIStudioClient() {
     }
   }
 
+  async function publishToJanta() {
+    if (!queueId) return;
+    const isPublished = queueItem?.publishToJanta;
+    await updateQueueItem(queueId, {
+      publishToJanta:   !isPublished,
+      jantaPublishedAt: !isPublished ? new Date().toISOString() : undefined,
+      updatedAt:        new Date().toISOString(),
+    });
+    setQueueItem(q => q ? { ...q, publishToJanta: !isPublished } : q);
+  }
+
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto">
 
@@ -227,6 +238,16 @@ export default function AIStudioClient() {
                   {markingInProd ? "Saving…" : "Mark In Production"}
                 </button>
               )}
+              <button
+                onClick={publishToJanta}
+                className={`text-xs px-3 py-1.5 rounded-lg border transition-colors font-bold ${
+                  queueItem?.publishToJanta
+                    ? "bg-green-900/60 border-green-700 text-green-300 hover:bg-red-950 hover:border-red-800 hover:text-red-400"
+                    : "bg-zinc-900 border-zinc-700 text-zinc-400 hover:bg-green-950 hover:border-green-800 hover:text-green-300"
+                }`}
+              >
+                {queueItem?.publishToJanta ? "✅ /janta मा Live — Unpublish" : "🚀 /janta मा Publish"}
+              </button>
             </div>
           </div>
 
