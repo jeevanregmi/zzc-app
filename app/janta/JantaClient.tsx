@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { collection, query, where, getDocs, orderBy } from "firebase/firestore";
+import { collection, query, where, getDocs } from "firebase/firestore";
 import { db } from "../firebase";
 import type { IntelligenceDocument } from "../../lib/types/documents";
 
@@ -228,12 +228,14 @@ export default function JantaClient() {
       query(
         collection(db, "vault_intelligence_docs"),
         where("adminApprovalStatus", "==", "approved"),
-        orderBy("updatedAt", "desc"),
       )
     ).then(snap => {
-      setDocs(snap.docs.map(d => ({ id: d.id, ...d.data() } as IntelligenceDocument)));
+      const items = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as IntelligenceDocument))
+        .sort((a, b) => (b.updatedAt ?? b.uploadedAt ?? "").localeCompare(a.updatedAt ?? a.uploadedAt ?? ""));
+      setDocs(items);
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch(err => { console.error("janta fetch:", err); setLoading(false); });
   }, []);
 
   const filtered = docs.filter(d => {
