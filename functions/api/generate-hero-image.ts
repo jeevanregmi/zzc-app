@@ -83,71 +83,35 @@ Output the image prompt only:` }],
     const imagePrompt = promptResult.text.trim();
     if (!imagePrompt) throw new Error("Empty image prompt from Gemini");
 
-    // Step 2: Try image generation models in order until one succeeds
-    const IMAGE_MODELS = [
-      "gemini-2.0-flash-preview-image-generation",
-      "gemini-2.0-flash-exp-image-generation",
-      "imagen-3.0-generate-001",
-    ];
+    // Step 2: Pollinations.ai (free, no API key, Flux model) → fetch image as base64
+    const encodedPrompt = encodeURIComponent(imagePrompt);
+    const pollinationsUrl =
+      `https://image.pollinations.ai/prompt/${encodedPrompt}` +
+      `?width=1280&height=720&model=flux&nologo=true&seed=${Date.now() % 9999}`;
 
-    let imageBase64: string | null = null;
-    let imageMimeType = "image/png";
-    let lastErr = "";
+    const imgRes = await fetch(pollinationsUrl, {
+      headers: { "User-Agent": "ZZC-Janta/1.0" },
+    });
 
-    for (const model of IMAGE_MODELS) {
-      const isImagen = model.startsWith("imagen-");
-      const endpoint = isImagen ? "predict" : "generateContent";
-      const body = isImagen
-        ? JSON.stringify({
-            instances:  [{ prompt: imagePrompt }],
-            parameters: { sampleCount: 1, aspectRatio: "16:9", safetySetting: "block_only_high" },
-          })
-        : JSON.stringify({
-            contents:         [{ parts: [{ text: imagePrompt }] }],
-            generationConfig: { responseModalities: ["IMAGE"] },
-          });
-
-      const res = await fetch(
-        `${GEMINI_BASE}/${model}:${endpoint}?key=${env.GEMINI_API_KEY.trim()}`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body },
-      );
-
-      if (!res.ok) {
-        lastErr = `${model}: ${res.status}`;
-        continue;
-      }
-
-      const data = await res.json() as Record<string, unknown>;
-
-      if (isImagen) {
-        const pred = (data.predictions as Array<{ bytesBase64Encoded: string; mimeType: string }>)?.[0];
-        if (pred?.bytesBase64Encoded) {
-          imageBase64  = pred.bytesBase64Encoded;
-          imageMimeType = pred.mimeType ?? "image/png";
-          break;
-        }
-      } else {
-        const parts = (data as {
-          candidates?: Array<{ content: { parts: Array<{ inlineData?: { data: string; mimeType: string } }> } }>;
-        }).candidates?.[0]?.content?.parts;
-        const part = parts?.find(p => p.inlineData);
-        if (part?.inlineData) {
-          imageBase64   = part.inlineData.data;
-          imageMimeType = part.inlineData.mimeType ?? "image/png";
-          break;
-        }
-      }
-      lastErr = `${model}: empty response`;
+    if (!imgRes.ok) {
+      throw new Error(`Pollinations image fetch failed: ${imgRes.status}`);
     }
 
-    if (!imageBase64) {
-      throw new Error(`All image models failed. Last: ${lastErr}`);
+    const imgBuffer   = await imgRes.arrayBuffer();
+    const imgBytes    = new Uint8Array(imgBuffer);
+    const contentType = imgRes.headers.get("content-type") ?? "image/jpeg";
+
+    // Convert to base64
+    let binary = "";
+    for (let i = 0; i < imgBytes.length; i++) {
+      binary += String.fromCharCode(imgBytes[i]);
     }
+    const imageBase64 = btoa(binary);
 
     return Response.json({
       ok:           true,
       imageBase64,
-      mimeType:     imageMimeType,
+      mimeType:     contentType.split(";")[0],
       promptUsed:   imagePrompt,
     }, { headers: cors });
 
