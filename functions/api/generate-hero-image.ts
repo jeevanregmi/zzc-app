@@ -83,42 +83,71 @@ Output the image prompt only:` }],
     const imagePrompt = promptResult.text.trim();
     if (!imagePrompt) throw new Error("Empty image prompt from Gemini");
 
-    // Step 2: Gemini 2.0 Flash Exp → generate image via responseModalities
-    // (Imagen 3 predict endpoint only works on Vertex AI, not Gemini Developer API)
-    const imageRes = await fetch(
-      `${GEMINI_BASE}/gemini-2.0-flash-exp:generateContent?key=${env.GEMINI_API_KEY.trim()}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: imagePrompt }] }],
-          generationConfig: {
-            responseModalities: ["IMAGE"],
-          },
-        }),
-      }
-    );
+    // Step 2: Try image generation models in order until one succeeds
+    const IMAGE_MODELS = [
+      "gemini-2.0-flash-preview-image-generation",
+      "gemini-2.0-flash-exp-image-generation",
+      "imagen-3.0-generate-001",
+    ];
 
-    if (!imageRes.ok) {
-      const errText = await imageRes.text().catch(() => "");
-      throw new Error(`Gemini image gen ${imageRes.status}: ${errText.slice(0, 300)}`);
+    let imageBase64: string | null = null;
+    let imageMimeType = "image/png";
+    let lastErr = "";
+
+    for (const model of IMAGE_MODELS) {
+      const isImagen = model.startsWith("imagen-");
+      const endpoint = isImagen ? "predict" : "generateContent";
+      const body = isImagen
+        ? JSON.stringify({
+            instances:  [{ prompt: imagePrompt }],
+            parameters: { sampleCount: 1, aspectRatio: "16:9", safetySetting: "block_only_high" },
+          })
+        : JSON.stringify({
+            contents:         [{ parts: [{ text: imagePrompt }] }],
+            generationConfig: { responseModalities: ["IMAGE"] },
+          });
+
+      const res = await fetch(
+        `${GEMINI_BASE}/${model}:${endpoint}?key=${env.GEMINI_API_KEY.trim()}`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body },
+      );
+
+      if (!res.ok) {
+        lastErr = `${model}: ${res.status}`;
+        continue;
+      }
+
+      const data = await res.json() as Record<string, unknown>;
+
+      if (isImagen) {
+        const pred = (data.predictions as Array<{ bytesBase64Encoded: string; mimeType: string }>)?.[0];
+        if (pred?.bytesBase64Encoded) {
+          imageBase64  = pred.bytesBase64Encoded;
+          imageMimeType = pred.mimeType ?? "image/png";
+          break;
+        }
+      } else {
+        const parts = (data as {
+          candidates?: Array<{ content: { parts: Array<{ inlineData?: { data: string; mimeType: string } }> } }>;
+        }).candidates?.[0]?.content?.parts;
+        const part = parts?.find(p => p.inlineData);
+        if (part?.inlineData) {
+          imageBase64   = part.inlineData.data;
+          imageMimeType = part.inlineData.mimeType ?? "image/png";
+          break;
+        }
+      }
+      lastErr = `${model}: empty response`;
     }
 
-    const imageData = await imageRes.json() as {
-      candidates?: Array<{
-        content: { parts: Array<{ inlineData?: { data: string; mimeType: string }; text?: string }> };
-      }>;
-    };
-
-    const imagePart = imageData.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-    if (!imagePart?.inlineData) {
-      throw new Error("No image returned from Gemini Flash image generation");
+    if (!imageBase64) {
+      throw new Error(`All image models failed. Last: ${lastErr}`);
     }
 
     return Response.json({
       ok:           true,
-      imageBase64:  imagePart.inlineData.data,
-      mimeType:     imagePart.inlineData.mimeType ?? "image/png",
+      imageBase64,
+      mimeType:     imageMimeType,
       promptUsed:   imagePrompt,
     }, { headers: cors });
 
