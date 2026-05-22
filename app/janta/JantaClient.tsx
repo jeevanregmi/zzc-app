@@ -165,6 +165,24 @@ function TimelineCard({ doc, isLast }: { doc: IntelligenceDocument; isLast: bool
           </h3>
         </div>
 
+        {/* Hero image — shown when generated */}
+        {doc.heroImageUrl && (
+          <div className="relative w-full overflow-hidden" style={{ aspectRatio: "16/9" }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={doc.heroImageUrl}
+              alt={doc.title}
+              className="w-full h-full object-cover"
+            />
+            <div
+              className="absolute inset-0"
+              style={{
+                background: `linear-gradient(to bottom, transparent 40%, ${meta.bg}ee 100%)`,
+              }}
+            />
+          </div>
+        )}
+
         {/* Nepali explainer — always visible */}
         {doc.nepaliExplainer && (
           <div
@@ -206,7 +224,7 @@ function TimelineCard({ doc, isLast }: { doc: IntelligenceDocument; isLast: bool
         )}
 
         {/* Sectors + expand toggle */}
-        <div className="px-3 pb-3 flex items-center justify-between gap-2 mt-1">
+        <div className="px-3 pb-2 flex items-center justify-between gap-2 mt-1">
           <div className="flex flex-wrap gap-1">
             {(doc.affectedSectors ?? []).slice(0, 4).map(s => (
               <span
@@ -228,6 +246,37 @@ function TimelineCard({ doc, isLast }: { doc: IntelligenceDocument; isLast: bool
             </button>
           )}
         </div>
+
+        {/* Social content pipeline chips */}
+        {doc.contentIdeas && doc.contentIdeas.length > 0 && (
+          <div
+            className="mx-3 mb-3 rounded-xl px-3 py-2"
+            style={{ background: "#ffffff06", border: "1px solid #ffffff0f" }}
+          >
+            <p className="text-[8px] font-black tracking-widest uppercase mb-1.5 text-white/30">
+              📲 Content Pipeline
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {doc.contentIdeas.slice(0, 5).map((idea, i) => {
+                const l = idea.toLowerCase();
+                const isShort  = l.startsWith("short:") || l.startsWith("reel:");
+                const isYT     = l.startsWith("youtube:");
+                const isFB     = l.startsWith("post:") || l.startsWith("facebook:");
+                const icon     = isShort ? "🎬" : isYT ? "▶️" : isFB ? "👍" : "💡";
+                const label    = idea.replace(/^(YouTube|Short|Reel|Post|Facebook|Carousel|Explainer):\s*/i, "");
+                return (
+                  <span
+                    key={i}
+                    className="text-[8px] font-semibold px-2 py-0.5 rounded-full flex items-center gap-1"
+                    style={{ background: "#ffffff0a", color: "#ffffff50", border: "1px solid #ffffff12" }}
+                  >
+                    {icon} <span className="truncate max-w-[120px]">{label}</span>
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Confidence strip */}
         {doc.confidence != null && (

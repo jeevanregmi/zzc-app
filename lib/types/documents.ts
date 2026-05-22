@@ -80,6 +80,8 @@ export interface IntelligenceDocument {
   aiProvider?:         string;
   aiRetryCount?:       number;
   aiProcessingError?:  string;
+  // ── Janta public media ────────────────────────────────────────────────────
+  heroImageUrl?:       string;   // Firebase Storage URL — shown on /janta card
   // ── Metadata ──────────────────────────────────────────────────────────────
   pageCount?:          number;
   language?:           string;

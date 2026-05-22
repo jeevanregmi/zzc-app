@@ -4,6 +4,7 @@
     "indexes": "firestore.indexes.json"
   },
   "storage": {
+    "bucket": "zeneration-z-chautari.firebasestorage.app",
     "rules": "storage.rules"
   }
 }

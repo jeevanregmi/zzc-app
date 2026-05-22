@@ -48,14 +48,16 @@ function formatSize(bytes: number): string {
 }
 
 interface Props {
-  doc:              IntelligenceDocument;
-  isProcessing:     boolean;
-  queueCount?:      number;
-  onView:           (doc: IntelligenceDocument) => void;
-  onProcess:        (doc: IntelligenceDocument) => void;
-  onDelete:         (doc: IntelligenceDocument) => void;
-  onGenerateQueue?: (doc: IntelligenceDocument) => void;
-  onResetStuck?:    (doc: IntelligenceDocument) => void;
+  doc:               IntelligenceDocument;
+  isProcessing:      boolean;
+  queueCount?:       number;
+  onView:            (doc: IntelligenceDocument) => void;
+  onProcess:         (doc: IntelligenceDocument) => void;
+  onDelete:          (doc: IntelligenceDocument) => void;
+  onGenerateQueue?:  (doc: IntelligenceDocument) => void;
+  onResetStuck?:     (doc: IntelligenceDocument) => void;
+  onGenerateImage?:  (doc: IntelligenceDocument) => void;
+  isGeneratingImage?: boolean;
 }
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -71,7 +73,7 @@ const SOURCE_TYPE_BADGE: Record<SourceType, { label: string; cls: string }> = {
   unknown:    { label: "? Unknown",    cls: "bg-zinc-800   text-zinc-500   border border-zinc-700"   },
 };
 
-export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onGenerateQueue, onResetStuck }: Props) {
+export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onGenerateQueue, onResetStuck, onGenerateImage, isGeneratingImage = false }: Props) {
   const [showFullNotes, setShowFullNotes] = useState(false);
   const displayStatus  = isProcessing ? "processing_ai" : doc.processingStatus;
 
@@ -334,6 +336,25 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
         >
           ➕ Content Queue मा Add गर्नुहोस्
         </button>
+      )}
+
+      {isApproved && !!onGenerateImage && !doc.heroImageUrl && !isGeneratingImage && (
+        <button
+          onClick={() => onGenerateImage!(doc)}
+          className="w-full text-xs font-bold py-2 rounded-xl bg-purple-900/50 hover:bg-purple-900 text-purple-300 border border-purple-800 transition-colors"
+        >
+          🖼 Janta Hero Image Generate गर्नुहोस्
+        </button>
+      )}
+      {isGeneratingImage && (
+        <div className="w-full text-xs py-2 rounded-xl bg-purple-900/30 text-purple-400 border border-purple-800 text-center animate-pulse">
+          🖼 Image generate हुँदैछ…
+        </div>
+      )}
+      {isApproved && doc.heroImageUrl && (
+        <div className="w-full text-xs py-2 rounded-xl bg-green-900/30 text-green-400 border border-green-800 text-center">
+          ✅ Hero Image ready — /janta मा देखिन्छ
+        </div>
       )}
 
       <div className="flex items-center justify-between pt-1 border-t border-zinc-800">

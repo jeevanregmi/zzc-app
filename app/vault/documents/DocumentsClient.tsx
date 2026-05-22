@@ -7,7 +7,8 @@ import { useDocumentUpload } from "../../../hooks/vault/useDocumentUpload";
 import { deleteIntelligenceDoc, updateIntelligenceDoc, createQueueItem } from "../../../lib/vault/firestore";
 import { aiCostAdapter } from "../../../lib/business/firestore";
 import { collection, addDoc, Timestamp, deleteField } from "firebase/firestore";
-import { db } from "../../firebase";
+import { ref, uploadString, getDownloadURL } from "firebase/storage";
+import { db, storage } from "../../firebase";
 import type { AIService } from "../../../lib/business/types";
 import Link from "next/link";
 import { useQueueItems } from "../../../hooks/vault/useQueueItems";
@@ -75,6 +76,7 @@ export default function DocumentsClient() {
   const [showUpload,    setShowUpload]   = useState(false);
   const [viewing,       setViewing]      = useState<IntelligenceDocument | null>(null);
   const [processingId,  setProcessingId] = useState<string | null>(null);
+  const [generatingImageId, setGeneratingImageId] = useState<string | null>(null);
   const [processError,        setProcessError]        = useState<string | null>(null);
   const [processErrorCode,    setProcessErrorCode]    = useState<string | null>(null);
   const [processErrorDetails, setProcessErrorDetails] = useState<string | null>(null);
@@ -290,6 +292,38 @@ export default function DocumentsClient() {
       ));
     } finally {
       setProcessingId(null);
+    }
+  };
+
+  const handleGenerateImage = async (doc: IntelligenceDocument) => {
+    if (!user?.uid) return;
+    setGeneratingImageId(doc.id);
+    try {
+      const res = await fetch("/api/generate-hero-image", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title:           doc.title,
+          nepaliExplainer: doc.nepaliExplainer,
+          affectedSectors: doc.affectedSectors,
+          sourceAuthority: doc.sourceAuthority,
+          aiKeyInsights:   doc.aiKeyInsights,
+        }),
+      });
+      const data = await res.json() as { ok: boolean; imageBase64?: string; mimeType?: string; error?: string };
+      if (!data.ok || !data.imageBase64) throw new Error(data.error ?? "Image generation failed");
+
+      const ext = (data.mimeType ?? "image/png").includes("jpeg") ? "jpg" : "png";
+      const storagePath = `vault/${user.uid}/janta-hero/${doc.id}.${ext}`;
+      const storageRef = ref(storage, storagePath);
+      await uploadString(storageRef, data.imageBase64, "base64", { contentType: data.mimeType ?? "image/png" });
+      const heroImageUrl = await getDownloadURL(storageRef);
+
+      await updateIntelligenceDoc(doc.id, { heroImageUrl });
+    } catch (err) {
+      alert(`Hero image generate गर्न सकिएन: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setGeneratingImageId(null);
     }
   };
 
@@ -538,6 +572,8 @@ export default function DocumentsClient() {
                 onDelete={handleDelete}
                 onGenerateQueue={handleGenerateQueueItems}
                 onResetStuck={handleResetStuck}
+                onGenerateImage={handleGenerateImage}
+                isGeneratingImage={generatingImageId === doc.id}
               />
             ))}
           </div>

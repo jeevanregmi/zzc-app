@@ -28,6 +28,11 @@ service firebase.storage {
       return request.resource.size <= 500 * 1024 * 1024;
     }
 
+    // ── JANTA: hero images are publicly readable (shown on public /janta page) ─
+    match /vault/{userId}/janta-hero/{imageFile} {
+      allow read: if true;
+    }
+
     // ── VAULT: all media under /vault/{userId}/ ───────────────────────────────
     match /vault/{userId}/{allPaths=**} {
       allow read:   if isVaultOwner(userId);
