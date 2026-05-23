@@ -64,11 +64,16 @@ interface Props {
   onExtractPromises?: (doc: IntelligenceDocument) => void;
   isExtractingPromises?: boolean;
   promiseCount?:     number;
-  onExtractIntel?:    (doc: IntelligenceDocument) => void;
-  isExtractingIntel?: boolean;
-  isMatchingIntel?:   boolean;
-  intelCount?:        number;
-  relCount?:          number;
+  onExtractIntel?:         (doc: IntelligenceDocument) => void;
+  isExtractingIntel?:      boolean;
+  isMatchingIntel?:        boolean;
+  intelCount?:             number;
+  relCount?:               number;
+  onExtractConstitution?:  (doc: IntelligenceDocument) => void;
+  isExtractingConstitution?: boolean;
+  constitutionCount?:      number;
+  onArchive?:              (doc: IntelligenceDocument) => void;
+  isArchiving?:            boolean;
 }
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -84,7 +89,12 @@ const SOURCE_TYPE_BADGE: Record<SourceType, { label: string; cls: string }> = {
   unknown:    { label: "? Unknown",    cls: "bg-zinc-800   text-zinc-500   border border-zinc-700"   },
 };
 
-export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onGenerateQueue, onResetStuck, onGenerateImage, isGeneratingImage = false, onExtractPoints, isExtractingPoints = false, pointCount = 0, onExtractPromises, isExtractingPromises = false, promiseCount = 0, onExtractIntel, isExtractingIntel = false, isMatchingIntel = false, intelCount = 0, relCount = 0 }: Props) {
+function isConstitutionDoc(doc: IntelligenceDocument): boolean {
+  const name = `${doc.title ?? ""} ${doc.fileName ?? ""}`.toLowerCase();
+  return name.includes("constitution") || name.includes("संविधान") || name.includes("samvidhan");
+}
+
+export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onGenerateQueue, onResetStuck, onGenerateImage, isGeneratingImage = false, onExtractPoints, isExtractingPoints = false, pointCount = 0, onExtractPromises, isExtractingPromises = false, promiseCount = 0, onExtractIntel, isExtractingIntel = false, isMatchingIntel = false, intelCount = 0, relCount = 0, onExtractConstitution, isExtractingConstitution = false, constitutionCount = 0, onArchive, isArchiving = false }: Props) {
   const [showFullNotes, setShowFullNotes] = useState(false);
   const displayStatus  = isProcessing ? "processing_ai" : doc.processingStatus;
 
@@ -404,8 +414,37 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
         </div>
       )}
 
+      {/* Constitution Framework Extract — root ontology button */}
+      {isApproved && isConstitutionDoc(doc) && !!onExtractConstitution && !isExtractingConstitution && constitutionCount === 0 && (
+        <button
+          onClick={() => onExtractConstitution!(doc)}
+          className="w-full text-xs font-bold py-2.5 rounded-xl bg-amber-900/50 hover:bg-amber-900 text-amber-200 border border-amber-700 transition-colors"
+        >
+          📜 संविधान Framework निकाल्नुहोस्
+        </button>
+      )}
+      {isExtractingConstitution && (
+        <div className="w-full rounded-xl bg-amber-950/40 border border-amber-800 px-3 py-3 space-y-1.5">
+          <p className="text-amber-300 text-xs font-bold animate-pulse">📜 Constitutional framework निकाल्दैछ…</p>
+          <p className="text-amber-700/80 text-xs leading-relaxed">Article-by-article root ontology बनाउँदैछ — fundamental rights, institutions, state obligations।</p>
+        </div>
+      )}
+      {isApproved && isConstitutionDoc(doc) && constitutionCount > 0 && !isExtractingConstitution && (
+        <div className="w-full rounded-xl bg-amber-950/30 border border-amber-800/60 px-3 py-2.5 space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-amber-300 text-xs font-bold">📜 {constitutionCount} constitutional articles</span>
+            <button
+              onClick={() => onExtractConstitution?.(doc)}
+              className="text-xs text-amber-600 hover:text-amber-400 underline shrink-0"
+            >
+              Re-extract
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Deep Intelligence Extract — national civic memory layer */}
-      {isApproved && !!onExtractIntel && !isExtractingIntel && !isMatchingIntel && intelCount === 0 && (
+      {isApproved && !isConstitutionDoc(doc) && !!onExtractIntel && !isExtractingIntel && !isMatchingIntel && intelCount === 0 && (
         <button
           onClick={() => onExtractIntel!(doc)}
           className="w-full text-xs font-bold py-2.5 rounded-xl bg-indigo-900/50 hover:bg-indigo-900 text-indigo-200 border border-indigo-700 transition-colors"
@@ -464,6 +503,16 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
           >
             View
           </button>
+          {onArchive && (
+            <button
+              onClick={() => onArchive(doc)}
+              disabled={isArchiving}
+              className="text-xs text-zinc-600 hover:text-amber-400 transition-colors disabled:opacity-40"
+              title="Archive this document and delete its extracted records"
+            >
+              {isArchiving ? "…" : "Archive"}
+            </button>
+          )}
           <button
             onClick={() => onDelete(doc)}
             className="text-xs text-zinc-700 hover:text-red-400 transition-colors"

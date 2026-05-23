@@ -100,8 +100,25 @@ export default function DocumentsClient() {
       });
       setIntelCountByDoc(counts);
     }).catch(() => {});
+
+    // Load constitutional_framework counts
+    getDocs(query(
+      collection(db, "constitutional_framework"),
+      where("ownerId", "==", user.uid),
+      limit(500),
+    )).then(snap => {
+      const counts: Record<string, number> = {};
+      snap.docs.forEach(d => {
+        const docId = (d.data() as Record<string, unknown>).sourceDocId as string;
+        if (docId) counts[docId] = (counts[docId] ?? 0) + 1;
+      });
+      setConstitutionCountByDoc(counts);
+    }).catch(() => {});
   }, [user?.uid]);
   const [matchingIntelId, setMatchingIntelId] = useState<string | null>(null);
+  const [extractingConstitutionId, setExtractingConstitutionId] = useState<string | null>(null);
+  const [constitutionCountByDoc, setConstitutionCountByDoc]     = useState<Record<string, number>>({});
+  const [archivingId, setArchivingId] = useState<string | null>(null);
   const [processError,        setProcessError]        = useState<string | null>(null);
   const [processErrorCode,    setProcessErrorCode]    = useState<string | null>(null);
   const [processErrorDetails, setProcessErrorDetails] = useState<string | null>(null);
@@ -123,6 +140,7 @@ export default function DocumentsClient() {
   }, [summary]);
 
   const filtered = docs.filter(d => {
+    if ((d as unknown as Record<string, unknown>).archived === true) return false; // hide archived
     const matchCat    = filter === "all" || d.category === filter;
     const q           = search.toLowerCase();
     const matchSearch = !q
@@ -664,6 +682,93 @@ export default function DocumentsClient() {
     }
   };
 
+  // ── Constitution Framework extraction ──────────────────────────────────────
+  const handleExtractConstitution = async (doc: IntelligenceDocument) => {
+    if (!user?.uid) return;
+    setExtractingConstitutionId(doc.id);
+    try {
+      const res = await fetch("/api/extract-constitution", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          documentId:  doc.id,
+          downloadUrl: doc.downloadUrl,
+          mimeType:    doc.mimeType ?? "application/pdf",
+          docTitle:    doc.title,
+          ownerId:     user.uid,
+        }),
+      });
+      const data = await res.json() as Record<string, unknown>;
+      if (!res.ok) {
+        const msg = [data.error ?? "Constitution extraction failed", data.details].filter(Boolean).join(" — ");
+        alert(`📜 संविधान extract गर्न सकिएन: ${msg}`);
+        return;
+      }
+      const records = data.records as Record<string, unknown>[];
+      if (!records?.length) {
+        alert("AI ले कुनै constitutional records निकाल्न सकेन।");
+        return;
+      }
+      // Save all records to constitutional_framework collection
+      const now = new Date().toISOString();
+      await Promise.all(records.map(r =>
+        addDoc(collection(db, "constitutional_framework"), { ...r, ownerId: user.uid, createdAt: r.createdAt ?? now, updatedAt: now })
+      ));
+      setConstitutionCountByDoc(prev => ({ ...prev, [doc.id]: records.length }));
+      alert(`📜 ${records.length} constitutional framework records saved!\n\nParts: ${(data.partsExtracted as string[] | undefined)?.join(", ") ?? "—"}\n\n${data.summaryNote ?? ""}`);
+    } catch (err) {
+      alert(`Constitution extract error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setExtractingConstitutionId(null);
+    }
+  };
+
+  // ── Archive document (soft-delete + clean intel records) ────────────────────
+  const handleArchive = async (doc: IntelligenceDocument) => {
+    if (!user?.uid) return;
+    const confirmed = window.confirm(
+      `"${doc.title}" archive गर्ने?\n\nYo action le:\n• Document hide गर्छ (delete गर्दैन)\n• यसका सबै janta_intelligence records DELETE गर्छ\n• यसका सबै janta_relationships records DELETE गर्छ\n\nProceed?`
+    );
+    if (!confirmed) return;
+    setArchivingId(doc.id);
+    try {
+      // 1. Delete janta_intelligence records for this doc
+      const intelSnap = await getDocs(query(
+        collection(db, "janta_intelligence"),
+        where("sourceDocId", "==", doc.id),
+        where("ownerId",     "==", user.uid),
+      ));
+      await Promise.all(intelSnap.docs.map(d => deleteDoc(d.ref)));
+
+      // 2. Delete janta_relationships records for this doc
+      const relSnap = await getDocs(query(
+        collection(db, "janta_relationships"),
+        where("sourceDocId", "==", doc.id),
+        where("ownerId",     "==", user.uid),
+      ));
+      await Promise.all(relSnap.docs.map(d => deleteDoc(d.ref)));
+
+      // 3. Delete constitutional_framework records for this doc
+      const constSnap = await getDocs(query(
+        collection(db, "constitutional_framework"),
+        where("sourceDocId", "==", doc.id),
+        where("ownerId",     "==", user.uid),
+      ));
+      await Promise.all(constSnap.docs.map(d => deleteDoc(d.ref)));
+
+      // 4. Mark vault document as archived (hides from grid)
+      await updateIntelligenceDoc(doc.id, { archived: true } as Partial<IntelligenceDocument>);
+
+      // Update local counts
+      setIntelCountByDoc(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
+      setConstitutionCountByDoc(prev => { const n = { ...prev }; delete n[doc.id]; return n; });
+    } catch (err) {
+      alert(`Archive failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setArchivingId(null);
+    }
+  };
+
   const aiReadyCount    = docs.filter(d => d.processingStatus === "ai_ready").length;
   const readyCount      = docs.filter(d => d.processingStatus === "ready").length;
   const awaitingReview  = docs.filter(d =>
@@ -965,6 +1070,11 @@ export default function DocumentsClient() {
                 isMatchingIntel={matchingIntelId === doc.id}
                 intelCount={intelCountByDoc[doc.id] ?? 0}
                 relCount={relCountByDoc[doc.id] ?? 0}
+                onExtractConstitution={handleExtractConstitution}
+                isExtractingConstitution={extractingConstitutionId === doc.id}
+                constitutionCount={constitutionCountByDoc[doc.id] ?? 0}
+                onArchive={handleArchive}
+                isArchiving={archivingId === doc.id}
               />
             ))}
           </div>

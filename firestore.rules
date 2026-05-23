@@ -321,6 +321,18 @@ service cloud.firestore {
       allow delete: if isOwner(resource.data.ownerId) || isDevOwner(resource.data.ownerId);
     }
 
+    // ── CONSTITUTION: root ontology of the governance intelligence graph ────────
+    match /constitutional_framework/{docId} {
+      // All published articles are publicly readable — this is the foundational
+      // semantic backbone of ZZC's civic intelligence
+      allow read:   if resource.data.publishToJanta == true
+                    || isOwner(resource.data.ownerId)
+                    || isDevOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner() || isDevOwner(request.resource.data.ownerId);
+      allow update: if (isOwner(resource.data.ownerId) && ownerUnchanged()) || isDevOwner(resource.data.ownerId);
+      allow delete: if isOwner(resource.data.ownerId) || isDevOwner(resource.data.ownerId);
+    }
+
     // ── Deny all other paths (catch-all) ─────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;

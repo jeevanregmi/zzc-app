@@ -1456,6 +1456,9 @@ export default function JantaClient() {
             ))}
           </div>
           <div className="hidden sm:flex items-center gap-3">
+            <Link href="/constitution" className="text-[11px] text-amber-600 hover:text-amber-400 transition-colors font-semibold">
+              🌳 संविधान →
+            </Link>
             <Link href="/finance" className="text-[11px] text-zinc-500 hover:text-green-400 transition-colors">
               🏦 Finance →
             </Link>
