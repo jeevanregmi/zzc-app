@@ -29,6 +29,7 @@ interface ExtractRequest {
   fiscalYear?:  string;
   ownerId:      string;
   docId:        string;
+  domain?:      string;  // "janta" | "finance" | "banking" | "policy" | "market" — defaults to "janta"
 }
 
 interface ExtractedRecord {
@@ -204,6 +205,7 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     return clientError("text, docTitle, docId, ownerId required", 400, "VALIDATION_ERROR");
   }
 
+  const domain      = body.domain ?? "janta";
   const chunks      = chunkText(body.text);
   const allRecords: Array<ExtractedRecord & { chunkId: string }> = [];
   const summaries:  string[] = [];
@@ -270,10 +272,11 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
   return new Response(
     JSON.stringify({
       ok:         true,
-      records:    deduped,
+      records:    deduped.map(r => ({ ...r, domain })),
       totalFound: deduped.length,
       rawCount:   allRecords.length,
       chunkCount: chunks.length,
+      domain,
       docSummary: summaries.join(" | ") || `${deduped.length} intelligence records extracted from ${body.docTitle}`,
     }),
     { headers: CORS },

@@ -497,6 +497,7 @@ export default function DocumentsClient() {
           sourceYear: new Date(doc.uploadedAt).getFullYear().toString(),
           ownerId:    user.uid,
           docId:      doc.id,
+          domain:     doc.category === "finance" ? "finance" : "janta",
         }),
       });
 
@@ -518,17 +519,20 @@ export default function DocumentsClient() {
       await Promise.all(oldSnap.docs.map(d => deleteDoc(d.ref)));
 
       // Save all new records and collect IDs + data for matching
-      const now = new Date().toISOString();
+      const now    = new Date().toISOString();
+      const domain = (data as { domain?: string }).domain ?? "janta";
       const savedRecords: Array<Record<string, unknown>> = [];
       const savePromises = data.records.map(r => {
         const record = {
           ...r,
+          domain,
           ownerId:              user.uid,
           sourceDocId:          doc.id,
           sourceDocTitle:       doc.title,
           implementationStatus: "announced",
           verificationStatus:   "ai_extracted",
-          publishToJanta:       true,
+          publishToJanta:       domain === "janta",
+          published:            true,
           createdAt:            now,
           updatedAt:            now,
         };

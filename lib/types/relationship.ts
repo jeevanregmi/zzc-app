@@ -1,16 +1,10 @@
 /**
- * IntelRelationship — ZZC Janta Knowledge Graph Edge
+ * IntelRelationship — ZZC National Knowledge Graph Edge
  *
- * This is the core of the national civic memory system.
- * Every relationship connects two intelligence records across time,
- * documents, or data sources — building Nepal's governance memory graph.
+ * Cross-domain edges are first-class: a finance record can relate
+ * to a civic record (NRB directive → public budget impact).
  *
- * Example:
- *   2083 policy: "10,000 schools internet"  ──[funding_for]──▶  2084 budget: "Rs 2 Arba allocated"
- *   2084 budget: "Rs 2 Arba allocated"      ──[progress_update]──▶  2085 report: "2000 schools connected"
- *   2085 report: "2000 schools connected"   ◀──[contradiction]──  complaint: "Bajura school has no internet"
- *
- * Collection: janta_relationships
+ * Collection: janta_relationships (the national relationship graph)
  */
 
 export type RelationshipType =

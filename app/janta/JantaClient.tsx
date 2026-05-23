@@ -1449,9 +1449,14 @@ export default function JantaClient() {
               </button>
             ))}
           </div>
-          <Link href="/vault/documents" className="text-[11px] text-zinc-600 hover:text-zinc-400 hidden sm:block">
-            Admin →
-          </Link>
+          <div className="hidden sm:flex items-center gap-3">
+            <Link href="/finance" className="text-[11px] text-zinc-500 hover:text-green-400 transition-colors">
+              🏦 Finance →
+            </Link>
+            <Link href="/vault/documents" className="text-[11px] text-zinc-600 hover:text-zinc-400">
+              Admin →
+            </Link>
+          </div>
         </div>
       </div>
 

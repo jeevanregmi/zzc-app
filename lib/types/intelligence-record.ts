@@ -1,22 +1,29 @@
 /**
- * IntelligenceRecord — ZZC Janta National Civic Memory Schema
+ * IntelligenceRecord — ZZC National Intelligence Schema
  *
  * This is NOT a document analysis artifact.
- * This is a node in Nepal's national governance knowledge graph.
+ * This is a node in Nepal's national knowledge graph — shared across
+ * all ZZC intelligence domains (Janta, Finance, Banking, Policy, etc.)
  *
- * Every extracted record is a structured, traceable, cross-linkable
- * unit of civic intelligence — budget line, project, promise, reform,
- * institution, target — that persists permanently and accumulates over time.
+ * Collection: janta_intelligence (the national intelligence collection)
+ * Domain-tagged: every record carries a `domain` field for routing.
  *
- * The moat is not summaries. The moat is long-term machine-readable
- * national memory with relationship intelligence.
- *
- * Collection: janta_intelligence
+ * The moat is ONE shared structured national memory graph — not per-domain silos.
  */
+
+// ── Intelligence Domain ──────────────────────────────────────────────────────
+
+export type IntelDomain =
+  | "janta"      // civic governance, promises, public projects
+  | "finance"    // NRB, banks, EPF, SSF, CIT, insurance, NEPSE
+  | "banking"    // bank-specific directives, rates, complaints
+  | "policy"     // laws, acts, regulations
+  | "market";    // NEPSE, investment, cooperative rules
 
 // ── Record Classification ────────────────────────────────────────────────────
 
 export type IntelRecordType =
+  // ── Civic / Janta ─────────────────────────────────────────────
   | "promise"             // specific government commitment/वाचा
   | "budget_target"       // financial allocation with amount
   | "project"             // infrastructure or development project
@@ -26,6 +33,18 @@ export type IntelRecordType =
   | "reform"              // policy, law, regulation change
   | "digital_policy"      // technology, digitalization, e-governance
   | "financial_inclusion" // banking, insurance, credit access
+  // ── Finance / Banking ─────────────────────────────────────────
+  | "bank_directive"      // NRB circular or bank directive
+  | "interest_rate"       // deposit/lending rate change
+  | "loan_rule"           // loan limit, collateral, eligibility rule
+  | "epf_rule"            // EPF contribution, interest, withdrawal rule
+  | "ssf_rule"            // SSF scheme, contribution, benefit rule
+  | "cit_rule"            // CIT contribution or benefit rule
+  | "insurance_rule"      // insurance regulation or claim rule
+  | "nepse_rule"          // NEPSE, IPO, mutual fund regulation
+  | "monetary_policy"     // NRB monetary policy target/instrument
+  | "financial_complaint" // public complaint pattern or regulatory action
+  // ── Shared ────────────────────────────────────────────────────
   | "other";              // any other specific trackable item
 
 // ── Implementation Status (10 states for full lifecycle) ────────────────────
@@ -79,6 +98,11 @@ export interface IntelTraceability {
 export interface IntelligenceRecord {
   id:      string;
   ownerId: string;
+
+  // ── Domain Routing ───────────────────────────────────────────────────────
+  // Which ZZC intelligence layer this record belongs to.
+  // Records without domain field default to "janta" (backward compat).
+  domain: IntelDomain;
 
   // ── Source Document ──────────────────────────────────────────────────────
   sourceDocId:    string;   // vault_intelligence_docs ID
@@ -143,7 +167,8 @@ export interface IntelligenceRecord {
   confidence: number;  // 0.0-1.0
 
   // ── Publishing ───────────────────────────────────────────────────────────
-  publishToJanta: boolean;
+  publishToJanta: boolean;  // legacy — kept for backward compat with existing records
+  published?:     boolean;  // domain-agnostic publish flag for new domains
   featured?:      boolean;
 
   // ── Timestamps ───────────────────────────────────────────────────────────
