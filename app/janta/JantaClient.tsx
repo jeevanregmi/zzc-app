@@ -7,6 +7,7 @@ import { db } from "../firebase";
 import type { IntelligenceDocument } from "../../lib/types/documents";
 import type { QueueItem } from "../../lib/types/queue";
 import type { PolicyPoint } from "../../lib/types/policy-points";
+import type { IntelligenceRecord } from "../../lib/types/intelligence-record";
 
 // ─── Date helpers (Nepali numerals + month names) ─────────────────────────────
 
@@ -862,9 +863,403 @@ function YearDivider({ year }: { year: string }) {
   );
 }
 
+// ─── Intelligence Records View ────────────────────────────────────────────────
+
+const STATUS_META: Record<string, { cls: string; label: string }> = {
+  announced:           { cls: "bg-zinc-800 text-zinc-300 border-zinc-700",     label: "घोषित"   },
+  budgeted:            { cls: "bg-blue-950 text-blue-300 border-blue-900",     label: "बजेट"    },
+  started:             { cls: "bg-cyan-950 text-cyan-300 border-cyan-900",     label: "सुरु"    },
+  in_progress:         { cls: "bg-amber-950 text-amber-300 border-amber-900",  label: "जारी"    },
+  delayed:             { cls: "bg-red-950 text-red-300 border-red-900",        label: "ढिलो"   },
+  partially_completed: { cls: "bg-orange-950 text-orange-300 border-orange-900", label: "आंशिक" },
+  completed:           { cls: "bg-green-950 text-green-300 border-green-900",  label: "पूरा"   },
+  failed:              { cls: "bg-red-950 text-red-400 border-red-900",        label: "असफल"   },
+  disputed:            { cls: "bg-purple-950 text-purple-300 border-purple-900", label: "विवादित" },
+  cancelled:           { cls: "bg-zinc-900 text-zinc-500 border-zinc-800",     label: "रद्द"   },
+};
+
+const TYPE_NP: Record<string, string> = {
+  promise:             "वाचा",
+  budget_target:       "बजेट",
+  project:             "परियोजना",
+  institution:         "निकाय",
+  employment_target:   "रोजगारी",
+  social_program:      "सामाजिक",
+  reform:              "सुधार",
+  digital_policy:      "डिजिटल",
+  financial_inclusion: "वित्तीय",
+  other:               "अन्य",
+};
+
+const TYPE_COLOR: Record<string, string> = {
+  promise:             "text-indigo-300 bg-indigo-950 border-indigo-800",
+  budget_target:       "text-green-300 bg-green-950 border-green-800",
+  project:             "text-cyan-300 bg-cyan-950 border-cyan-800",
+  institution:         "text-blue-300 bg-blue-950 border-blue-800",
+  employment_target:   "text-purple-300 bg-purple-950 border-purple-800",
+  social_program:      "text-amber-300 bg-amber-950 border-amber-800",
+  reform:              "text-rose-300 bg-rose-950 border-rose-800",
+  digital_policy:      "text-sky-300 bg-sky-950 border-sky-800",
+  financial_inclusion: "text-emerald-300 bg-emerald-950 border-emerald-800",
+  other:               "text-zinc-300 bg-zinc-800 border-zinc-700",
+};
+
+function IntelRecordCard({ record }: { record: IntelligenceRecord }) {
+  const [expanded, setExpanded] = useState(false);
+  const statusMeta = STATUS_META[record.implementationStatus] ?? STATUS_META.announced;
+  const typeColor  = TYPE_COLOR[record.type] ?? TYPE_COLOR.other;
+  const typeLabel  = TYPE_NP[record.type] ?? record.type;
+  const confidence = Math.round((record.confidence ?? 0) * 100);
+
+  return (
+    <div
+      className="rounded-2xl border border-zinc-800 bg-zinc-950 overflow-hidden transition-all"
+      onClick={() => setExpanded(e => !e)}
+    >
+      {/* Confidence strip */}
+      <div className="h-0.5 bg-zinc-900">
+        <div
+          className="h-full bg-indigo-500 transition-all"
+          style={{ width: `${confidence}%` }}
+        />
+      </div>
+
+      <div className="px-4 py-3 cursor-pointer">
+        {/* Badges row */}
+        <div className="flex items-center gap-1.5 flex-wrap mb-2">
+          <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border ${typeColor}`}>
+            {typeLabel}
+          </span>
+          <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border ${statusMeta.cls}`}>
+            {statusMeta.label}
+          </span>
+          {record.sector && (
+            <span className="text-[9px] text-zinc-600 px-1.5 py-0.5 bg-zinc-900 rounded-full">
+              {toNepaliSector(record.sector)}
+            </span>
+          )}
+          <span className="ml-auto text-[9px] text-zinc-700 font-mono">{confidence}%</span>
+        </div>
+
+        {/* Title */}
+        <p className="text-sm font-black text-white leading-snug">{record.titleNepali || record.title}</p>
+        {record.titleNepali && record.title && record.titleNepali !== record.title && (
+          <p className="text-[10px] text-zinc-600 mt-0.5">{record.title}</p>
+        )}
+
+        {/* Summary */}
+        <p className={`text-xs text-zinc-400 leading-relaxed mt-2 ${expanded ? "" : "line-clamp-2"}`}>
+          {record.summaryNepali}
+        </p>
+
+        {/* Key facts row */}
+        <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2.5">
+          {record.ministry && (
+            <div className="flex items-center gap-1">
+              <span className="text-[9px] text-zinc-600">🏛️</span>
+              <span className="text-[10px] text-zinc-500 line-clamp-1 max-w-[180px]">{record.ministry}</span>
+            </div>
+          )}
+          {record.target && (
+            <div className="flex items-center gap-1">
+              <span className="text-[9px] text-zinc-600">🎯</span>
+              <span className="text-[10px] text-indigo-400 font-semibold">{record.target}</span>
+            </div>
+          )}
+          {record.timeline && (
+            <div className="flex items-center gap-1">
+              <span className="text-[9px] text-zinc-600">📅</span>
+              <span className="text-[10px] text-zinc-500">{record.timeline}</span>
+            </div>
+          )}
+          {record.budgetAmount && (
+            <div className="flex items-center gap-1">
+              <span className="text-[9px] text-zinc-600">💰</span>
+              <span className="text-[10px] text-green-400 font-semibold">{record.budgetAmount}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Source */}
+        {record.sourceDocTitle && (
+          <p className="text-[9px] text-zinc-700 mt-2 truncate">📄 {record.sourceDocTitle}</p>
+        )}
+      </div>
+
+      {/* Expanded: traceability */}
+      {expanded && record.traceability && (
+        <div className="px-4 pb-4 border-t border-zinc-800/50 mt-1 pt-3 space-y-2">
+          {record.traceability.sourceQuote && (
+            <div className="bg-indigo-950/30 border border-indigo-900/40 rounded-xl px-3 py-2.5">
+              <p className="text-[9px] font-black text-indigo-600 uppercase tracking-widest mb-1">
+                📜 Document मा लेखिएको
+              </p>
+              <p className="text-xs text-indigo-200/80 italic leading-relaxed">
+                &ldquo;{record.traceability.sourceQuote}&rdquo;
+              </p>
+            </div>
+          )}
+          {record.traceability.extractionReasoning && (
+            <p className="text-[9px] text-zinc-600">
+              🤖 {record.traceability.extractionReasoning}
+            </p>
+          )}
+          {record.sourceSection && (
+            <p className="text-[9px] text-zinc-700">📍 {record.sourceSection}</p>
+          )}
+        </div>
+      )}
+
+      {/* Expand toggle hint */}
+      <div className="px-4 pb-2 flex justify-end">
+        <span className="text-[9px] text-zinc-700">{expanded ? "▲ बन्द" : "▼ स्रोत हेर्नुस्"}</span>
+      </div>
+    </div>
+  );
+}
+
+interface QueryResult {
+  answer:      string;
+  keyFacts:    string[];
+  citedTitles: string[];
+  recordIds:   string[];
+  confidence:  number;
+  disclaimer:  string;
+}
+
+function IntelView({ records }: { records: IntelligenceRecord[] }) {
+  const [search,      setSearch]      = useState("");
+  const [querying,    setQuerying]    = useState(false);
+  const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
+  const [typeFilter,  setTypeFilter]  = useState<string>("all");
+
+  const q = search.trim().toLowerCase();
+
+  const filtered = records.filter(r => {
+    const matchType = typeFilter === "all" || r.type === typeFilter;
+    if (!q) return matchType;
+    return matchType && (
+      r.title.toLowerCase().includes(q)          ||
+      r.titleNepali.includes(search.trim())      ||
+      r.summaryNepali.includes(search.trim())    ||
+      r.sector.toLowerCase().includes(q)         ||
+      r.ministry.toLowerCase().includes(q)       ||
+      (r.target ?? "").toLowerCase().includes(q) ||
+      (r.tags ?? []).some(t => t.toLowerCase().includes(q))
+    );
+  });
+
+  const handleQuery = async () => {
+    if (!search.trim()) return;
+    setQuerying(true);
+    setQueryResult(null);
+    try {
+      const candidates = filtered.length > 0 ? filtered : records;
+      const res = await fetch("/api/civic-query", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          question: search.trim(),
+          records:  candidates.slice(0, 40).map(r => ({
+            id:                    r.id,
+            type:                  r.type,
+            title:                 r.title,
+            titleNepali:           r.titleNepali,
+            summaryNepali:         r.summaryNepali,
+            sector:                r.sector,
+            ministry:              r.ministry,
+            target:                r.target,
+            timeline:              r.timeline,
+            budgetAmount:          r.budgetAmount,
+            fiscalYear:            r.fiscalYear,
+            sourceDocTitle:        r.sourceDocTitle,
+            implementationStatus:  r.implementationStatus ?? "announced",
+            confidence:            r.confidence,
+          })),
+          locale: "ne",
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json() as { ok: boolean } & QueryResult;
+        if (data.ok) setQueryResult(data);
+      }
+    } catch { /* non-fatal */ }
+    finally { setQuerying(false); }
+  };
+
+  // Type breakdown for filter chips
+  const typeCounts = records.reduce<Record<string, number>>((acc, r) => {
+    acc[r.type] = (acc[r.type] ?? 0) + 1;
+    return acc;
+  }, {});
+
+  const topTypes = Object.entries(typeCounts)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 5)
+    .map(([t]) => t);
+
+  if (records.length === 0) {
+    return (
+      <div className="py-24 text-center space-y-4">
+        <p className="text-5xl">🏛️</p>
+        <p className="text-white font-black text-xl">Intelligence Records छैनन् अझै</p>
+        <p className="text-zinc-500 text-sm max-w-xs mx-auto leading-relaxed">
+          Vault मा approved document बाट{" "}
+          <span className="text-indigo-400 font-semibold">"🏛️ Deep Intelligence निकाल्नुहोस्"</span>{" "}
+          button थिच्नुस् — तब यहाँ structured records आउँछन्।
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Hero stat */}
+      <div className="bg-zinc-950 border border-indigo-900/40 rounded-2xl px-5 py-4">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p className="text-white font-black text-sm">🏛️ Nepal Civic Intelligence</p>
+            <p className="text-zinc-500 text-xs mt-0.5">
+              {toNp(records.length)} structured records · real government data · traceable to source
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-indigo-400 font-black text-2xl leading-none">{toNp(records.length)}</p>
+            <p className="text-zinc-600 text-[10px]">records</p>
+          </div>
+        </div>
+
+        {/* Type filter chips */}
+        <div className="flex gap-1.5 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+          <button
+            onClick={() => setTypeFilter("all")}
+            className={`shrink-0 text-[10px] font-black px-3 py-1 rounded-full transition-all ${
+              typeFilter === "all" ? "bg-indigo-500 text-black" : "bg-zinc-800 text-zinc-400"
+            }`}
+          >
+            सबै {toNp(records.length)}
+          </button>
+          {topTypes.map(t => (
+            <button
+              key={t}
+              onClick={() => setTypeFilter(t === typeFilter ? "all" : t)}
+              className={`shrink-0 text-[10px] font-black px-3 py-1 rounded-full transition-all ${
+                typeFilter === t ? "bg-indigo-500 text-black" : "bg-zinc-800 text-zinc-400"
+              }`}
+            >
+              {TYPE_NP[t] ?? t} {toNp(typeCounts[t])}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Civic Query Box */}
+      <div className="bg-zinc-950 border border-indigo-900/30 rounded-2xl px-4 py-4 space-y-3">
+        <p className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">
+          🤖 AI Query — Structured Records बाट जवाफ
+        </p>
+        <div className="flex gap-2">
+          <input
+            value={search}
+            onChange={e => { setSearch(e.target.value); setQueryResult(null); }}
+            onKeyDown={e => { if (e.key === "Enter") handleQuery(); }}
+            placeholder="सरकारले के वाचा गरेको थियो? शिक्षामा कति बजेट? खोज्नुस् वा सोध्नुस्…"
+            className="flex-1 bg-zinc-900 border border-zinc-700 rounded-xl px-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-indigo-700 transition-colors"
+          />
+          <button
+            onClick={handleQuery}
+            disabled={querying || !search.trim()}
+            className="shrink-0 px-4 py-2.5 rounded-xl text-xs font-black bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-40 transition-colors"
+          >
+            {querying ? "…" : "जवाफ"}
+          </button>
+        </div>
+        <p className="text-[9px] text-zinc-700">
+          Search: records filter हुन्छ · Enter / जवाफ: AI ले structured records बाट answer दिन्छ
+        </p>
+      </div>
+
+      {/* AI Query Result */}
+      {queryResult && (
+        <div className="bg-indigo-950/30 border border-indigo-800/60 rounded-2xl px-5 py-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">🤖 AI जवाफ</p>
+            <div className="flex items-center gap-1.5">
+              <div
+                className="h-1.5 w-16 bg-zinc-800 rounded-full overflow-hidden"
+              >
+                <div
+                  className="h-full bg-indigo-500 rounded-full"
+                  style={{ width: `${Math.round(queryResult.confidence * 100)}%` }}
+                />
+              </div>
+              <span className="text-[9px] text-zinc-600">{Math.round(queryResult.confidence * 100)}%</span>
+            </div>
+          </div>
+
+          <p className="text-sm text-white leading-relaxed">{queryResult.answer}</p>
+
+          {queryResult.keyFacts.length > 0 && (
+            <ul className="space-y-1.5">
+              {queryResult.keyFacts.map((f, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="text-indigo-500 text-xs shrink-0 mt-0.5">•</span>
+                  <p className="text-xs text-indigo-200/80 leading-snug">{f}</p>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {queryResult.citedTitles.length > 0 && (
+            <div className="border-t border-indigo-900/40 pt-2.5">
+              <p className="text-[9px] text-zinc-600 mb-1.5">स्रोत records:</p>
+              <div className="flex flex-wrap gap-1">
+                {queryResult.citedTitles.map((t, i) => (
+                  <span key={i} className="text-[9px] bg-indigo-900/30 text-indigo-400 px-2 py-0.5 rounded-full border border-indigo-800/40">
+                    {t}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {queryResult.disclaimer && (
+            <p className="text-[9px] text-zinc-700 border-t border-zinc-800 pt-2">{queryResult.disclaimer}</p>
+          )}
+        </div>
+      )}
+
+      {/* Records count */}
+      {q && (
+        <p className="text-xs text-zinc-600 text-center">
+          {toNp(filtered.length)} records match &ldquo;{search}&rdquo;
+        </p>
+      )}
+
+      {/* Record cards */}
+      {filtered.length === 0 && q ? (
+        <div className="py-12 text-center">
+          <p className="text-zinc-600 text-sm">"{search}" को लागि कुनै record भेटिएन।</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {(q || typeFilter !== "all" ? filtered : filtered.slice(0, 50)).map(r => (
+            <IntelRecordCard key={r.id} record={r} />
+          ))}
+          {!q && typeFilter === "all" && filtered.length > 50 && (
+            <p className="text-center text-xs text-zinc-600 py-4">
+              {toNp(filtered.length - 50)} थप records — खोज्नुस् वा filter गर्नुस्
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Hero ─────────────────────────────────────────────────────────────────────
 
-function Hero({ count, span }: { count: number; span: string }) {
+function Hero({ count, span, intelCount }: { count: number; span: string; intelCount: number }) {
   return (
     <div className="relative overflow-hidden bg-black border-b border-zinc-900">
       <div
@@ -904,6 +1299,15 @@ function Hero({ count, span }: { count: number; span: string }) {
               <p className="text-green-400 font-black text-2xl leading-none">{toNp(count)}</p>
               <p className="text-zinc-600 text-[10px] mt-0.5">documents</p>
             </div>
+            {intelCount > 0 && (
+              <>
+                <div className="w-px h-8 bg-zinc-800" />
+                <div className="text-center">
+                  <p className="text-indigo-400 font-black text-2xl leading-none">{toNp(intelCount)}</p>
+                  <p className="text-zinc-600 text-[10px] mt-0.5">intel records</p>
+                </div>
+              </>
+            )}
             {span && (
               <>
                 <div className="w-px h-8 bg-zinc-800" />
@@ -926,8 +1330,9 @@ export default function JantaClient() {
   const [docs,         setDocs]         = useState<IntelligenceDocument[]>([]);
   const [contentItems, setContentItems] = useState<QueueItem[]>([]);
   const [policyPoints, setPolicyPoints] = useState<PolicyPoint[]>([]);
+  const [intelRecords, setIntelRecords] = useState<IntelligenceRecord[]>([]);
   const [loading,      setLoading]      = useState(true);
-  const [filter,       setFilter]       = useState<"all" | "official" | "epf" | "budget" | "content" | "points">("all");
+  const [filter,       setFilter]       = useState<"all" | "official" | "epf" | "budget" | "content" | "points" | "intel">("all");
   const [slideDoc,     setSlideDoc]     = useState<IntelligenceDocument | null>(null);
 
   useEffect(() => {
@@ -948,20 +1353,27 @@ export default function JantaClient() {
     )).then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as PolicyPoint)))
       .catch(err => { console.warn("vault_policy_points fetch:", err?.message ?? err); return [] as PolicyPoint[]; });
 
-    Promise.all([docsPromise, contentPromise, pointsPromise])
-      .then(([docItems, queueItems, pts]) => {
+    const intelPromise = getDocs(query(
+      collection(db, "janta_intelligence"),
+      where("publishToJanta", "==", true),
+    )).then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as IntelligenceRecord)))
+      .catch(err => { console.warn("janta_intelligence fetch:", err?.message ?? err); return [] as IntelligenceRecord[]; });
+
+    Promise.all([docsPromise, contentPromise, pointsPromise, intelPromise])
+      .then(([docItems, queueItems, pts, intel]) => {
         setDocs(docItems.sort((a, b) => (b.uploadedAt ?? "").localeCompare(a.uploadedAt ?? "")));
         setContentItems(queueItems.sort((a, b) =>
           (b.jantaPublishedAt ?? b.createdAt ?? "").localeCompare(a.jantaPublishedAt ?? a.createdAt ?? "")
         ));
         setPolicyPoints(pts.sort((a, b) => a.pointNumber - b.pointNumber));
+        setIntelRecords(intel.sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0)));
         setLoading(false);
       })
       .catch(err => { console.error("janta fetch:", err); setLoading(false); });
   }, []);
 
   const filteredDocs = docs.filter(d => {
-    if (filter === "content" || filter === "points") return false;
+    if (filter === "content" || filter === "points" || filter === "intel") return false;
     if (filter === "official") return d.sourceType === "official";
     if (filter === "epf")      return d.detectedTopics?.some(t => /epf|ssf|cit/i.test(t));
     if (filter === "budget")   return d.detectedTopics?.some(t => /budget|बजेट|fiscal/i.test(t));
@@ -1007,6 +1419,7 @@ export default function JantaClient() {
 
   const FILTERS = [
     { key: "all"     as const, label: "सबै" },
+    { key: "intel"   as const, label: `🏛️ ${intelRecords.length > 0 ? toNp(intelRecords.length) + " Records" : "Intelligence"}` },
     { key: "official"as const, label: "✓ Official" },
     { key: "epf"     as const, label: "EPF / SSF" },
     { key: "budget"  as const, label: "बजेट" },
@@ -1017,7 +1430,7 @@ export default function JantaClient() {
   return (
     <div className="min-h-screen bg-black text-white">
       {slideDoc && <SlideShow doc={slideDoc} onClose={() => setSlideDoc(null)} />}
-      <Hero count={totalCount} span={span} />
+      <Hero count={totalCount} span={span} intelCount={intelRecords.length} />
 
       {/* Sticky nav */}
       <div className="sticky top-0 z-20 bg-black/90 backdrop-blur border-b border-zinc-900">
@@ -1049,6 +1462,8 @@ export default function JantaClient() {
             <div className="w-10 h-10 border-2 border-green-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
             <p className="text-zinc-500 text-sm">Timeline load हुँदैछ…</p>
           </div>
+        ) : filter === "intel" ? (
+          <IntelView records={intelRecords} />
         ) : filter === "points" ? (
           <GamingView points={policyPoints} />
         ) : allEntries.length === 0 ? (

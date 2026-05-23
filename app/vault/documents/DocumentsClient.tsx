@@ -6,7 +6,7 @@ import { useIntelligenceDocs } from "../../../hooks/vault/useIntelligenceDocs";
 import { useDocumentUpload } from "../../../hooks/vault/useDocumentUpload";
 import { deleteIntelligenceDoc, updateIntelligenceDoc, createQueueItem } from "../../../lib/vault/firestore";
 import { aiCostAdapter } from "../../../lib/business/firestore";
-import { collection, addDoc, getDocs, query, where, deleteDoc, Timestamp, deleteField } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, where, deleteDoc, Timestamp, deleteField, limit } from "firebase/firestore";
 import { db } from "../../firebase";
 import type { AIService } from "../../../lib/business/types";
 import Link from "next/link";
@@ -81,6 +81,10 @@ export default function DocumentsClient() {
   const [pointCountByDoc, setPointCountByDoc] = useState<Record<string, number>>({});
   const [extractingPromisesId, setExtractingPromisesId] = useState<string | null>(null);
   const [promiseCountByDoc, setPromiseCountByDoc] = useState<Record<string, number>>({});
+  const [extractingIntelId, setExtractingIntelId] = useState<string | null>(null);
+  const [intelCountByDoc, setIntelCountByDoc] = useState<Record<string, number>>({});
+  const [relCountByDoc, setRelCountByDoc] = useState<Record<string, number>>({});
+  const [matchingIntelId, setMatchingIntelId] = useState<string | null>(null);
   const [processError,        setProcessError]        = useState<string | null>(null);
   const [processErrorCode,    setProcessErrorCode]    = useState<string | null>(null);
   const [processErrorDetails, setProcessErrorDetails] = useState<string | null>(null);
@@ -463,6 +467,159 @@ export default function DocumentsClient() {
     }
   };
 
+  const handleExtractIntelligence = async (doc: IntelligenceDocument) => {
+    if (!user?.uid) return;
+    setExtractingIntelId(doc.id);
+    try {
+      // Full OCR text is the authoritative source — fall back to AI fields if not available
+      const fullText = (doc as unknown as Record<string, unknown>).ocrText as string | undefined;
+      const text = fullText
+        || [
+            doc.aiSummary,
+            ...(doc.aiKeyInsights ?? []),
+            ...(doc.policyChanges ?? []),
+            ...(doc.financialImplications ?? []),
+            doc.nepaliExplainer,
+          ].filter(Boolean).join("\n\n");
+
+      if (!text) {
+        alert("Document मा text छैन — पहिले AI analyze गर्नुस् त्यसपछि Deep Extract गर्नुस्।");
+        return;
+      }
+
+      const res = await fetch("/api/extract-intelligence", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          text,
+          docTitle:   doc.title,
+          docType:    doc.detectedTopics?.[0] ?? "government document",
+          sourceYear: new Date(doc.uploadedAt).getFullYear().toString(),
+          ownerId:    user.uid,
+          docId:      doc.id,
+        }),
+      });
+
+      const data = await res.json() as {
+        ok:          boolean;
+        records?:    Record<string, unknown>[];
+        totalFound?: number;
+        chunkCount?: number;
+        error?:      string;
+      };
+      if (!data.ok || !data.records) throw new Error(data.error ?? "Extraction failed");
+
+      // Clear old intel for this doc
+      const oldSnap = await getDocs(query(
+        collection(db, "janta_intelligence"),
+        where("sourceDocId", "==", doc.id),
+        where("ownerId",     "==", user.uid),
+      ));
+      await Promise.all(oldSnap.docs.map(d => deleteDoc(d.ref)));
+
+      // Save all new records and collect IDs + data for matching
+      const now = new Date().toISOString();
+      const savedRecords: Array<Record<string, unknown>> = [];
+      const savePromises = data.records.map(r => {
+        const record = {
+          ...r,
+          ownerId:              user.uid,
+          sourceDocId:          doc.id,
+          sourceDocTitle:       doc.title,
+          implementationStatus: "announced",
+          verificationStatus:   "ai_extracted",
+          publishToJanta:       true,
+          createdAt:            now,
+          updatedAt:            now,
+        };
+        savedRecords.push(record);
+        return addDoc(collection(db, "janta_intelligence"), record);
+      });
+      const savedRefs = await Promise.all(savePromises);
+
+      // Attach Firestore IDs to saved records for matching
+      const savedWithIds = savedRecords.map((r, i) => ({
+        ...r,
+        id: savedRefs[i].id,
+      }));
+
+      setIntelCountByDoc(prev => ({ ...prev, [doc.id]: savedWithIds.length }));
+
+      // ── Step 2: Relationship Matching ────────────────────────────────────
+      // Non-blocking — matching failure must not break extraction result
+      setExtractingIntelId(null);
+      setMatchingIntelId(doc.id);
+
+      try {
+        // Fetch recent intel records from other documents (candidates for matching)
+        const candidateSnap = await getDocs(query(
+          collection(db, "janta_intelligence"),
+          where("ownerId", "==", user.uid),
+          limit(60),
+        ));
+        const candidates = candidateSnap.docs
+          .map(d => ({ id: d.id, ...d.data() } as Record<string, unknown>))
+          .filter(r => r.sourceDocId !== doc.id)
+          .slice(0, 40);
+
+        if (candidates.length > 0 && savedWithIds.length > 0) {
+          const matchRes = await fetch("/api/match-intelligence", {
+            method:  "POST",
+            headers: { "Content-Type": "application/json" },
+            body:    JSON.stringify({
+              newRecords:     savedWithIds.slice(0, 30),
+              candidates:     candidates.slice(0, 40),
+              sourceDocId:    doc.id,
+              sourceDocTitle: doc.title,
+              ownerId:        user.uid,
+            }),
+          });
+
+          if (matchRes.ok) {
+            const matchData = await matchRes.json() as {
+              ok:              boolean;
+              relationships?:  Array<{
+                fromId: string; toId: string;
+                fromTitle: string; toTitle: string;
+                relationshipType: string; confidence: number; explanation: string;
+              }>;
+              totalMatched?: number;
+            };
+
+            if (matchData.ok && matchData.relationships?.length) {
+              const rNow = new Date().toISOString();
+              await Promise.all(matchData.relationships.map(rel =>
+                addDoc(collection(db, "janta_relationships"), {
+                  ...rel,
+                  ownerId:            user.uid,
+                  sourceDocIds:       [doc.id],
+                  verificationStatus: "ai_matched",
+                  createdAt:          rNow,
+                  updatedAt:          rNow,
+                })
+              ));
+              setRelCountByDoc(prev => ({
+                ...prev,
+                [doc.id]: matchData.relationships!.length,
+              }));
+            }
+          }
+        }
+      } catch {
+        // Matching is best-effort — extraction is already saved, never fail here
+      } finally {
+        setMatchingIntelId(null);
+      }
+
+      return; // already cleared extractingIntelId above
+    } catch (err) {
+      alert(`Intelligence extract गर्न सकिएन: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setExtractingIntelId(null);
+      setMatchingIntelId(null);
+    }
+  };
+
   const aiReadyCount    = docs.filter(d => d.processingStatus === "ai_ready").length;
   const readyCount      = docs.filter(d => d.processingStatus === "ready").length;
   const awaitingReview  = docs.filter(d =>
@@ -759,6 +916,11 @@ export default function DocumentsClient() {
                 onExtractPromises={handleExtractPromises}
                 isExtractingPromises={extractingPromisesId === doc.id}
                 promiseCount={promiseCountByDoc[doc.id] ?? 0}
+                onExtractIntel={handleExtractIntelligence}
+                isExtractingIntel={extractingIntelId === doc.id}
+                isMatchingIntel={matchingIntelId === doc.id}
+                intelCount={intelCountByDoc[doc.id] ?? 0}
+                relCount={relCountByDoc[doc.id] ?? 0}
               />
             ))}
           </div>

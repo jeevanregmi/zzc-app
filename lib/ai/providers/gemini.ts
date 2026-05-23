@@ -57,6 +57,7 @@ export async function callGemini(opts: {
   system:     string;
   parts:      GeminiPart[];
   maxTokens?: number;
+  jsonMode?:  boolean;
 }): Promise<GeminiCallResult> {
   const model     = opts.model ?? GEMINI_DEFAULT_MODEL;
   const maxTokens = opts.maxTokens ?? 2048;
@@ -70,7 +71,7 @@ export async function callGemini(opts: {
       body:    JSON.stringify({
         system_instruction: { parts: [{ text: opts.system }] },
         contents:           [{ role: "user", parts: opts.parts }],
-        generationConfig:   { maxOutputTokens: maxTokens, temperature: 0.1, thinkingConfig: { thinkingBudget: 0 } },
+        generationConfig:   { maxOutputTokens: maxTokens, temperature: 0.1, responseMimeType: opts.jsonMode ? "application/json" : undefined, thinkingConfig: { thinkingBudget: 0 } },
       }),
     },
   );

@@ -64,6 +64,11 @@ interface Props {
   onExtractPromises?: (doc: IntelligenceDocument) => void;
   isExtractingPromises?: boolean;
   promiseCount?:     number;
+  onExtractIntel?:    (doc: IntelligenceDocument) => void;
+  isExtractingIntel?: boolean;
+  isMatchingIntel?:   boolean;
+  intelCount?:        number;
+  relCount?:          number;
 }
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -79,7 +84,7 @@ const SOURCE_TYPE_BADGE: Record<SourceType, { label: string; cls: string }> = {
   unknown:    { label: "? Unknown",    cls: "bg-zinc-800   text-zinc-500   border border-zinc-700"   },
 };
 
-export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onGenerateQueue, onResetStuck, onGenerateImage, isGeneratingImage = false, onExtractPoints, isExtractingPoints = false, pointCount = 0, onExtractPromises, isExtractingPromises = false, promiseCount = 0 }: Props) {
+export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onGenerateQueue, onResetStuck, onGenerateImage, isGeneratingImage = false, onExtractPoints, isExtractingPoints = false, pointCount = 0, onExtractPromises, isExtractingPromises = false, promiseCount = 0, onExtractIntel, isExtractingIntel = false, isMatchingIntel = false, intelCount = 0, relCount = 0 }: Props) {
   const [showFullNotes, setShowFullNotes] = useState(false);
   const displayStatus  = isProcessing ? "processing_ai" : doc.processingStatus;
 
@@ -399,29 +404,51 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
         </div>
       )}
 
-      {/* Promise extraction — civic accountability layer */}
-      {isApproved && !!onExtractPromises && !isExtractingPromises && promiseCount === 0 && (
+      {/* Deep Intelligence Extract — national civic memory layer */}
+      {isApproved && !!onExtractIntel && !isExtractingIntel && !isMatchingIntel && intelCount === 0 && (
         <button
-          onClick={() => onExtractPromises!(doc)}
-          className="w-full text-xs font-bold py-2 rounded-xl bg-blue-900/40 hover:bg-blue-900 text-blue-300 border border-blue-800 transition-colors"
+          onClick={() => onExtractIntel!(doc)}
+          className="w-full text-xs font-bold py-2.5 rounded-xl bg-indigo-900/50 hover:bg-indigo-900 text-indigo-200 border border-indigo-700 transition-colors"
         >
-          📜 वाचाहरू निकाल्नुहोस् (Accountability Layer)
+          🏛️ Deep Intelligence निकाल्नुहोस्
         </button>
       )}
-      {isExtractingPromises && (
-        <div className="w-full text-xs py-2 rounded-xl bg-blue-900/20 text-blue-400 border border-blue-800 text-center animate-pulse">
-          📜 वाचाहरू निकाल्दैछ — Gemini ले analyze गर्दैछ…
+
+      {isExtractingIntel && (
+        <div className="w-full rounded-xl bg-indigo-950/40 border border-indigo-800 px-3 py-3 space-y-1.5">
+          <p className="text-indigo-300 text-xs font-bold animate-pulse">🏛️ Deep extraction चल्दैछ…</p>
+          <p className="text-indigo-600/80 text-xs leading-relaxed">
+            सबै sections scan गर्दैछ — budget lines, projects, institutions, targets, reforms सबै निकाल्दैछ।
+          </p>
         </div>
       )}
-      {isApproved && promiseCount > 0 && !isExtractingPromises && (
-        <div className="w-full text-xs py-2 rounded-xl bg-blue-900/20 text-blue-400 border border-blue-800 text-center flex items-center justify-center gap-2">
-          <span>📜 {promiseCount} वाचाहरू tracked</span>
-          <button
-            onClick={() => onExtractPromises?.(doc)}
-            className="underline text-blue-500 hover:text-blue-300 text-xs"
-          >
-            Re-extract
-          </button>
+
+      {isMatchingIntel && !isExtractingIntel && (
+        <div className="w-full rounded-xl bg-violet-950/40 border border-violet-800 px-3 py-2.5 space-y-1">
+          <p className="text-violet-300 text-xs font-bold animate-pulse">🔗 Relationship matching चल्दैछ…</p>
+          <p className="text-violet-600/80 text-xs">
+            Prior documents सँग cross-reference गर्दैछ — connected records खोज्दैछ।
+          </p>
+        </div>
+      )}
+
+      {isApproved && intelCount > 0 && !isExtractingIntel && !isMatchingIntel && (
+        <div className="w-full rounded-xl bg-indigo-950/30 border border-indigo-800/60 px-3 py-2.5 space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-indigo-300 text-xs font-bold">🏛️ {intelCount} intel records</span>
+            <button
+              onClick={() => onExtractIntel?.(doc)}
+              className="text-xs text-indigo-600 hover:text-indigo-400 underline shrink-0"
+            >
+              Re-extract
+            </button>
+          </div>
+          {relCount > 0 && (
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-violet-500 shrink-0" />
+              <span className="text-violet-400 text-xs">{relCount} relationships found across documents</span>
+            </div>
+          )}
         </div>
       )}
 

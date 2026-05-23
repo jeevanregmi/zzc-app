@@ -121,11 +121,12 @@ async function tryGemini(
     for (let attempt = 0; attempt <= 1; attempt++) {
       try {
         const result = await callGemini({
-          apiKey: env.GEMINI_API_KEY!,
+          apiKey:    env.GEMINI_API_KEY!,
           model,
           system,
           parts,
           maxTokens,
+          jsonMode:  true,
         });
         return { ok: true, text: result.text, model: result.model, retries: attempt };
       } catch (err) {
