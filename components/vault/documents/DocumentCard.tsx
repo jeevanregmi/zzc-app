@@ -71,6 +71,7 @@ interface Props {
   relCount?:               number;
   onExtractConstitution?:  (doc: IntelligenceDocument) => void;
   isExtractingConstitution?: boolean;
+  constitutionBatch?:      number; // 1,2,3 = which of 3 batches is running
   constitutionCount?:      number;
   onArchive?:              (doc: IntelligenceDocument) => void;
   isArchiving?:            boolean;
@@ -99,7 +100,7 @@ function isConstitutionDoc(doc: IntelligenceDocument): boolean {
   );
 }
 
-export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onGenerateQueue, onResetStuck, onGenerateImage, isGeneratingImage = false, onExtractPoints, isExtractingPoints = false, pointCount = 0, onExtractPromises, isExtractingPromises = false, promiseCount = 0, onExtractIntel, isExtractingIntel = false, isMatchingIntel = false, intelCount = 0, relCount = 0, onExtractConstitution, isExtractingConstitution = false, constitutionCount = 0, onArchive, isArchiving = false }: Props) {
+export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onGenerateQueue, onResetStuck, onGenerateImage, isGeneratingImage = false, onExtractPoints, isExtractingPoints = false, pointCount = 0, onExtractPromises, isExtractingPromises = false, promiseCount = 0, onExtractIntel, isExtractingIntel = false, isMatchingIntel = false, intelCount = 0, relCount = 0, onExtractConstitution, isExtractingConstitution = false, constitutionBatch = 0, constitutionCount = 0, onArchive, isArchiving = false }: Props) {
   const [showFullNotes, setShowFullNotes] = useState(false);
   const displayStatus  = isProcessing ? "processing_ai" : doc.processingStatus;
 
@@ -419,25 +420,42 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
         </div>
       )}
 
-      {/* Constitution Framework Extract — root ontology button */}
+      {/* Constitution Framework Extract — full 35 parts, 3 batches */}
       {isApproved && isConstitutionDoc(doc) && !!onExtractConstitution && !isExtractingConstitution && constitutionCount === 0 && (
         <button
           onClick={() => onExtractConstitution!(doc)}
           className="w-full text-xs font-bold py-2.5 rounded-xl bg-amber-900/50 hover:bg-amber-900 text-amber-200 border border-amber-700 transition-colors"
         >
-          📜 संविधान Framework निकाल्नुहोस्
+          📜 सम्पूर्ण संविधान Extract गर्नुस् (३५ भाग)
         </button>
       )}
       {isExtractingConstitution && (
         <div className="w-full rounded-xl bg-amber-950/40 border border-amber-800 px-3 py-3 space-y-1.5">
-          <p className="text-amber-300 text-xs font-bold animate-pulse">📜 Constitutional framework निकाल्दैछ…</p>
-          <p className="text-amber-700/80 text-xs leading-relaxed">Article-by-article root ontology बनाउँदैछ — fundamental rights, institutions, state obligations।</p>
+          <div className="flex items-center justify-between">
+            <p className="text-amber-300 text-xs font-bold animate-pulse">📜 संविधान extract हुँदैछ…</p>
+            <span className="text-amber-600 text-xs font-mono">{constitutionBatch}/3 बैच</span>
+          </div>
+          <div className="w-full bg-zinc-800 rounded-full h-1">
+            <div
+              className="bg-amber-500 h-1 rounded-full transition-all duration-500"
+              style={{ width: `${((constitutionBatch) / 3) * 100}%` }}
+            />
+          </div>
+          <p className="text-amber-700/80 text-xs">
+            {constitutionBatch === 1 && "भाग १–१२ — प्रारम्भिक, मौलिक हक, कार्यपालिका, न्यायपालिका"}
+            {constitutionBatch === 2 && "भाग १३–२२ — प्रदेश, स्थानीय तह, संघीय आयोग, अन्तरसम्बन्ध"}
+            {constitutionBatch === 3 && "भाग २३–३५ — राजनीतिक दल, निर्वाचन, संकटकाल, विविध"}
+            {constitutionBatch === 0 && "सुरु गर्दैछ…"}
+          </p>
+          {constitutionCount > 0 && (
+            <p className="text-amber-600 text-xs">{constitutionCount} धाराहरू save भए</p>
+          )}
         </div>
       )}
       {isApproved && isConstitutionDoc(doc) && constitutionCount > 0 && !isExtractingConstitution && (
         <div className="w-full rounded-xl bg-amber-950/30 border border-amber-800/60 px-3 py-2.5 space-y-1.5">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-amber-300 text-xs font-bold">📜 {constitutionCount} constitutional articles</span>
+            <span className="text-amber-300 text-xs font-bold">📜 {constitutionCount} धाराहरू extracted</span>
             <button
               onClick={() => onExtractConstitution?.(doc)}
               className="text-xs text-amber-600 hover:text-amber-400 underline shrink-0"

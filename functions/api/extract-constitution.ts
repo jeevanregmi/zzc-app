@@ -24,6 +24,7 @@ interface ExtractConstitutionRequest {
   mimeType:      string;
   docTitle:      string;
   ownerId:       string;
+  partRange:     string; // e.g. "1-12", "13-22", "23-35"
 }
 
 // ─── Prompt ───────────────────────────────────────────────────────────────────
@@ -32,39 +33,35 @@ const SYSTEM_PROMPT = `You are extracting Nepal's Constitution (2015/2072 BS) as
 You are building the ROOT SEMANTIC FRAMEWORK for a civic intelligence system.
 Return ONLY valid JSON. Start with { end with }. No markdown. No code fences. No extra fields.`;
 
-function buildPrompt(docTitle: string): string {
-  return `तपाईं नेपालको संविधान २०७२ बाट संवैधानिक ज्ञान निकाल्दै हुनुहुन्छ।
-Extract the 25 most foundational constitutional provisions from: "${docTitle}"
+const BATCH_DESCRIPTIONS: Record<string, string> = {
+  "1-12":  "भाग १ (प्रारम्भिक) देखि भाग १२ (महान्यायाधिवक्ता) सम्म — प्रारम्भिक, नागरिकता, मौलिक हक, निर्देशक सिद्धान्त, राज्य संरचना, राष्ट्रपति, कार्यपालिका, व्यवस्थापिका, आर्थिक कार्यप्रणाली, न्यायपालिका",
+  "13-22": "भाग १३ देखि भाग २२ सम्म — संघीय आयोग, प्रदेश व्यवस्थापिका, प्रदेश कार्यपालिका, प्रदेश आर्थिक कार्यप्रणाली, स्थानीय कार्यपालिका, स्थानीय व्यवस्थापिका, अन्तरसम्बन्ध, राष्ट्रिय सुरक्षा, सम्पत्ति",
+  "23-35": "भाग २३ देखि भाग ३५ सम्म — राजनीतिक दल, निर्वाचन, संकटकालीन व्यवस्था, राष्ट्रिय प्राकृतिक स्रोत आयोग, अख्तियार दुरुपयोग अनुसन्धान आयोग, महालेखा परीक्षक, लोक सेवा आयोग, निर्वाचन आयोग, विविध, संविधान संशोधन",
+};
 
-CONSTITUTIONAL TERMINOLOGY — use these exact Nepali terms in all Nepali fields:
-- भाग (Bhag) = Part
-- धारा (Dhara) = Article
-- खण्ड (Khand) = Clause
-- उपखण्ड = Sub-clause
+function buildPrompt(partRange: string, docTitle: string): string {
+  const desc = BATCH_DESCRIPTIONS[partRange] ?? `भाग ${partRange}`;
+  return `तपाईं नेपालको संविधान २०७२ बाट सम्पूर्ण संवैधानिक ज्ञान निकाल्दै हुनुहुन्छ।
 
-PRIORITY ORDER:
-१. मौलिक हकहरू (भाग ३, धारा १६–४६) — 15 most important:
-   समानताको हक (१८), स्वतन्त्रताको हक (१७), जीवनको हक (१६), शिक्षाको हक (३१),
-   स्वास्थ्यको हक (३५), रोजगारीको हक (३३), श्रमको हक (३४), महिलाको हक (३८),
-   बालबालिकाको हक (३९), दलितको हक (४०), सामाजिक न्यायको हक (४२),
-   सम्पत्तिको हक (२५), धर्मको हक (२६), निजताको हक (२८), न्यायको हक (२०)
-२. राज्यका निर्देशक सिद्धान्त (भाग ४, धारा ५१) — 4 key clauses
-३. संवैधानिक निकाय — राष्ट्रपति, संसद, सर्वोच्च अदालत (3 records)
-४. संघीय संरचना — संघ/प्रदेश/स्थानीय तहको अधिकार बाँडफाँड (3 records)
+TASK: Extract EVERY SINGLE article from Parts ${partRange} of "${docTitle}".
+Covering: ${desc}
 
-RULES — STRICTLY FOLLOW:
-- "part": MUST be in Nepali Devanagari with Devanagari numerals.
-  Example: "भाग ३ — मौलिक हकहरू", "भाग ४ — राज्यका निर्देशक सिद्धान्त, नीति तथा दायित्वहरू"
-- "titleNepali": exact title from PDF, proper constitutional Nepali (e.g. "समानताको हक")
-- "titleEnglish": English translation (e.g. "Right to Equality")
-- "originalText": verbatim Nepali text from PDF, max 150 chars
-- "plainNepaliSummary": capture BOTH the rule AND its constitutional philosophy/spirit — WHY this right exists, what value it protects. max 60 chars. Pure Nepali, NO English.
-- "rights", "duties", "obligations", "institutions", "governanceStructures": Nepali preferred, max 4 items each, max 35 chars per item
-- "sectors", "affectedGroups", "keywords", "relatedArticles", "constitutionalThemes": max 4 items each, max 35 chars per item
-- "articleId": system ID only — "art-{number}" or "art-{number}-{clause}" e.g. "art-18", "art-51-j"
+⚠️  CRITICAL RULE: Do NOT skip any धारा. Extract ALL articles in those parts — even short ones.
+If a part has 5 articles, extract all 5. If it has 20 articles, extract all 20.
+For articles with important खण्ड (sub-clauses), create ONE record per article (combine clauses unless fundamentally distinct).
+
+CONSTITUTIONAL TERMINOLOGY (use in all Nepali fields):
+- भाग = Part  |  धारा = Article  |  खण्ड = Clause
+
+COMPACT FORMAT (strict — to fit all articles in one response):
+- "part": Nepali Devanagari from PDF e.g. "भाग ३ — मौलिक हकहरू"
+- "originalText": verbatim from PDF, max 80 chars
+- "plainNepaliSummary": rule + constitutional philosophy/spirit, max 50 chars, pure Nepali
+- ALL arrays: max 3 items, max 25 chars per item
+- "articleId": "art-{number}" or "art-{number}-{clause}" — system ID only
 - "confidence": 0.0–1.0
 
-Return ONLY valid JSON:
+Return ONLY valid JSON (ascending article number order):
 {
   "records": [
     {
@@ -75,25 +72,24 @@ Return ONLY valid JSON:
       "clause": null,
       "titleEnglish": "Right to Equality",
       "titleNepali": "समानताको हक",
-      "originalText": "सबै नागरिक कानुनको दृष्टिमा समान हुनेछन्। कानुनको समान संरक्षणबाट कोही पनि वञ्चित हुने छैन।",
-      "plainNepaliSummary": "राज्यले कुनै पनि नागरिकलाई जात, लिंग, धर्मका आधारमा भेदभाव गर्न पाउँदैन — समता नै लोकतन्त्रको आधार हो।",
-      "rights": ["कानुनको समान संरक्षण", "भेदभावमुक्त व्यवहार"],
+      "originalText": "सबै नागरिक कानुनको दृष्टिमा समान हुनेछन्।",
+      "plainNepaliSummary": "राज्यले भेदभाव गर्न पाउँदैन — समता नै लोकतन्त्रको जग हो।",
+      "rights": ["कानुनको समान संरक्षण"],
       "duties": [],
-      "obligations": ["राज्यले भेदभाव नगर्ने", "समान अवसर प्रदान गर्ने"],
+      "obligations": ["राज्यले भेदभाव नगर्ने"],
       "institutions": [],
       "governanceStructures": ["संघीय सरकार"],
-      "sectors": ["मानव अधिकार", "शासन"],
-      "affectedGroups": ["सबै नागरिक", "महिला", "दलित", "सीमान्तकृत समूह"],
-      "keywords": ["समानता", "भेदभाव", "कानुन", "नागरिक"],
+      "sectors": ["मानव अधिकार"],
+      "affectedGroups": ["सबै नागरिक", "दलित", "महिला"],
+      "keywords": ["समानता", "भेदभाव"],
       "relatedArticles": ["art-40", "art-42"],
-      "constitutionalThemes": ["मौलिक हक", "समानता", "भेदभावविरुद्ध"],
+      "constitutionalThemes": ["मौलिक हक", "समानता"],
       "sourcePage": 12,
       "confidence": 0.95
     }
   ],
-  "totalArticlesInConstitution": 308,
-  "partsExtracted": ["भाग ३ — मौलिक हकहरू", "भाग ४ — राज्यका निर्देशक सिद्धान्त"],
-  "summaryNote": "one English sentence about what was extracted"
+  "partsExtracted": ["भाग ३ — मौलिक हकहरू"],
+  "summaryNote": "one sentence about this batch"
 }`;
 }
 
@@ -203,12 +199,13 @@ export const onRequestPost = async ({ request, env }: PagesContext): Promise<Res
     if (!body.downloadUrl?.trim()) return clientError("downloadUrl required",  400, "MISSING_FIELD");
     if (!body.ownerId?.trim())     return clientError("ownerId required",      400, "MISSING_FIELD");
     if (!body.mimeType?.trim())    return clientError("mimeType required",     400, "MISSING_FIELD");
+    if (!body.partRange?.trim())   return clientError("partRange required",    400, "MISSING_FIELD");
 
     if (!env.GEMINI_API_KEY?.trim()) {
       return providerError("GEMINI_API_KEY not configured in Cloudflare Pages env vars", "CONFIG_ERROR");
     }
 
-    log("extract-constitution", "start", { docId: body.documentId, mimeType: body.mimeType });
+    log("extract-constitution", "start", { docId: body.documentId, mimeType: body.mimeType, partRange: body.partRange });
 
     // ── Fetch PDF ──────────────────────────────────────────────────────────────
     if (body.mimeType !== "application/pdf") {
@@ -236,7 +233,7 @@ export const onRequestPost = async ({ request, env }: PagesContext): Promise<Res
         system:    SYSTEM_PROMPT,
         parts:     [
           { inline_data: { mime_type: "application/pdf", data: pdfResult.base64 } },
-          { text: buildPrompt(body.docTitle || "Nepal Constitution 2015") },
+          { text: buildPrompt(body.partRange, body.docTitle || "Nepal Constitution 2015") },
         ],
         maxTokens: 24576,
       });

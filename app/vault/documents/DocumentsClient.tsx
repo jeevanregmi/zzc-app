@@ -117,6 +117,7 @@ export default function DocumentsClient() {
   }, [user?.uid]);
   const [matchingIntelId, setMatchingIntelId] = useState<string | null>(null);
   const [extractingConstitutionId, setExtractingConstitutionId] = useState<string | null>(null);
+  const [constitutionBatch,        setConstitutionBatch]        = useState<number>(0); // 1,2,3 = which batch running
   const [constitutionCountByDoc, setConstitutionCountByDoc]     = useState<Record<string, number>>({});
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [processError,        setProcessError]        = useState<string | null>(null);
@@ -682,44 +683,70 @@ export default function DocumentsClient() {
     }
   };
 
-  // ── Constitution Framework extraction ──────────────────────────────────────
+  // ── Constitution Framework extraction — 3 sequential batches (all 35 parts) ─
   const handleExtractConstitution = async (doc: IntelligenceDocument) => {
     if (!user?.uid) return;
     setExtractingConstitutionId(doc.id);
+
+    const BATCHES = [
+      { partRange: "1-12",  label: "भाग १–१२" },
+      { partRange: "13-22", label: "भाग १३–२२" },
+      { partRange: "23-35", label: "भाग २३–३५" },
+    ];
+
+    let totalSaved = 0;
+    const allParts: string[] = [];
+
     try {
-      const res = await fetch("/api/extract-constitution", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
-          documentId:  doc.id,
-          downloadUrl: doc.downloadUrl,
-          mimeType:    doc.mimeType ?? "application/pdf",
-          docTitle:    doc.title,
-          ownerId:     user.uid,
-        }),
-      });
-      const data = await res.json() as Record<string, unknown>;
-      if (!res.ok) {
-        const msg = [data.error ?? "Constitution extraction failed", data.details].filter(Boolean).join(" — ");
-        alert(`📜 संविधान extract गर्न सकिएन: ${msg}`);
-        return;
+      for (let i = 0; i < BATCHES.length; i++) {
+        const batch = BATCHES[i];
+        setConstitutionBatch(i + 1);
+
+        const res = await fetch("/api/extract-constitution", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({
+            documentId:  doc.id,
+            downloadUrl: doc.downloadUrl,
+            mimeType:    doc.mimeType ?? "application/pdf",
+            docTitle:    doc.title,
+            ownerId:     user.uid,
+            partRange:   batch.partRange,
+          }),
+        });
+
+        const data = await res.json() as Record<string, unknown>;
+        if (!res.ok) {
+          const msg = [data.error ?? "extraction failed", data.details].filter(Boolean).join(" — ");
+          alert(`📜 ${batch.label} extract गर्न सकिएन: ${msg}\n\nपहिले ${totalSaved} records save भइसके।`);
+          break;
+        }
+
+        const records = data.records as Record<string, unknown>[] | undefined;
+        if (!records?.length) {
+          alert(`📜 ${batch.label}: AI ले कुनै records निकाल्न सकेन — अर्को batch जारी राख्दैछ।`);
+          continue;
+        }
+
+        const now = new Date().toISOString();
+        await Promise.all(records.map(r =>
+          addDoc(collection(db, "constitutional_framework"), {
+            ...r, ownerId: user.uid, createdAt: r.createdAt ?? now, updatedAt: now,
+          })
+        ));
+
+        totalSaved += records.length;
+        const parts = (data.partsExtracted as string[] | undefined) ?? [];
+        allParts.push(...parts);
+        setConstitutionCountByDoc(prev => ({ ...prev, [doc.id]: totalSaved }));
       }
-      const records = data.records as Record<string, unknown>[];
-      if (!records?.length) {
-        alert("AI ले कुनै constitutional records निकाल्न सकेन।");
-        return;
-      }
-      // Save all records to constitutional_framework collection
-      const now = new Date().toISOString();
-      await Promise.all(records.map(r =>
-        addDoc(collection(db, "constitutional_framework"), { ...r, ownerId: user.uid, createdAt: r.createdAt ?? now, updatedAt: now })
-      ));
-      setConstitutionCountByDoc(prev => ({ ...prev, [doc.id]: records.length }));
-      alert(`📜 ${records.length} constitutional framework records saved!\n\nParts: ${(data.partsExtracted as string[] | undefined)?.join(", ") ?? "—"}\n\n${data.summaryNote ?? ""}`);
+
+      alert(`📜 सम्पूर्ण संविधान extract सम्पन्न!\n\n${totalSaved} धाराहरू save भए\n\nभागहरू: ${allParts.slice(0, 8).join(", ")}${allParts.length > 8 ? "..." : ""}`);
     } catch (err) {
       alert(`Constitution extract error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setExtractingConstitutionId(null);
+      setConstitutionBatch(0);
     }
   };
 
@@ -1072,6 +1099,7 @@ export default function DocumentsClient() {
                 relCount={relCountByDoc[doc.id] ?? 0}
                 onExtractConstitution={handleExtractConstitution}
                 isExtractingConstitution={extractingConstitutionId === doc.id}
+                constitutionBatch={extractingConstitutionId === doc.id ? constitutionBatch : 0}
                 constitutionCount={constitutionCountByDoc[doc.id] ?? 0}
                 onArchive={handleArchive}
                 isArchiving={archivingId === doc.id}
