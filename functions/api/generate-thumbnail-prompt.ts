@@ -1,4 +1,5 @@
 import { AwsClient } from "aws4fetch";
+import { callGemini } from "../../lib/ai/providers/gemini";
 import { DEFAULT_BEDROCK_MODEL } from "../../lib/ai/bedrock-models";
 import {
   CORS, validateBedrockEnv, bedrockErrorMessage,
@@ -6,10 +7,11 @@ import {
 } from "./_shared";
 
 interface Env {
-  AWS_ACCESS_KEY_ID:     string;
-  AWS_SECRET_ACCESS_KEY: string;
-  AWS_REGION:            string;
-  BEDROCK_MODEL_ID?:     string;
+  GEMINI_API_KEY?:        string;
+  AWS_ACCESS_KEY_ID?:     string;
+  AWS_SECRET_ACCESS_KEY?: string;
+  AWS_REGION?:            string;
+  BEDROCK_MODEL_ID?:      string;
 }
 
 interface PagesContext {
@@ -103,13 +105,6 @@ export const onRequestOptions = async (): Promise<Response> =>
   new Response(null, { status: 204, headers: CORS });
 
 export const onRequestPost = async (context: PagesContext): Promise<Response> => {
-  const { AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION, BEDROCK_MODEL_ID } = context.env;
-
-  const envErr = validateBedrockEnv(context.env);
-  if (envErr) return clientError(envErr, 500, "ENV_MISSING");
-
-  const MODEL_ID = BEDROCK_MODEL_ID?.trim() || DEFAULT_BEDROCK_MODEL;
-
   let body: ThumbnailRequest;
   try {
     body = await context.request.json();
@@ -121,15 +116,51 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     return clientError("title, headline, and style are required", 400, "VALIDATION_ERROR");
   }
 
+  const prompt = buildPrompt(body);
+
+  // ── Primary: Gemini ──────────────────────────────────────────────────────────
+  if (context.env.GEMINI_API_KEY) {
+    try {
+      const result = await callGemini({
+        apiKey:    context.env.GEMINI_API_KEY,
+        system:    "You are a creative director for a Nepal YouTube channel. Respond with valid JSON only — no markdown, no explanation.",
+        parts:     [{ text: prompt }],
+        maxTokens: 2000,
+      });
+
+      const [parsed, parseErr] = extractJson(result.text);
+      if (parseErr) {
+        log("generate-thumbnail-prompt", "gemini_parse_error", { preview: result.text.slice(0, 100) });
+        return providerError("AI returned unparseable response. Retry.", "AI_PARSE_ERROR", result.text.slice(0, 300));
+      }
+
+      log("generate-thumbnail-prompt", "ok", { provider: "gemini", style: body.style });
+      return new Response(
+        JSON.stringify({ ok: true, ...(parsed as object), title: body.title, style: body.style }),
+        { headers: CORS },
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log("generate-thumbnail-prompt", "gemini_error", { msg });
+      // Fall through to Bedrock
+    }
+  }
+
+  // ── Fallback: AWS Bedrock ────────────────────────────────────────────────────
+  const envErr = validateBedrockEnv(context.env);
+  if (envErr) return clientError("No AI provider configured", 500, "NO_PROVIDERS");
+
+  const MODEL_ID = context.env.BEDROCK_MODEL_ID?.trim() || DEFAULT_BEDROCK_MODEL;
+
   try {
     const aws = new AwsClient({
-      accessKeyId:     AWS_ACCESS_KEY_ID,
-      secretAccessKey: AWS_SECRET_ACCESS_KEY,
-      region:          AWS_REGION,
+      accessKeyId:     context.env.AWS_ACCESS_KEY_ID!,
+      secretAccessKey: context.env.AWS_SECRET_ACCESS_KEY!,
+      region:          context.env.AWS_REGION!,
       service:         "bedrock",
     });
 
-    const url = `https://bedrock-runtime.${AWS_REGION}.amazonaws.com/model/${encodeURIComponent(MODEL_ID)}/invoke`;
+    const url = `https://bedrock-runtime.${context.env.AWS_REGION}.amazonaws.com/model/${encodeURIComponent(MODEL_ID)}/invoke`;
 
     const bedrockRes = await aws.fetch(url, {
       method:  "POST",
@@ -137,18 +168,14 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
       body:    JSON.stringify({
         anthropic_version: "bedrock-2023-05-31",
         max_tokens:        2000,
-        messages:          [{ role: "user", content: buildPrompt(body) }],
+        messages:          [{ role: "user", content: prompt }],
       }),
     });
 
     if (!bedrockRes.ok) {
       const raw = await bedrockRes.text().catch(() => "");
       log("generate-thumbnail-prompt", "bedrock_error", { status: bedrockRes.status, details: raw.slice(0, 200) });
-      return providerError(
-        bedrockErrorMessage(bedrockRes.status),
-        "BEDROCK_ERROR",
-        raw.slice(0, 300),
-      );
+      return providerError(bedrockErrorMessage(bedrockRes.status), "BEDROCK_ERROR", raw.slice(0, 300));
     }
 
     const raw = (await bedrockRes.json()) as { content: Array<{ type: string; text: string }> };
@@ -160,7 +187,7 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
       return providerError("AI returned unparseable response. Retry.", "AI_PARSE_ERROR", text.slice(0, 300));
     }
 
-    log("generate-thumbnail-prompt", "ok", { model: MODEL_ID, style: body.style });
+    log("generate-thumbnail-prompt", "ok", { provider: "bedrock", model: MODEL_ID, style: body.style });
     return new Response(
       JSON.stringify({ ok: true, ...(result as object), title: body.title, style: body.style }),
       { headers: CORS },

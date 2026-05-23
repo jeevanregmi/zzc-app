@@ -940,13 +940,13 @@ export default function JantaClient() {
       collection(db, "vault_content_queue"),
       where("publishToJanta", "==", true),
     )).then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as QueueItem)))
-      .catch(() => [] as QueueItem[]);
+      .catch(err => { console.warn("vault_content_queue fetch:", err?.message ?? err); return [] as QueueItem[]; });
 
     const pointsPromise = getDocs(query(
       collection(db, "vault_policy_points"),
       where("publishToJanta", "==", true),
     )).then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as PolicyPoint)))
-      .catch(() => [] as PolicyPoint[]);
+      .catch(err => { console.warn("vault_policy_points fetch:", err?.message ?? err); return [] as PolicyPoint[]; });
 
     Promise.all([docsPromise, contentPromise, pointsPromise])
       .then(([docItems, queueItems, pts]) => {
