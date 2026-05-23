@@ -48,7 +48,7 @@ export interface GeminiCallResult {
   latencyMs:    number;
 }
 
-const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1/models";
+const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 export const GEMINI_DEFAULT_MODEL = "gemini-2.0-flash";
 
 export async function callGemini(opts: {
