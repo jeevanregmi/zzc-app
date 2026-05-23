@@ -125,6 +125,20 @@ export function log(
  * Extracts the first {...} JSON block from an LLM response string.
  * Returns [parsed, null] on success, [null, errorMessage] on failure.
  */
+/** Replace raw newlines/carriage-returns inside JSON string literals with a space.
+ *  Gemini sometimes emits literal \n inside string values which breaks JSON.parse. */
+function fixJsonNewlines(s: string): string {
+  let inStr = false, esc = false, out = "";
+  for (const c of s) {
+    if (esc)                         { out += c; esc = false; }
+    else if (c === "\\" && inStr)    { out += c; esc = true;  }
+    else if (c === '"')              { out += c; inStr = !inStr; }
+    else if (inStr && (c === "\n" || c === "\r")) out += " ";
+    else                              out += c;
+  }
+  return out;
+}
+
 export function extractJson<T = unknown>(text: string): [T, null] | [null, string] {
   const t = text.trim();
 
@@ -135,8 +149,12 @@ export function extractJson<T = unknown>(text: string): [T, null] | [null, strin
   const stripped = t.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
   try { const d = JSON.parse(stripped); if (d && typeof d === "object") return [d as T, null]; } catch {}
 
-  // 3. Extract first {...} block (handles preamble/postamble)
-  const match = stripped.match(/\{[\s\S]*\}/);
+  // 3. Fix raw newlines inside string values, then parse
+  const sanitized = fixJsonNewlines(stripped);
+  try { const d = JSON.parse(sanitized); if (d && typeof d === "object") return [d as T, null]; } catch {}
+
+  // 4. Extract first {...} block (handles preamble/postamble)
+  const match = sanitized.match(/\{[\s\S]*\}/);
   if (!match) return [null, "No JSON object found in AI response"];
   try {
     return [JSON.parse(match[0]) as T, null];
