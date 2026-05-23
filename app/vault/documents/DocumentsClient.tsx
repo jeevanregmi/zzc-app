@@ -6,7 +6,7 @@ import { useIntelligenceDocs } from "../../../hooks/vault/useIntelligenceDocs";
 import { useDocumentUpload } from "../../../hooks/vault/useDocumentUpload";
 import { deleteIntelligenceDoc, updateIntelligenceDoc, createQueueItem } from "../../../lib/vault/firestore";
 import { aiCostAdapter } from "../../../lib/business/firestore";
-import { collection, addDoc, Timestamp, deleteField } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, where, deleteDoc, Timestamp, deleteField } from "firebase/firestore";
 import { db } from "../../firebase";
 import type { AIService } from "../../../lib/business/types";
 import Link from "next/link";
@@ -318,6 +318,15 @@ export default function DocumentsClient() {
         youthImpact: string; keyFact: string; sectors: string[];
       }>; error?: string };
       if (!data.ok || !data.points) throw new Error(data.error ?? "Extraction failed");
+
+      // Delete any existing points for this doc (this user) before inserting fresh ones
+      const existingSnap = await getDocs(
+        query(collection(db, "vault_policy_points"),
+          where("parentDocId", "==", doc.id),
+          where("ownerId",     "==", user.uid),
+        )
+      );
+      await Promise.all(existingSnap.docs.map(d => deleteDoc(d.ref)));
 
       const now = new Date().toISOString();
       await Promise.all(data.points.map(pt =>
