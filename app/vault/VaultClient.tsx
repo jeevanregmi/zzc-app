@@ -378,6 +378,7 @@ function QuickActions({
       : [{ href: "/vault/content/queue", label: "📥 Content Queue", color: "border-zinc-700 bg-zinc-900 text-zinc-300 hover:text-white hover:border-zinc-500" }]
     ),
     { href: "/vault/content/ai-studio", label: "⚡ Generate Script",    color: "border-zinc-700 bg-zinc-900 text-zinc-300 hover:text-white hover:border-zinc-500" },
+    { href: "/vault/products",          label: "🌳 Products",           color: "border-zinc-700 bg-zinc-900 text-zinc-300 hover:text-white hover:border-zinc-500" },
     { href: "/vault/business",          label: "📊 Business Dashboard", color: "border-zinc-700 bg-zinc-900 text-zinc-300 hover:text-white hover:border-zinc-500" },
     { href: "/vault/admin",             label: "🔐 Admin Vault",        color: "border-zinc-700 bg-zinc-900 text-zinc-300 hover:text-white hover:border-zinc-500" },
   ];
@@ -507,6 +508,28 @@ function SectionGrid({
           statColor: "text-purple-400",
           badge: "Live", badgeColor: "bg-green-900/40 text-green-400",
           tip: "Document pipeline, recommendation clicks, audience leads",
+        },
+      ],
+    },
+    {
+      label: "Products",
+      nepali: "ZZC intelligence product ecosystem",
+      items: [
+        {
+          href: "/vault/products", icon: "🌳", label: "Product Catalog",
+          nepali: "Constitution Tree · Finance Tree · Future trees",
+          stat: "Web · Android · iOS · Windows",
+          statColor: "text-green-400",
+          badge: "New", badgeColor: "bg-green-900/40 text-green-400",
+          tip: "ZZC intelligence products manage गर्नुहोस् — status, platforms, monetization, branding",
+        },
+        {
+          href: "/constitution", icon: "⚖️", label: "Constitution Tree",
+          nepali: "नेपालको संविधान — living tree experience",
+          stat: "308 धाराहरू · 35 भागहरू",
+          statColor: "text-amber-400",
+          badge: "MVP", badgeColor: "bg-amber-900/40 text-amber-400",
+          tip: "Constitution Tree MVP — अहिले web मा live छ",
         },
       ],
     },
