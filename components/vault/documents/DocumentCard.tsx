@@ -91,7 +91,12 @@ const SOURCE_TYPE_BADGE: Record<SourceType, { label: string; cls: string }> = {
 
 function isConstitutionDoc(doc: IntelligenceDocument): boolean {
   const name = `${doc.title ?? ""} ${doc.fileName ?? ""}`.toLowerCase();
-  return name.includes("constitution") || name.includes("संविधान") || name.includes("samvidhan");
+  return (
+    name.includes("constitution") ||
+    name.includes("संविधान")     ||
+    name.includes("ंविधान")      || // handles "स_ंविधान" filename with underscore split
+    name.includes("samvidhan")
+  );
 }
 
 export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onGenerateQueue, onResetStuck, onGenerateImage, isGeneratingImage = false, onExtractPoints, isExtractingPoints = false, pointCount = 0, onExtractPromises, isExtractingPromises = false, promiseCount = 0, onExtractIntel, isExtractingIntel = false, isMatchingIntel = false, intelCount = 0, relCount = 0, onExtractConstitution, isExtractingConstitution = false, constitutionCount = 0, onArchive, isArchiving = false }: Props) {
