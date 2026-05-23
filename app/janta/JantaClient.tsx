@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { collection, query, where, getDocs } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
 import { db, auth } from "../firebase";
 import type { IntelligenceDocument } from "../../lib/types/documents";
 import type { QueueItem } from "../../lib/types/queue";
@@ -1337,11 +1336,9 @@ export default function JantaClient() {
   const [slideDoc,     setSlideDoc]     = useState<IntelligenceDocument | null>(null);
 
   useEffect(() => {
-    // Resolve auth first (fires synchronously if already resolved, async if restoring session)
-    const unsub = onAuthStateChanged(auth, user => {
-      unsub(); // one-shot
-      runFetch(user?.uid ?? null);
-    });
+    // authStateReady() resolves once Firebase has restored the session from
+    // localStorage — auth.currentUser is reliable after this point.
+    auth.authStateReady().then(() => runFetch(auth.currentUser?.uid ?? null));
 
     function runFetch(uid: string | null) {
     const docsPromise = getDocs(query(
