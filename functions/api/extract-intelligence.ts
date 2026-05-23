@@ -291,7 +291,7 @@ Return JSON array:
         { inline_data: { mime_type: "application/pdf", data: base64 } },
         { text: prompt },
       ],
-      maxTokens: 8192,
+      maxTokens: 32768,
     });
 
     const [parsed, parseErr] = extractJson(result.text);
@@ -382,7 +382,7 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
         apiKey:    context.env.GEMINI_API_KEY,
         system:    "You are a deep civic intelligence AI for Nepal's national governance memory system. Extract ALL structured, traceable civic records from government documents — every budget line, project, institution, target, reform, and program. Return only valid JSON. Be exhaustive and include traceability for every record.",
         parts:     [{ text: buildPrompt(body, chunks[i], i + 1, chunks.length) }],
-        maxTokens: 8192,
+        maxTokens: 32768,
         jsonMode:  true,
       });
 
