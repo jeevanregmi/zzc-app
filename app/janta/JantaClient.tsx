@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { collection, query, where, getDocs } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
 import { db, auth } from "../firebase";
 import type { IntelligenceDocument } from "../../lib/types/documents";
 import type { QueueItem } from "../../lib/types/queue";
@@ -1336,6 +1337,13 @@ export default function JantaClient() {
   const [slideDoc,     setSlideDoc]     = useState<IntelligenceDocument | null>(null);
 
   useEffect(() => {
+    // Resolve auth first (fires synchronously if already resolved, async if restoring session)
+    const unsub = onAuthStateChanged(auth, user => {
+      unsub(); // one-shot
+      runFetch(user?.uid ?? null);
+    });
+
+    function runFetch(uid: string | null) {
     const docsPromise = getDocs(query(
       collection(db, "vault_intelligence_docs"),
       where("adminApprovalStatus", "==", "approved"),
@@ -1353,16 +1361,15 @@ export default function JantaClient() {
     )).then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as PolicyPoint)))
       .catch(err => { console.warn("vault_policy_points fetch:", err?.message ?? err); return [] as PolicyPoint[]; });
 
-    const user = auth.currentUser;
     const intelPublicPromise = getDocs(query(
       collection(db, "janta_intelligence"),
       where("publishToJanta", "==", true),
     )).then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as IntelligenceRecord)))
       .catch(err => { console.warn("janta_intelligence public fetch:", err?.message ?? err); return [] as IntelligenceRecord[]; });
 
-    const intelOwnerPromise = user ? getDocs(query(
+    const intelOwnerPromise = uid ? getDocs(query(
       collection(db, "janta_intelligence"),
-      where("ownerId", "==", user.uid),
+      where("ownerId", "==", uid),
     )).then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as IntelligenceRecord)))
       .catch(() => [] as IntelligenceRecord[]) : Promise.resolve([] as IntelligenceRecord[]);
 
@@ -1382,6 +1389,7 @@ export default function JantaClient() {
         setLoading(false);
       })
       .catch(err => { console.error("janta fetch:", err); setLoading(false); });
+    } // end runFetch
   }, []);
 
   const filteredDocs = docs.filter(d => {
