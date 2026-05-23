@@ -296,8 +296,13 @@ Return JSON array:
 
     const [parsed, parseErr] = extractJson(result.text);
     if (parseErr || !parsed) {
-      log("extract-intelligence", "pdf_parse_error", { docId: body.docId, preview: result.text.slice(0, 200) });
-      return clientError("AI could not extract structured records from PDF.", 422, "NO_RECORDS_EXTRACTED");
+      const preview = result.text.slice(0, 300);
+      log("extract-intelligence", "pdf_parse_error", { docId: body.docId, textLen: result.text.length, preview });
+      return clientError(
+        `AI response not JSON (${result.text.length} chars, model: ${result.model}). Preview: "${preview}"`,
+        422,
+        "NO_RECORDS_EXTRACTED",
+      );
     }
 
     const data = parsed as { records: ExtractedRecord[]; sectionSummary?: string };
