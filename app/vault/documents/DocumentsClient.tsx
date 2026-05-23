@@ -509,8 +509,12 @@ export default function DocumentsClient() {
         totalFound?: number;
         chunkCount?: number;
         error?:      string;
+        details?:    string;
       };
-      if (!data.ok || !data.records) throw new Error(data.error ?? "Extraction failed");
+      if (!data.ok || !data.records) {
+        const msg = [data.error ?? "Extraction failed", data.details].filter(Boolean).join(" — ");
+        throw new Error(msg);
+      }
 
       // Clear old intel for this doc
       const oldSnap = await getDocs(query(

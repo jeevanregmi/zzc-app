@@ -207,10 +207,22 @@ async function extractFromPdf(
 
   let base64: string;
   try {
-    const res = await fetch(body.downloadUrl!);
-    if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
-    base64 = toBase64(await res.arrayBuffer());
+    const abort = new AbortController();
+    const tid   = setTimeout(() => abort.abort(), 20_000);
+    let res: Response;
+    try {
+      res = await fetch(body.downloadUrl!, { signal: abort.signal });
+    } finally {
+      clearTimeout(tid);
+    }
+    if (!res.ok) throw new Error(`PDF fetch failed: HTTP ${res.status} from ${body.downloadUrl!.slice(0, 80)}`);
+    const buf = await res.arrayBuffer();
+    if (buf.byteLength > 30 * 1024 * 1024) {
+      return clientError(`PDF too large for direct extraction (${(buf.byteLength / 1024 / 1024).toFixed(1)} MB). Max 30 MB.`, 413, "FILE_TOO_LARGE");
+    }
+    base64 = toBase64(buf);
   } catch (err) {
+    log("extract-intelligence", "pdf_fetch_error", { docId: body.docId, err: String(err).slice(0, 200) });
     return internalError(err);
   }
 
