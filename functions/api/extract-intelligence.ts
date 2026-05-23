@@ -22,14 +22,16 @@ interface Env { GEMINI_API_KEY: string; }
 interface PagesContext { request: Request; env: Env; }
 
 interface ExtractRequest {
-  text:         string;
+  text?:        string;       // optional — used when full text is available from Firestore
+  downloadUrl?: string;       // R2 URL to re-fetch original PDF for direct Gemini analysis
+  mimeType?:    string;       // mime type of the file at downloadUrl
   docTitle:     string;
   docType?:     string;
   sourceYear?:  string;
   fiscalYear?:  string;
   ownerId:      string;
   docId:        string;
-  domain?:      string;  // "janta" | "finance" | "banking" | "policy" | "market" — defaults to "janta"
+  domain?:      string;
 }
 
 interface ExtractedRecord {
@@ -186,6 +188,125 @@ function deduplicateRecords(records: ExtractedRecord[]): ExtractedRecord[] {
   });
 }
 
+function toBase64(buffer: ArrayBuffer): string {
+  const bytes  = new Uint8Array(buffer);
+  let binary   = "";
+  const chunk  = 8192;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+async function extractFromPdf(
+  context: PagesContext,
+  body: ExtractRequest,
+  domain: string,
+): Promise<Response> {
+  log("extract-intelligence", "pdf_direct", { docId: body.docId });
+
+  let base64: string;
+  try {
+    const res = await fetch(body.downloadUrl!);
+    if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+    base64 = toBase64(await res.arrayBuffer());
+  } catch (err) {
+    return internalError(err);
+  }
+
+  const prompt = `तपाईं Nepal को national civic intelligence extraction engine हुनुहुन्छ।
+यो ${body.docType ?? "government document"} ("${body.docTitle}") बाट सबै structured intelligence records निकाल्नुहोस्।
+
+हरेक record एउटा specific, traceable civic item हो:
+- Budget allocations (amount, ministry, target)
+- Government promises / commitments
+- Projects (name, cost, timeline, location)
+- Institutions / bodies created
+- Policy reforms (what changed, new rules)
+- Employment / social program targets
+- Financial rules (rates, limits, eligibility)
+
+RULES:
+- Be EXHAUSTIVE — हरेक specific item निकाल्नुस् (100+ records expected for large documents)
+- हरेक record मा sourceQuote (exact text from document) राख्नुस्
+- Generic statements skip गर्नुस् — specific numbers, names, amounts भएको मात्र
+- titleNepali र summaryNepali सधैं नेपालीमा
+- confidence: 0.9 = exact number/date from doc; 0.7 = clear commitment; 0.5 = implied
+
+Return JSON array:
+{
+  "records": [
+    {
+      "type": "budget_target|promise|project|institution|reform|social_program|employment_target|financial_inclusion|other",
+      "title": "5-word English title",
+      "titleNepali": "नेपाली शीर्षक",
+      "summaryNepali": "१-२ वाक्य नेपालीमा",
+      "sector": "education|health|agriculture|infrastructure|energy|finance|governance|youth|other",
+      "ministry": "Exact ministry name",
+      "target": "specific number/target if any",
+      "measurable": true,
+      "timeline": "fiscal year or date",
+      "budgetAmount": "रु. X करोड/अर्ब",
+      "geoScope": "national|provincial|district|municipality",
+      "governmentLevel": "federal|provincial|local",
+      "tags": ["tag1", "tag2"],
+      "confidence": 0.85,
+      "affectedGroups": ["युवा", "कृषक"],
+      "affectedSectors": ["agriculture", "finance"],
+      "traceability": {
+        "sourceQuote": "exact quote from document",
+        "rawParagraph": "full paragraph",
+        "extractionReasoning": "why this is trackable"
+      }
+    }
+  ],
+  "sectionSummary": "brief summary of this document section"
+}`;
+
+  try {
+    const result = await callGemini({
+      apiKey:    context.env.GEMINI_API_KEY,
+      system:    "You are Nepal's national civic intelligence extraction engine. Extract ALL trackable structured records from government documents. Be exhaustive — 100+ records expected for large documents. Return only valid JSON.",
+      parts:     [
+        { inline_data: { mime_type: "application/pdf", data: base64 } },
+        { text: prompt },
+      ],
+      maxTokens: 8192,
+    });
+
+    const [parsed, parseErr] = extractJson(result.text);
+    if (parseErr || !parsed) {
+      log("extract-intelligence", "pdf_parse_error", { docId: body.docId, preview: result.text.slice(0, 200) });
+      return clientError("AI could not extract structured records from PDF.", 422, "NO_RECORDS_EXTRACTED");
+    }
+
+    const data = parsed as { records: ExtractedRecord[]; sectionSummary?: string };
+    if (!Array.isArray(data.records) || data.records.length === 0) {
+      return clientError("AI could not extract structured records. Document may lack specific trackable commitments.", 422, "NO_RECORDS_EXTRACTED");
+    }
+
+    const records = data.records.map((r, i) => ({ ...r, chunkId: "pdf_direct", domain }));
+    records.sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
+
+    log("extract-intelligence", "pdf_complete", { docId: body.docId, count: records.length });
+
+    return new Response(
+      JSON.stringify({
+        ok:         true,
+        records,
+        totalFound: records.length,
+        rawCount:   records.length,
+        chunkCount: 1,
+        domain,
+        docSummary: data.sectionSummary ?? `${records.length} intelligence records extracted from ${body.docTitle}`,
+      }),
+      { headers: CORS },
+    );
+  } catch (err) {
+    return internalError(err);
+  }
+}
+
 export const onRequestOptions = async (): Promise<Response> =>
   new Response(null, { status: 204, headers: CORS });
 
@@ -201,18 +322,33 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     return clientError("Invalid JSON", 400, "BAD_REQUEST");
   }
 
-  if (!body.text || !body.docTitle || !body.docId || !body.ownerId) {
-    return clientError("text, docTitle, docId, ownerId required", 400, "VALIDATION_ERROR");
+  if (!body.docTitle || !body.docId || !body.ownerId) {
+    return clientError("docTitle, docId, ownerId required", 400, "VALIDATION_ERROR");
+  }
+  if (!body.text && !body.downloadUrl) {
+    return clientError("text or downloadUrl required", 400, "VALIDATION_ERROR");
   }
 
-  const domain      = body.domain ?? "janta";
-  const chunks      = chunkText(body.text);
+  const domain = body.domain ?? "janta";
+
+  // ── PDF direct extraction path ─────────────────────────────────────────────
+  // When downloadUrl is provided and text is short/missing, extract directly
+  // from the original PDF via Gemini inline_data — gives 10× better results.
+  const isPdf = body.mimeType === "application/pdf";
+  const textTooShort = !body.text || body.text.length < 2000;
+
+  if (isPdf && body.downloadUrl && textTooShort) {
+    return await extractFromPdf(context, body, domain);
+  }
+
+  const text        = body.text ?? "";
+  const chunks      = chunkText(text);
   const allRecords: Array<ExtractedRecord & { chunkId: string }> = [];
   const summaries:  string[] = [];
 
   log("extract-intelligence", "start", {
     docId:      body.docId,
-    textLength: body.text.length,
+    textLength: text.length,
     chunks:     chunks.length,
   });
 

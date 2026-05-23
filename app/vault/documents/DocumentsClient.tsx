@@ -491,13 +491,15 @@ export default function DocumentsClient() {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
         body:    JSON.stringify({
-          text,
-          docTitle:   doc.title,
-          docType:    doc.detectedTopics?.[0] ?? "government document",
-          sourceYear: new Date(doc.uploadedAt).getFullYear().toString(),
-          ownerId:    user.uid,
-          docId:      doc.id,
-          domain:     doc.category === "finance" ? "finance" : "janta",
+          text:        text || undefined,
+          downloadUrl: doc.downloadUrl,
+          mimeType:    doc.mimeType,
+          docTitle:    doc.title,
+          docType:     doc.detectedTopics?.[0] ?? "government document",
+          sourceYear:  new Date(doc.uploadedAt).getFullYear().toString(),
+          ownerId:     user.uid,
+          docId:       doc.id,
+          domain:      doc.category === "finance" ? "finance" : "janta",
         }),
       });
 
