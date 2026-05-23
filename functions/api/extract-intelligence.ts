@@ -332,12 +332,11 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
   const domain = body.domain ?? "janta";
 
   // ── PDF direct extraction path ─────────────────────────────────────────────
-  // When downloadUrl is provided and text is short/missing, extract directly
-  // from the original PDF via Gemini inline_data — gives 10× better results.
+  // Always prefer direct PDF extraction over text chunking when the original
+  // PDF is available — Gemini sees the full structured document, not an AI summary.
   const isPdf = body.mimeType === "application/pdf";
-  const textTooShort = !body.text || body.text.length < 2000;
 
-  if (isPdf && body.downloadUrl && textTooShort) {
+  if (isPdf && body.downloadUrl) {
     return await extractFromPdf(context, body, domain);
   }
 
