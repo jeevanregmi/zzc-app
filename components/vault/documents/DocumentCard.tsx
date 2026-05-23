@@ -433,18 +433,21 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
         <div className="w-full rounded-xl bg-amber-950/40 border border-amber-800 px-3 py-3 space-y-1.5">
           <div className="flex items-center justify-between">
             <p className="text-amber-300 text-xs font-bold animate-pulse">📜 संविधान extract हुँदैछ…</p>
-            <span className="text-amber-600 text-xs font-mono">{constitutionBatch}/3 बैच</span>
+            <span className="text-amber-600 text-xs font-mono">{constitutionBatch}/6 बैच</span>
           </div>
           <div className="w-full bg-zinc-800 rounded-full h-1">
             <div
               className="bg-amber-500 h-1 rounded-full transition-all duration-500"
-              style={{ width: `${((constitutionBatch) / 3) * 100}%` }}
+              style={{ width: `${((constitutionBatch) / 6) * 100}%` }}
             />
           </div>
           <p className="text-amber-700/80 text-xs">
-            {constitutionBatch === 1 && "भाग १–१२ — प्रारम्भिक, मौलिक हक, कार्यपालिका, न्यायपालिका"}
-            {constitutionBatch === 2 && "भाग १३–२२ — प्रदेश, स्थानीय तह, संघीय आयोग, अन्तरसम्बन्ध"}
-            {constitutionBatch === 3 && "भाग २३–३५ — राजनीतिक दल, निर्वाचन, संकटकाल, विविध"}
+            {constitutionBatch === 1 && "भाग १–६ — प्रारम्भिक, नागरिकता, मौलिक हक, निर्देशक सिद्धान्त"}
+            {constitutionBatch === 2 && "भाग ७–१२ — कार्यपालिका, व्यवस्थापिका, न्यायपालिका"}
+            {constitutionBatch === 3 && "भाग १३–१८ — संघीय आयोग, प्रदेश, स्थानीय कार्यपालिका"}
+            {constitutionBatch === 4 && "भाग १९–२३ — स्थानीय व्यवस्थापिका, अन्तरसम्बन्ध, राजनीतिक दल"}
+            {constitutionBatch === 5 && "भाग २४–२९ — निर्वाचन, संकटकाल, संवैधानिक आयोगहरू"}
+            {constitutionBatch === 6 && "भाग ३०–३५ — निर्वाचन आयोग, मानव अधिकार, संशोधन"}
             {constitutionBatch === 0 && "सुरु गर्दैछ…"}
           </p>
           {constitutionCount > 0 && (

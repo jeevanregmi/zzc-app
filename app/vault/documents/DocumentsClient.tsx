@@ -689,9 +689,12 @@ export default function DocumentsClient() {
     setExtractingConstitutionId(doc.id);
 
     const BATCHES = [
-      { partRange: "1-12",  label: "भाग १–१२" },
-      { partRange: "13-22", label: "भाग १३–२२" },
-      { partRange: "23-35", label: "भाग २३–३५" },
+      { partRange: "1-6",   label: "भाग १–६"   },
+      { partRange: "7-12",  label: "भाग ७–१२"  },
+      { partRange: "13-18", label: "भाग १३–१८" },
+      { partRange: "19-23", label: "भाग १९–२३" },
+      { partRange: "24-29", label: "भाग २४–२९" },
+      { partRange: "30-35", label: "भाग ३०–३५" },
     ];
 
     let totalSaved = 0;
