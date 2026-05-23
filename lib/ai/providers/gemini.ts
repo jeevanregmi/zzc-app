@@ -72,10 +72,11 @@ export async function callGemini(opts: {
         system_instruction: { parts: [{ text: opts.system }] },
         contents:           [{ role: "user", parts: opts.parts }],
         generationConfig:   {
-            maxOutputTokens:  maxTokens,
-            temperature:      0.1,
-            thinkingConfig:   { thinkingBudget: 0 },
+            maxOutputTokens: maxTokens,
+            temperature:     0.1,
             ...(opts.jsonMode ? { responseMimeType: "application/json" } : {}),
+            // thinkingConfig only supported on gemini-2.5-* models
+            ...(model.includes("2.5") ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
           },
       }),
     },
