@@ -683,40 +683,59 @@ export default function DocumentsClient() {
     }
   };
 
-  // ── Constitution Framework extraction — 3 sequential batches (all 35 parts) ─
+  // ── Constitution Framework extraction — 11 batches by article number (28 articles each) ─
+  // Batching by article number (not part number) ensures uniform output size per batch,
+  // avoiding Cloudflare 30s timeout caused by dense parts like Parliament (Part 8, ~74 articles).
   const handleExtractConstitution = async (doc: IntelligenceDocument) => {
     if (!user?.uid) return;
     setExtractingConstitutionId(doc.id);
 
     const BATCHES = [
-      { partRange: "1-6",   label: "भाग १–६"   },
-      { partRange: "7-12",  label: "भाग ७–१२"  },
-      { partRange: "13-18", label: "भाग १३–१८" },
-      { partRange: "19-23", label: "भाग १९–२३" },
-      { partRange: "24-29", label: "भाग २४–२९" },
-      { partRange: "30-35", label: "भाग ३०–३५" },
+      { articleRange: "1-28",    label: "धारा १–२८"    },
+      { articleRange: "29-56",   label: "धारा २९–५६"   },
+      { articleRange: "57-84",   label: "धारा ५७–८४"   },
+      { articleRange: "85-112",  label: "धारा ८५–११२"  },
+      { articleRange: "113-140", label: "धारा ११३–१४०" },
+      { articleRange: "141-168", label: "धारा १४१–१६८" },
+      { articleRange: "169-196", label: "धारा १६९–१९६" },
+      { articleRange: "197-224", label: "धारा १९७–२२४" },
+      { articleRange: "225-252", label: "धारा २२५–२५२" },
+      { articleRange: "253-280", label: "धारा २५३–२८०" },
+      { articleRange: "281-308", label: "धारा २८१–३०८" },
     ];
 
     let totalSaved = 0;
-    const allParts: string[] = [];
 
     try {
       for (let i = 0; i < BATCHES.length; i++) {
         const batch = BATCHES[i];
         setConstitutionBatch(i + 1);
 
-        const res = await fetch("/api/extract-constitution", {
-          method:  "POST",
-          headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({
-            documentId:  doc.id,
-            downloadUrl: doc.downloadUrl,
-            mimeType:    doc.mimeType ?? "application/pdf",
-            docTitle:    doc.title,
-            ownerId:     user.uid,
-            partRange:   batch.partRange,
-          }),
-        });
+        let res: Response;
+        try {
+          res = await fetch("/api/extract-constitution", {
+            method:  "POST",
+            headers: { "Content-Type": "application/json" },
+            body:    JSON.stringify({
+              documentId:   doc.id,
+              downloadUrl:  doc.downloadUrl,
+              mimeType:     doc.mimeType ?? "application/pdf",
+              docTitle:     doc.title,
+              ownerId:      user.uid,
+              articleRange: batch.articleRange,
+            }),
+          });
+        } catch (fetchErr) {
+          alert(`📜 ${batch.label} — Network error. ${totalSaved} records saved so far.\n${fetchErr}`);
+          break;
+        }
+
+        // Guard against Cloudflare HTML timeout pages (504/524)
+        const contentType = res.headers.get("content-type") ?? "";
+        if (!contentType.includes("application/json")) {
+          alert(`📜 ${batch.label} — Server timeout (Cloudflare 30s limit). ${totalSaved} records saved.\n\nRe-extract गर्दा यो batch automatically resume हुन्छ।`);
+          break;
+        }
 
         const data = await res.json() as Record<string, unknown>;
         if (!res.ok) {
@@ -727,7 +746,7 @@ export default function DocumentsClient() {
 
         const records = data.records as Record<string, unknown>[] | undefined;
         if (!records?.length) {
-          alert(`📜 ${batch.label}: AI ले कुनै records निकाल्न सकेन — अर्को batch जारी राख्दैछ।`);
+          // Empty batch is fine (some article ranges may not have content) — keep going
           continue;
         }
 
@@ -739,12 +758,10 @@ export default function DocumentsClient() {
         ));
 
         totalSaved += records.length;
-        const parts = (data.partsExtracted as string[] | undefined) ?? [];
-        allParts.push(...parts);
         setConstitutionCountByDoc(prev => ({ ...prev, [doc.id]: totalSaved }));
       }
 
-      alert(`📜 सम्पूर्ण संविधान extract सम्पन्न!\n\n${totalSaved} धाराहरू save भए\n\nभागहरू: ${allParts.slice(0, 8).join(", ")}${allParts.length > 8 ? "..." : ""}`);
+      alert(`📜 संविधान extract सम्पन्न!\n\n${totalSaved} धाराहरू save भए`);
     } catch (err) {
       alert(`Constitution extract error: ${err instanceof Error ? err.message : String(err)}`);
     } finally {

@@ -71,7 +71,7 @@ interface Props {
   relCount?:               number;
   onExtractConstitution?:  (doc: IntelligenceDocument) => void;
   isExtractingConstitution?: boolean;
-  constitutionBatch?:      number; // 1,2,3 = which of 3 batches is running
+  constitutionBatch?:      number; // 1–11 = which of 11 article-range batches is running
   constitutionCount?:      number;
   onArchive?:              (doc: IntelligenceDocument) => void;
   isArchiving?:            boolean;
@@ -426,29 +426,34 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
           onClick={() => onExtractConstitution!(doc)}
           className="w-full text-xs font-bold py-2.5 rounded-xl bg-amber-900/50 hover:bg-amber-900 text-amber-200 border border-amber-700 transition-colors"
         >
-          📜 सम्पूर्ण संविधान Extract गर्नुस् (३५ भाग)
+          📜 सम्पूर्ण संविधान Extract गर्नुस् (३०८ धाराहरू)
         </button>
       )}
       {isExtractingConstitution && (
         <div className="w-full rounded-xl bg-amber-950/40 border border-amber-800 px-3 py-3 space-y-1.5">
           <div className="flex items-center justify-between">
             <p className="text-amber-300 text-xs font-bold animate-pulse">📜 संविधान extract हुँदैछ…</p>
-            <span className="text-amber-600 text-xs font-mono">{constitutionBatch}/6 बैच</span>
+            <span className="text-amber-600 text-xs font-mono">{constitutionBatch}/11 बैच</span>
           </div>
           <div className="w-full bg-zinc-800 rounded-full h-1">
             <div
               className="bg-amber-500 h-1 rounded-full transition-all duration-500"
-              style={{ width: `${((constitutionBatch) / 6) * 100}%` }}
+              style={{ width: `${(constitutionBatch / 11) * 100}%` }}
             />
           </div>
           <p className="text-amber-700/80 text-xs">
-            {constitutionBatch === 1 && "भाग १–६ — प्रारम्भिक, नागरिकता, मौलिक हक, निर्देशक सिद्धान्त"}
-            {constitutionBatch === 2 && "भाग ७–१२ — कार्यपालिका, व्यवस्थापिका, न्यायपालिका"}
-            {constitutionBatch === 3 && "भाग १३–१८ — संघीय आयोग, प्रदेश, स्थानीय कार्यपालिका"}
-            {constitutionBatch === 4 && "भाग १९–२३ — स्थानीय व्यवस्थापिका, अन्तरसम्बन्ध, राजनीतिक दल"}
-            {constitutionBatch === 5 && "भाग २४–२९ — निर्वाचन, संकटकाल, संवैधानिक आयोगहरू"}
-            {constitutionBatch === 6 && "भाग ३०–३५ — निर्वाचन आयोग, मानव अधिकार, संशोधन"}
-            {constitutionBatch === 0 && "सुरु गर्दैछ…"}
+            {constitutionBatch === 1  && "धारा १–२८ — प्रारम्भिक, नागरिकता, मौलिक हकहरू सुरु"}
+            {constitutionBatch === 2  && "धारा २९–५६ — मौलिक हक, निर्देशक सिद्धान्त"}
+            {constitutionBatch === 3  && "धारा ५७–८४ — राज्य संरचना, राष्ट्रपति, कार्यपालिका"}
+            {constitutionBatch === 4  && "धारा ८५–११२ — व्यवस्थापिका (संसद)"}
+            {constitutionBatch === 5  && "धारा ११३–१४० — व्यवस्थापकीय कार्यविधि"}
+            {constitutionBatch === 6  && "धारा १४१–१६८ — आर्थिक, न्यायपालिका"}
+            {constitutionBatch === 7  && "धारा १६९–१९६ — संघीय आयोग, प्रदेश"}
+            {constitutionBatch === 8  && "धारा १९७–२२४ — प्रदेश व्यवस्थापिका, स्थानीय"}
+            {constitutionBatch === 9  && "धारा २२५–२५२ — अन्तरसम्बन्ध, निर्वाचन"}
+            {constitutionBatch === 10 && "धारा २५३–२८० — संवैधानिक आयोगहरू"}
+            {constitutionBatch === 11 && "धारा २८१–३०८ — मानव अधिकार, संशोधन, विविध"}
+            {constitutionBatch === 0  && "सुरु गर्दैछ…"}
           </p>
           {constitutionCount > 0 && (
             <p className="text-amber-600 text-xs">{constitutionCount} धाराहरू save भए</p>

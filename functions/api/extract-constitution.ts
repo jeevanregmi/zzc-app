@@ -24,7 +24,7 @@ interface ExtractConstitutionRequest {
   mimeType:      string;
   docTitle:      string;
   ownerId:       string;
-  partRange:     string; // e.g. "1-12", "13-22", "23-35"
+  articleRange:  string; // e.g. "1-28", "29-56" — ARTICLE numbers (not part numbers)
 }
 
 // ─── Prompt ───────────────────────────────────────────────────────────────────
@@ -33,38 +33,28 @@ const SYSTEM_PROMPT = `You are extracting Nepal's Constitution (2015/2072 BS) as
 You are building the ROOT SEMANTIC FRAMEWORK for a civic intelligence system.
 Return ONLY valid JSON. Start with { end with }. No markdown. No code fences. No extra fields.`;
 
-const BATCH_DESCRIPTIONS: Record<string, string> = {
-  "1-6":   "भाग १ (प्रारम्भिक) देखि भाग ६ (राष्ट्रपति) — प्रारम्भिक, नागरिकता, मौलिक हकहरू, निर्देशक सिद्धान्त, राज्य संरचना, राष्ट्रपति",
-  "7-12":  "भाग ७ (कार्यपालिका) देखि भाग १२ (महान्यायाधिवक्ता) — कार्यपालिका, व्यवस्थापिका, व्यवस्थापकीय कार्यविधि, आर्थिक कार्यप्रणाली, न्यायपालिका, महान्यायाधिवक्ता",
-  "13-18": "भाग १३ (संघीय आयोग) देखि भाग १८ (स्थानीय कार्यपालिका) — संघीय आयोग, प्रदेश, प्रदेश व्यवस्थापिका, प्रदेश कार्यपालिका, प्रदेश आर्थिक, स्थानीय कार्यपालिका",
-  "19-23": "भाग १९ (स्थानीय व्यवस्थापिका) देखि भाग २३ (राजनीतिक दल) — स्थानीय व्यवस्थापिका, अन्तरसम्बन्ध, राष्ट्रिय सुरक्षा, सम्पत्ति/करार, राजनीतिक दल",
-  "24-29": "भाग २४ (निर्वाचन) देखि भाग २९ — निर्वाचन, संकटकालीन व्यवस्था, राष्ट्रिय प्राकृतिक स्रोत आयोग, अख्तियार दुरुपयोग अनुसन्धान आयोग, महालेखा परीक्षक, लोक सेवा आयोग",
-  "30-35": "भाग ३० देखि भाग ३५ — निर्वाचन आयोग, राष्ट्रिय मानव अधिकार आयोग, राष्ट्रिय महिला आयोग, राष्ट्रिय दलित आयोग, विविध, संविधान संशोधन",
-};
-
-function buildPrompt(partRange: string, docTitle: string): string {
-  const desc = BATCH_DESCRIPTIONS[partRange] ?? `भाग ${partRange}`;
+function buildPrompt(articleRange: string, docTitle: string): string {
+  const [s, e] = articleRange.split("-").map(Number);
+  const count  = e - s + 1;
   return `तपाईं नेपालको संविधान २०७२ बाट सम्पूर्ण संवैधानिक ज्ञान निकाल्दै हुनुहुन्छ।
 
-TASK: Extract EVERY SINGLE article from Parts ${partRange} of "${docTitle}".
-Covering: ${desc}
+TASK: Extract धारा ${s} देखि धारा ${e} (Articles ${s}–${e}, total ${count} articles) from "${docTitle}".
 
-⚠️  CRITICAL RULE: Do NOT skip any धारा. Extract ALL articles in those parts — even short ones.
-If a part has 5 articles, extract all 5. If it has 20 articles, extract all 20.
-For articles with important खण्ड (sub-clauses), create ONE record per article (combine clauses unless fundamentally distinct).
+⚠️  CRITICAL RULE: Extract ALL ${count} articles with धारा numbers ${s} through ${e}. Do NOT skip any.
+For articles with खण्ड (sub-clauses), create ONE record per article — combine unless fundamentally distinct rights.
 
 CONSTITUTIONAL TERMINOLOGY (use in all Nepali fields):
 - भाग = Part  |  धारा = Article  |  खण्ड = Clause
 
-COMPACT FORMAT (strict — to fit all articles in one response):
+COMPACT FORMAT (strict — fits all ${count} articles in one response):
 - "part": Nepali Devanagari from PDF e.g. "भाग ३ — मौलिक हकहरू"
 - "originalText": verbatim from PDF, max 80 chars
 - "plainNepaliSummary": rule + constitutional philosophy/spirit, max 50 chars, pure Nepali
 - ALL arrays: max 3 items, max 25 chars per item
-- "articleId": "art-{number}" or "art-{number}-{clause}" — system ID only
+- "articleId": "art-{number}" — system ID only
 - "confidence": 0.0–1.0
 
-Return ONLY valid JSON (ascending article number order):
+Return ONLY valid JSON (ascending धारा number order):
 {
   "records": [
     {
@@ -91,7 +81,7 @@ Return ONLY valid JSON (ascending article number order):
       "confidence": 0.95
     }
   ],
-  "partsExtracted": ["भाग ३ — मौलिक हकहरू"],
+  "articleRangeExtracted": "${s}-${e}",
   "summaryNote": "one sentence about this batch"
 }`;
 }
@@ -246,13 +236,13 @@ export const onRequestPost = async ({ request, env }: PagesContext): Promise<Res
     if (!body.downloadUrl?.trim()) return clientError("downloadUrl required",  400, "MISSING_FIELD");
     if (!body.ownerId?.trim())     return clientError("ownerId required",      400, "MISSING_FIELD");
     if (!body.mimeType?.trim())    return clientError("mimeType required",     400, "MISSING_FIELD");
-    if (!body.partRange?.trim())   return clientError("partRange required",    400, "MISSING_FIELD");
+    if (!body.articleRange?.trim()) return clientError("articleRange required", 400, "MISSING_FIELD");
 
     if (!env.GEMINI_API_KEY?.trim()) {
       return providerError("GEMINI_API_KEY not configured in Cloudflare Pages env vars", "CONFIG_ERROR");
     }
 
-    log("extract-constitution", "start", { docId: body.documentId, mimeType: body.mimeType, partRange: body.partRange });
+    log("extract-constitution", "start", { docId: body.documentId, mimeType: body.mimeType, articleRange: body.articleRange });
 
     // ── Fetch PDF ──────────────────────────────────────────────────────────────
     if (body.mimeType !== "application/pdf") {
@@ -280,9 +270,9 @@ export const onRequestPost = async ({ request, env }: PagesContext): Promise<Res
         system:    SYSTEM_PROMPT,
         parts:     [
           { inline_data: { mime_type: "application/pdf", data: pdfResult.base64 } },
-          { text: buildPrompt(body.partRange, body.docTitle || "Nepal Constitution 2015") },
+          { text: buildPrompt(body.articleRange, body.docTitle || "Nepal Constitution 2015") },
         ],
-        maxTokens: 65536,
+        maxTokens: 32768,
       });
       geminiText = result.text;
       log("extract-constitution", "gemini_ok", {
