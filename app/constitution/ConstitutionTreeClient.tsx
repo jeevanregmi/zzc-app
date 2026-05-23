@@ -1,776 +1,1124 @@
 "use client";
 
 // /constitution — Living Nepal Constitution Tree
-// UX Principle: Environment first. Data second. Wonder first. Interface second.
-// State machine: forest → branch (leaves on tree) → article (floating panel)
+// Phase 1.5: Cinematic image-driven — forest atmosphere + organic hotspot overlays
+// Set TREE_BG_IMAGE to a photorealistic banyan tree image for the full reference look.
+// Without it, CSS multi-layer gradients create the forest atmosphere as a fallback.
 
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { collection, query, where, getDocs, addDoc, Timestamp } from "firebase/firestore";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { collection, query, where, getDocs, addDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import type { ConstitutionalFrameworkRecord } from "../../lib/types/constitutional-framework";
-import Link from "next/link";
 
-// ─── Branch Config ────────────────────────────────────────────────────────────
+// ── Swap in a real generated/photorealistic banyan tree image here ─────────────
+// e.g. "/banyan-tree.jpg" or a CDN URL — leave empty for CSS fallback
+const TREE_BG_IMAGE = "";
+
+// ─── Branch layout (organic positions on tree, % of the tree canvas area) ─────
 
 interface Branch {
   id:       string;
   nepali:   string;
   color:    string;
-  tipX:     number;   // SVG viewBox % (0–100)
-  tipY:     number;
-  fromX:    number;
-  fromY:    number;
-  cp1X:     number;
-  cp1Y:     number;
-  cp2X:     number;
-  cp2Y:     number;
-  side:     "left" | "right";
+  x:        number; // left % within tree canvas
+  y:        number; // top % within tree canvas
   keywords: string[];
   emoji:    string;
 }
 
 const BRANCHES: Branch[] = [
   {
-    id: "justice",     nepali: "न्याय",       color: "#818cf8",
-    tipX: 72,  tipY: 19, fromX: 54, fromY: 36, cp1X: 60, cp1Y: 30, cp2X: 66, cp2Y: 22,
-    side: "right", emoji: "⚖️",
-    keywords: ["न्यायपालिका", "सर्वोच्च अदालत", "संवैधानिक इजलास", "judiciary", "supreme court"],
+    id: "women", nepali: "महिला", color: "#f472b6",
+    x: 31, y: 27, emoji: "👩",
+    keywords: ["महिलाको हक", "women", "gender equality", "महिला"],
   },
   {
-    id: "rights",      nepali: "मौलिक हक",    color: "#4ade80",
-    tipX: 23,  tipY: 26, fromX: 46, fromY: 38, cp1X: 38, cp1Y: 34, cp2X: 30, cp2Y: 28,
-    side: "left",  emoji: "📜",
-    keywords: ["मौलिक हक", "fundamental rights", "right to equality", "right to freedom"],
+    id: "children", nepali: "बालबालिका", color: "#a78bfa",
+    x: 52, y: 21, emoji: "👶",
+    keywords: ["बालबालिकाको हक", "children", "child rights", "बालबालिका"],
   },
   {
-    id: "education",   nepali: "शिक्षा",      color: "#60a5fa",
-    tipX: 79,  tipY: 29, fromX: 54, fromY: 44, cp1X: 63, cp1Y: 38, cp2X: 71, cp2Y: 31,
-    side: "right", emoji: "📚",
-    keywords: ["शिक्षाको हक", "education", "right to education", "school", "university"],
+    id: "education", nepali: "शिक्षा", color: "#60a5fa",
+    x: 67, y: 27, emoji: "📚",
+    keywords: ["शिक्षाको हक", "education", "right to education", "शिक्षा"],
   },
   {
-    id: "women",       nepali: "महिला",        color: "#f472b6",
-    tipX: 15,  tipY: 40, fromX: 46, fromY: 45, cp1X: 35, cp1Y: 43, cp2X: 24, cp2Y: 40,
-    side: "left",  emoji: "👩",
-    keywords: ["महिलाको हक", "women", "gender equality", "mahila"],
+    id: "rights", nepali: "मौलिक हक", color: "#4ade80",
+    x: 40, y: 35, emoji: "⚖️",
+    keywords: ["मौलिक हक", "fundamental rights", "right to equality", "समानता"],
   },
   {
-    id: "governance",  nepali: "सुशासन",       color: "#22d3ee",
-    tipX: 68,  tipY: 42, fromX: 53, fromY: 50, cp1X: 60, cp1Y: 46, cp2X: 64, cp2Y: 43,
-    side: "right", emoji: "🏛️",
-    keywords: ["सुशासन", "good governance", "accountability", "transparency", "corruption"],
+    id: "federalism", nepali: "संघीयता", color: "#fb923c",
+    x: 62, y: 36, emoji: "🗺️",
+    keywords: ["संघीय संरचना", "federalism", "province", "pradesh", "संघीयता"],
   },
   {
-    id: "inclusion",   nepali: "समावेशिता",    color: "#c084fc",
-    tipX: 20,  tipY: 50, fromX: 47, fromY: 50, cp1X: 37, cp1Y: 50, cp2X: 28, cp2Y: 50,
-    side: "left",  emoji: "🤝",
-    keywords: ["दलितको हक", "समावेशी", "inclusion", "dalit rights", "janajati"],
+    id: "health", nepali: "स्वास्थ्य", color: "#f87171",
+    x: 22, y: 42, emoji: "🏥",
+    keywords: ["स्वास्थ्यको हक", "health", "right to health", "स्वास्थ्य"],
   },
   {
-    id: "employment",  nepali: "रोजगारी",      color: "#fbbf24",
-    tipX: 82,  tipY: 46, fromX: 53, fromY: 55, cp1X: 65, cp1Y: 51, cp2X: 74, cp2Y: 47,
-    side: "right", emoji: "💼",
-    keywords: ["रोजगारीको हक", "employment", "right to employment", "labor", "shramik"],
+    id: "employment", nepali: "रोजगारी", color: "#fbbf24",
+    x: 76, y: 41, emoji: "💼",
+    keywords: ["रोजगारीको हक", "employment", "right to employment", "रोजगारी"],
   },
   {
-    id: "health",      nepali: "स्वास्थ्य",    color: "#f87171",
-    tipX: 18,  tipY: 57, fromX: 47, fromY: 54, cp1X: 36, cp1Y: 55, cp2X: 27, cp2Y: 56,
-    side: "left",  emoji: "🏥",
-    keywords: ["स्वास्थ्यको हक", "health", "right to health", "hospital"],
+    id: "inclusion", nepali: "समावेशिता", color: "#c084fc",
+    x: 19, y: 54, emoji: "🤝",
+    keywords: ["दलितको हक", "समावेशी", "inclusion", "dalit", "समावेशिता"],
   },
   {
-    id: "children",    nepali: "बालबालिका",    color: "#a78bfa",
-    tipX: 79,  tipY: 58, fromX: 53, fromY: 60, cp1X: 63, cp1Y: 59, cp2X: 71, cp2Y: 58,
-    side: "right", emoji: "👶",
-    keywords: ["बालबालिकाको हक", "children", "child rights", "bal"],
+    id: "justice", nepali: "न्यायपालिका", color: "#818cf8",
+    x: 36, y: 52, emoji: "⚖️",
+    keywords: ["न्यायपालिका", "सर्वोच्च अदालत", "judiciary", "supreme court", "संवैधानिक इजलास"],
   },
   {
-    id: "environment", nepali: "वातावरण",      color: "#34d399",
-    tipX: 26,  tipY: 66, fromX: 47, fromY: 62, cp1X: 38, cp1Y: 63, cp2X: 32, cp2Y: 65,
-    side: "left",  emoji: "🌿",
-    keywords: ["वातावरणको हक", "environment", "clean environment", "forest"],
+    id: "environment", nepali: "वातावरण", color: "#34d399",
+    x: 63, y: 53, emoji: "🌿",
+    keywords: ["वातावरणको हक", "environment", "forest", "वातावरण"],
   },
   {
-    id: "federalism",  nepali: "संघीयता",      color: "#fb923c",
-    tipX: 76,  tipY: 67, fromX: 53, fromY: 64, cp1X: 62, cp1Y: 65, cp2X: 69, cp2Y: 66,
-    side: "right", emoji: "🗺️",
-    keywords: ["संघीय संरचना", "federalism", "province", "pradesh", "municipality"],
+    id: "governance", nepali: "सुशासन", color: "#22d3ee",
+    x: 81, y: 53, emoji: "🏛️",
+    keywords: ["सुशासन", "good governance", "accountability", "transparency"],
   },
 ];
 
-// ─── Leaf positions — organic fan from branch tip ─────────────────────────────
+const QUICK_CATS = [
+  { label: "मौलिक हक",                  branchId: "rights"      },
+  { label: "मौलिक कर्तव्य",             branchId: null          },
+  { label: "राज्यका निर्देशक सिद्धान्त", branchId: null          },
+  { label: "संघीयता",                    branchId: "federalism"  },
+  { label: "व्यायपालिका",               branchId: "justice"     },
+  { label: "व्यवस्थापिका",              branchId: null          },
+  { label: "कार्यपालिका",               branchId: "governance"  },
+];
 
-function leafPositions(b: Branch, total: number): Array<{ x: number; y: number }> {
-  const dx  = b.tipX - b.fromX;
-  const dy  = b.tipY - b.fromY;
-  const len = Math.sqrt(dx * dx + dy * dy) || 1;
-  const ux  = dx / len;
-  const uy  = dy / len;
-  const px  = -uy;  // perpendicular
-  const py  = ux;
+// ─── Keyword matching ─────────────────────────────────────────────────────────
 
-  return Array.from({ length: total }, (_, i) => {
-    const t       = total <= 1 ? 0.5 : i / (total - 1);
-    const forward = 4 + (i % 4) * 2.5;
-    const spread  = (t - 0.5) * 14 + Math.sin(i * 1.8) * 3;
-    return {
-      x: b.tipX + ux * forward + px * spread,
-      y: b.tipY + uy * forward + py * spread,
-    };
+function articleMatchesBranch(a: ConstitutionalFrameworkRecord, b: Branch): boolean {
+  const haystack = [
+    a.titleEnglish, a.titleNepali, a.part,
+    ...(a.sectors            ?? []),
+    ...(a.constitutionalThemes ?? []),
+    ...(a.keywords            ?? []),
+    ...(a.institutions        ?? []),
+    ...(a.governanceStructures ?? []),
+    ...(a.affectedGroups      ?? []),
+  ].filter(Boolean).join(" ").toLowerCase();
+  return b.keywords.some(k => haystack.includes(k.toLowerCase()));
+}
+
+// ─── Article leaf positions around branch hotspot (in % units) ────────────────
+
+function leafOffsets(count: number, bx: number, by: number) {
+  return Array.from({ length: Math.min(count, 14) }, (_, i) => {
+    const angle = (i / Math.min(count, 14)) * Math.PI * 2 - Math.PI / 2;
+    let r = 10 + (i % 3) * 2.5;
+    let dx = Math.cos(angle) * r;
+    let dy = Math.sin(angle) * r;
+    // pull back from edges
+    if (bx + dx < 6)  dx = 6  - bx;
+    if (bx + dx > 93) dx = 93 - bx;
+    if (by + dy < 8)  dy = 8  - by;
+    if (by + dy > 84) dy = 84 - by;
+    return { dx, dy };
   });
 }
 
-// ─── Firefly Canvas ───────────────────────────────────────────────────────────
+// ─── Firefly canvas ───────────────────────────────────────────────────────────
 
 function FireflyCanvas() {
   const ref = useRef<HTMLCanvasElement>(null);
+
   useEffect(() => {
-    const c   = ref.current; if (!c) return;
+    const c = ref.current; if (!c) return;
     const ctx = c.getContext("2d"); if (!ctx) return;
     let id: number;
-    const r = () => { c.width = innerWidth; c.height = innerHeight; };
-    r(); addEventListener("resize", r);
-    const fs = Array.from({ length: 45 }, () => ({
+
+    const resize = () => { c.width = innerWidth; c.height = innerHeight; };
+    resize();
+    addEventListener("resize", resize);
+
+    const flies = Array.from({ length: 42 }, () => ({
       x: Math.random() * innerWidth,
-      y: Math.random() * innerHeight * 0.9,
-      vx: (Math.random() - .5) * .35,
-      vy: (Math.random() - .5) * .25,
-      ra: Math.random() * 2 + .8,
+      y: Math.random() * innerHeight * 0.88,
+      vx: (Math.random() - 0.5) * 0.35,
+      vy: (Math.random() - 0.5) * 0.22,
+      r: 0.8 + Math.random() * 1.8,
       o: Math.random(),
-      od: (Math.random() > .5 ? 1 : -1) * (.008 + Math.random() * .012),
-      h: Math.random() > .65 ? 45 : 80,
+      od: (Math.random() > 0.5 ? 1 : -1) * (0.008 + Math.random() * 0.015),
+      hue: Math.random() > 0.6 ? 60 : 100, // warm gold or cool green
     }));
+
     const tick = () => {
       ctx.clearRect(0, 0, c.width, c.height);
-      fs.forEach(f => {
+      for (const f of flies) {
         f.x += f.vx; f.y += f.vy;
         f.o += f.od;
         if (f.o > 1 || f.o < 0) f.od *= -1;
         if (f.x < 0) f.x = c.width;
         if (f.x > c.width) f.x = 0;
-        if (f.y < 0) f.y = c.height * .9;
-        if (f.y > c.height * .9) f.y = 0;
-        const g = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.ra * 4);
-        g.addColorStop(0, `hsla(${f.h},90%,80%,${f.o})`);
-        g.addColorStop(1, `hsla(${f.h},90%,60%,0)`);
-        ctx.beginPath(); ctx.arc(f.x, f.y, f.ra * 4, 0, Math.PI * 2);
-        ctx.fillStyle = g; ctx.fill();
-      });
+        if (f.y < 0) f.y = c.height * 0.88;
+        if (f.y > c.height * 0.88) f.y = 0;
+
+        const a = Math.max(0, Math.min(1, f.o));
+        const grd = ctx.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.r * 8);
+        grd.addColorStop(0, `hsla(${f.hue},100%,80%,${a * 0.6})`);
+        grd.addColorStop(1, "transparent");
+        ctx.fillStyle = grd;
+        ctx.beginPath(); ctx.arc(f.x, f.y, f.r * 8, 0, Math.PI * 2); ctx.fill();
+
+        ctx.fillStyle = `hsla(${f.hue},100%,92%,${a})`;
+        ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2); ctx.fill();
+      }
       id = requestAnimationFrame(tick);
     };
     tick();
-    return () => { cancelAnimationFrame(id); removeEventListener("resize", r); };
+    return () => { cancelAnimationFrame(id); removeEventListener("resize", resize); };
   }, []);
-  return <canvas ref={ref} className="absolute inset-0 pointer-events-none" style={{ zIndex: 2 }} />;
-}
 
-// ─── SVG World ───────────────────────────────────────────────────────────────
-
-function WorldSVG({
-  activeBranch,
-  leaves,
-  hoveredLeaf,
-  onBranchClick,
-  onLeafClick,
-  onLeafHover,
-  articleCounts,
-}: {
-  activeBranch: Branch | null;
-  leaves: Array<{ record: ConstitutionalFrameworkRecord; x: number; y: number }>;
-  hoveredLeaf: string | null;
-  onBranchClick: (b: Branch) => void;
-  onLeafClick: (r: ConstitutionalFrameworkRecord) => void;
-  onLeafHover: (id: string | null) => void;
-  articleCounts: Record<string, number>;
-}) {
   return (
-    <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet"
-      className="absolute inset-0 w-full h-full" style={{ zIndex: 3 }}>
-      <defs>
-        <radialGradient id="tg" cx="50%" cy="60%" r="50%">
-          <stop offset="0%" stopColor="#7a4510" />
-          <stop offset="100%" stopColor="#2d1505" />
-        </radialGradient>
-        <radialGradient id="gg" cx="50%" cy="100%" r="60%">
-          <stop offset="0%" stopColor="rgba(74,222,128,0.06)" />
-          <stop offset="100%" stopColor="transparent" />
-        </radialGradient>
-        <filter id="leaf-glow">
-          <feGaussianBlur stdDeviation="0.5" result="b" />
-          <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
-        </filter>
-      </defs>
-
-      {/* Ground glow */}
-      <ellipse cx="50" cy="85" rx="32" ry="5" fill="url(#gg)" />
-
-      {/* Roots */}
-      {[
-        "M 49 81 C 40 84 30 87 22 92",
-        "M 49 82 C 43 86 37 89 30 94",
-        "M 50 83 C 50 88 50 92 50 97",
-        "M 51 82 C 57 86 63 89 70 94",
-        "M 51 81 C 60 84 70 87 78 92",
-      ].map((d, i) => (
-        <path key={i} d={d} stroke="#3d2008" strokeWidth="0.6" fill="none" strokeLinecap="round" />
-      ))}
-
-      {/* Root words */}
-      {[
-        { t: "जनता",              x: 22, y: 93.5 },
-        { t: "सार्वभौमसत्ता",      x: 36, y: 96 },
-        { t: "लोकतन्त्र",         x: 50, y: 98.5 },
-        { t: "स्वतन्त्रता",       x: 64, y: 96 },
-        { t: "मूल आधार",          x: 78, y: 93.5 },
-      ].map(r => (
-        <text key={r.t} x={r.x} y={r.y} textAnchor="middle" fontSize="1.3"
-          fill="rgba(180,140,80,0.45)" fontFamily="serif">{r.t}</text>
-      ))}
-
-      {/* Trunk */}
-      <path
-        d="M 47.5 82 C 45 70 44 58 45 46 C 46 36 48 26 49.5 18 C 51 26 53 36 55 46 C 56 58 55 70 52.5 82 Z"
-        fill="url(#tg)"
-      />
-      {/* Bark lines */}
-      {[72, 62, 52, 42, 32].map(y => (
-        <path key={y} d={`M ${46.5} ${y} Q 50 ${y - 0.8} ${53.5} ${y}`}
-          stroke="rgba(0,0,0,0.18)" strokeWidth="0.2" fill="none" />
-      ))}
-
-      {/* Trunk text */}
-      <text x="50" y="54" textAnchor="middle" fontSize="2"
-        fill="rgba(255,215,120,0.65)" fontFamily="serif" fontWeight="bold">
-        नेपालको संविधान
-      </text>
-
-      {/* Branches */}
-      {BRANCHES.map(b => {
-        const active  = activeBranch?.id === b.id;
-        const dimmed  = activeBranch && !active;
-        const count   = articleCounts[b.id] ?? 0;
-        return (
-          <g key={b.id}>
-            {/* Branch path */}
-            <path
-              d={`M ${b.fromX} ${b.fromY} C ${b.cp1X} ${b.cp1Y}, ${b.cp2X} ${b.cp2Y}, ${b.tipX} ${b.tipY}`}
-              stroke={active ? b.color : dimmed ? "#2a1806" : "#5a3010"}
-              strokeWidth={active ? "0.9" : "0.5"}
-              fill="none" strokeLinecap="round"
-              style={{ transition: "stroke .5s, stroke-width .4s, filter .4s",
-                filter: active ? `drop-shadow(0 0 1.5px ${b.color})` : undefined }}
-            />
-
-            {/* Leaf clusters at tip */}
-            {[{dx:0,dy:0,rx:2,ry:1.4},{dx:-1,dy:-1,rx:1.4,ry:1},{dx:1.2,dy:-.9,rx:1.3,ry:.9},{dx:.1,dy:-2,rx:1.1,ry:.8}].map((lf, i) => (
-              <ellipse key={i}
-                cx={b.tipX + lf.dx} cy={b.tipY + lf.dy}
-                rx={lf.rx} ry={lf.ry}
-                fill={active ? b.color : dimmed ? "#0d1a0d" : "#183018"}
-                opacity={active ? .85 : dimmed ? .25 : .6}
-                style={{ transition: "fill .5s, opacity .5s",
-                  animation: active ? `sway-${i%3} ${3+i*.6}s ease-in-out infinite` : undefined }}
-              />
-            ))}
-
-            {/* Glow dot */}
-            <circle cx={b.tipX} cy={b.tipY} r={active ? 1.5 : .9}
-              fill={b.color} opacity={dimmed ? .2 : active ? 1 : .7}
-              style={{ transition: "r .4s, opacity .4s",
-                filter: active ? `drop-shadow(0 0 3px ${b.color})` : undefined }} />
-
-            {/* Label — hidden when another branch is active */}
-            {!dimmed && (
-              <g onClick={() => onBranchClick(b)} style={{ cursor: "pointer" }}>
-                <rect
-                  x={b.side === "left" ? b.tipX - 12 : b.tipX - 1}
-                  y={b.tipY - 3.5} width={12} height={4.5} rx="1.5"
-                  fill={active ? b.color : "rgba(8,18,8,0.82)"}
-                  stroke={b.color} strokeWidth="0.25"
-                  opacity={active ? .95 : .85}
-                  style={{ transition: "fill .3s" }}
-                />
-                <text
-                  x={b.side === "left" ? b.tipX - 6 : b.tipX + 5}
-                  y={b.tipY - 0.4}
-                  textAnchor="middle" fontSize="1.5"
-                  fill={active ? "#000" : b.color}
-                  fontFamily="system-ui" fontWeight={active ? "bold" : "normal"}
-                  style={{ pointerEvents: "none", transition: "fill .3s" }}
-                >
-                  {b.nepali}{count > 0 ? ` (${count})` : ""}
-                </text>
-              </g>
-            )}
-          </g>
-        );
-      })}
-
-      {/* Leaf nodes — only when branch selected */}
-      {activeBranch && leaves.map(({ record, x, y }, i) => {
-        const hovered = hoveredLeaf === record.id;
-        return (
-          <g key={record.id}
-            style={{ animation: `leaf-emerge ${200 + i * 40}ms ease both`, cursor: "pointer" }}
-            onMouseEnter={() => onLeafHover(record.id ?? null)}
-            onMouseLeave={() => onLeafHover(null)}
-            onClick={() => onLeafClick(record)}
-          >
-            {/* Glow halo */}
-            <circle cx={x} cy={y} r={hovered ? 2.5 : 1.8}
-              fill={activeBranch.color} opacity={hovered ? .18 : .08}
-              style={{ transition: "r .25s, opacity .25s",
-                filter: `drop-shadow(0 0 2px ${activeBranch.color})` }}
-            />
-            {/* Leaf dot */}
-            <circle cx={x} cy={y} r={hovered ? 1.2 : .9}
-              fill={hovered ? activeBranch.color : "#183018"}
-              stroke={activeBranch.color} strokeWidth={hovered ? "0.35" : "0.25"}
-              style={{ transition: "r .25s, fill .25s",
-                filter: hovered ? `drop-shadow(0 0 1.5px ${activeBranch.color})` : undefined }}
-            />
-            {/* Tiny title on hover */}
-            {hovered && (
-              <text x={x + (x > 50 ? -2 : 2)} y={y - 1.8}
-                textAnchor={x > 50 ? "end" : "start"}
-                fontSize="1.3" fill={activeBranch.color}
-                fontFamily="system-ui"
-                style={{ filter: `drop-shadow(0 0 2px rgba(0,0,0,.9))` }}>
-                {(record.titleNepali || record.titleEnglish || "").slice(0, 20)}
-              </text>
-            )}
-          </g>
-        );
-      })}
-    </svg>
+    <canvas
+      ref={ref}
+      style={{
+        position: "absolute", inset: 0, zIndex: 8,
+        pointerEvents: "none", opacity: 0.9,
+      }}
+    />
   );
 }
 
-// ─── Floating Glass Detail Panel ──────────────────────────────────────────────
+// ─── Forest atmosphere (CSS background when no image) ─────────────────────────
 
-function FloatingPanel({
-  record,
-  branch,
-  onClose,
-  onNote,
+const FOREST_STYLE: React.CSSProperties = {
+  position: "absolute", inset: 0,
+  background: TREE_BG_IMAGE ? `url(${TREE_BG_IMAGE}) center/cover no-repeat` : [
+    "radial-gradient(ellipse 90% 90% at 88% -18%, rgba(255,145,25,0.38) 0%, transparent 50%)",
+    "radial-gradient(ellipse 55% 38% at 43% 0%, rgba(110,175,225,0.2) 0%, transparent 48%)",
+    "radial-gradient(ellipse 22% 55% at 50% 88%, rgba(75,38,4,0.55) 0%, transparent 52%)",
+    "radial-gradient(ellipse 42% 38% at 28% 12%, rgba(8,28,4,0.75) 0%, transparent 55%)",
+    "radial-gradient(ellipse 38% 90% at 0% 50%, rgba(2,8,1,0.95) 0%, transparent 52%)",
+    "radial-gradient(ellipse 38% 90% at 100% 50%, rgba(2,8,1,0.95) 0%, transparent 52%)",
+    "linear-gradient(178deg, #0c1a07 0%, #060e03 38%, #040c02 68%, #020700 100%)",
+  ].join(", "),
+  zIndex: 0,
+};
+
+// Atmospheric overlay (darkens top for text contrast + vignette)
+const VIGNETTE_STYLE: React.CSSProperties = {
+  position: "absolute", inset: 0, zIndex: 9, pointerEvents: "none",
+  background: [
+    "linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, transparent 20%, transparent 75%, rgba(0,0,0,0.7) 100%)",
+    "radial-gradient(ellipse 100% 100% at 50% 50%, transparent 40%, rgba(0,0,0,0.4) 100%)",
+  ].join(", "),
+};
+
+// ─── Branch label ─────────────────────────────────────────────────────────────
+
+function BranchLabel({
+  branch, isActive, isDimmed, articleCount, onClick,
 }: {
-  record:  ConstitutionalFrameworkRecord;
-  branch:  Branch | null;
-  onClose: () => void;
-  onNote:  (t: string) => void;
+  branch: Branch; isActive: boolean; isDimmed: boolean;
+  articleCount: number; onClick: () => void;
 }) {
-  const [noteOpen, setNoteOpen] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        position: "absolute",
+        left: `${branch.x}%`,
+        top: `${branch.y}%`,
+        transform: `translate(-50%, -50%) scale(${isActive ? 1.12 : 1})`,
+        zIndex: isActive ? 40 : 20,
+        opacity: isDimmed ? 0.28 : 1,
+        display: "flex",
+        alignItems: "center",
+        gap: "7px",
+        padding: "7px 16px",
+        borderRadius: "100px",
+        background: isActive
+          ? `rgba(0,0,0,0.75)`
+          : "rgba(0,0,0,0.48)",
+        border: `1.5px solid ${isActive ? branch.color : "rgba(255,255,255,0.18)"}`,
+        boxShadow: isActive
+          ? `0 0 24px ${branch.color}90, 0 0 60px ${branch.color}30, inset 0 0 16px ${branch.color}15`
+          : `0 2px 12px rgba(0,0,0,0.6)`,
+        backdropFilter: "blur(12px)",
+        color: "white",
+        fontSize: "13px",
+        fontWeight: 700,
+        letterSpacing: "0.03em",
+        textShadow: isActive ? `0 0 14px ${branch.color}` : "0 1px 4px rgba(0,0,0,0.8)",
+        cursor: "pointer",
+        transition: "all 0.25s ease",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {/* Pulsing leaf indicator */}
+      <span style={{
+        width: "8px", height: "8px", borderRadius: "50%",
+        background: branch.color,
+        boxShadow: `0 0 ${isActive ? "12px" : "5px"} ${branch.color}`,
+        display: "inline-block",
+        flexShrink: 0,
+        animation: isActive ? "pulse-dot 1.5s ease-in-out infinite" : "none",
+      }} />
+      <span>{branch.nepali}</span>
+      {isActive && articleCount > 0 && (
+        <span style={{
+          fontSize: "10px", fontWeight: 800,
+          background: branch.color, color: "black",
+          borderRadius: "10px", padding: "1px 6px",
+        }}>
+          {articleCount}
+        </span>
+      )}
+    </button>
+  );
+}
+
+// ─── Article leaf (small circle) around branch ────────────────────────────────
+
+function ArticleLeaf({
+  article, branch, dx, dy, isActive, index, onClick,
+}: {
+  article: ConstitutionalFrameworkRecord;
+  branch: Branch; dx: number; dy: number;
+  isActive: boolean; index: number; onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      title={article.titleNepali}
+      style={{
+        position: "absolute",
+        left: `${branch.x + dx}%`,
+        top:  `${branch.y + dy}%`,
+        transform: "translate(-50%, -50%)",
+        zIndex: 35,
+        width: "40px", height: "40px",
+        borderRadius: "50%",
+        background: isActive ? branch.color : "rgba(0,0,0,0.65)",
+        border: `2px solid ${branch.color}`,
+        boxShadow: isActive
+          ? `0 0 20px ${branch.color}, 0 0 40px ${branch.color}60`
+          : `0 0 8px ${branch.color}70`,
+        color: isActive ? "#000" : "#fff",
+        fontSize: "11px", fontWeight: 800,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        cursor: "pointer", backdropFilter: "blur(6px)",
+        animation: `leaf-emerge 0.35s ease ${index * 0.04}s both`,
+        transition: "all 0.2s ease",
+      }}
+    >
+      {article.article}
+    </button>
+  );
+}
+
+// ─── Floating article detail panel (right sidebar) ────────────────────────────
+
+function DetailPanel({
+  article, branch, onClose, onNote,
+}: {
+  article: ConstitutionalFrameworkRecord;
+  branch: Branch;
+  onClose: () => void;
+  onNote:  (text: string) => void;
+}) {
   const [noteText, setNoteText] = useState("");
-  const color = branch?.color ?? "#4ade80";
+  const [addingNote, setAddingNote] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const submitNote = async () => {
+    if (!noteText.trim()) return;
+    setSaving(true);
+    try { await onNote(noteText.trim()); setNoteText(""); setAddingNote(false); }
+    finally { setSaving(false); }
+  };
 
   return (
-    <div className="absolute inset-0 pointer-events-none flex items-start justify-center"
-      style={{ zIndex: 50, paddingTop: "10vh" }}>
-      <div
-        className="pointer-events-auto w-full max-w-sm mx-4 rounded-2xl overflow-hidden panel-float"
-        style={{
-          background: "rgba(4, 10, 4, 0.88)",
-          border: `1px solid ${color}30`,
-          backdropFilter: "blur(18px)",
-          boxShadow: `0 0 40px ${color}15, 0 20px 60px rgba(0,0,0,.6)`,
-        }}
-      >
-        {/* Header */}
-        <div className="px-5 pt-4 pb-3 flex items-start justify-between gap-3"
-          style={{ borderBottom: `1px solid ${color}15` }}>
-          <div className="flex-1 min-w-0">
-            <p className="text-white font-black text-sm leading-snug">
-              {record.titleNepali || record.titleEnglish}
+    <div
+      style={{
+        position: "fixed",
+        right: 0, top: "60px", bottom: 0,
+        width: "clamp(300px, 28vw, 360px)",
+        zIndex: 100,
+        background: "rgba(8,16,6,0.92)",
+        backdropFilter: "blur(24px)",
+        borderLeft: `1px solid rgba(255,255,255,0.1)`,
+        boxShadow: `-4px 0 40px rgba(0,0,0,0.6), inset 1px 0 0 rgba(255,255,255,0.05)`,
+        display: "flex",
+        flexDirection: "column",
+        animation: "panel-slide-in 0.3s ease",
+        overflow: "hidden",
+      }}
+    >
+      {/* Panel header */}
+      <div style={{
+        padding: "16px 20px 12px",
+        borderBottom: "1px solid rgba(255,255,255,0.08)",
+        background: `linear-gradient(135deg, rgba(0,0,0,0.3), transparent)`,
+        flexShrink: 0,
+      }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.4)", marginBottom: "2px" }}>
+              धारा {article.article}{article.clause ? ` खण्ड ${article.clause}` : ""}
             </p>
-            <p className="font-mono mt-1" style={{ fontSize: "11px", color: `${color}90` }}>
-              धारा {record.article}{record.clause ? ` खण्ड ${record.clause}` : ""} · {record.part?.slice(0, 28)}
-            </p>
+            <h3 style={{
+              fontSize: "18px", fontWeight: 900, color: "white",
+              textShadow: `0 0 20px ${branch.color}60`,
+              lineHeight: 1.2,
+            }}>
+              {article.titleNepali || article.titleEnglish}
+            </h3>
           </div>
-          <button onClick={onClose}
-            className="shrink-0 text-white/30 hover:text-white transition-colors text-lg leading-none mt-0.5">×</button>
+          <button
+            onClick={onClose}
+            style={{
+              background: "rgba(255,255,255,0.08)", border: "none",
+              borderRadius: "50%", width: "28px", height: "28px",
+              color: "rgba(255,255,255,0.6)", cursor: "pointer",
+              fontSize: "16px", display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            ×
+          </button>
         </div>
+        {article.part && (
+          <div style={{
+            marginTop: "8px",
+            display: "inline-flex", alignItems: "center", gap: "6px",
+            background: `${branch.color}22`,
+            border: `1px solid ${branch.color}44`,
+            borderRadius: "6px",
+            padding: "3px 10px",
+            fontSize: "11px",
+            color: branch.color,
+            fontWeight: 600,
+          }}>
+            <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: branch.color, display: "inline-block" }} />
+            {article.part}
+          </div>
+        )}
+      </div>
 
-        {/* Body */}
-        <div className="px-5 py-4 space-y-3 max-h-64 overflow-y-auto scrollbar-none">
-          {record.plainNepaliSummary && (
-            <p className="text-green-100/75 text-sm leading-relaxed">{record.plainNepaliSummary}</p>
-          )}
-          {record.originalText && (
-            <p className="text-white/35 text-xs italic leading-relaxed border-l-2 pl-3"
-              style={{ borderColor: `${color}30` }}>
-              &ldquo;{record.originalText.slice(0, 180)}&rdquo;
+      {/* Panel content */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: "14px" }}>
+
+        {article.originalText && (
+          <Section label="मूल पाठ" color={branch.color}>
+            <p style={{ fontSize: "13px", color: "rgba(255,255,255,0.85)", lineHeight: 1.7, fontStyle: "italic" }}>
+              {article.originalText}
             </p>
-          )}
-          {record.rights?.length > 0 && (
-            <div>
-              <p className="text-xs mb-1" style={{ color: `${color}70` }}>अधिकारहरू</p>
-              {record.rights.map((r, i) => (
-                <p key={i} className="text-white/55 text-xs flex gap-1.5 mb-0.5">
-                  <span style={{ color }}>•</span>{r}
-                </p>
-              ))}
-            </div>
-          )}
-          {record.obligations?.length > 0 && (
-            <div>
-              <p className="text-xs mb-1 text-amber-400/60">दायित्वहरू</p>
-              {record.obligations.map((o, i) => (
-                <p key={i} className="text-white/50 text-xs flex gap-1.5 mb-0.5">
-                  <span className="text-amber-500">→</span>{o}
-                </p>
-              ))}
-            </div>
-          )}
-          {record.affectedGroups?.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {record.affectedGroups.map(g => (
-                <span key={g} className="text-xs px-2 py-0.5 rounded-full"
-                  style={{ background: `${color}12`, color: `${color}90`, border: `1px solid ${color}20` }}>
-                  {g}
-                </span>
-              ))}
-            </div>
-          )}
-          {record.confidence != null && (
-            <div className="flex items-center gap-2 pt-1">
-              <div className="flex-1 h-0.5 rounded-full bg-white/8">
-                <div className="h-0.5 rounded-full" style={{ width: `${Math.round(record.confidence*100)}%`, background: color }} />
-              </div>
-              <span className="text-xs" style={{ color: `${color}50` }}>{Math.round(record.confidence*100)}%</span>
-            </div>
-          )}
-        </div>
+          </Section>
+        )}
 
-        {/* Sticky note */}
-        <div className="px-5 pb-4 pt-2" style={{ borderTop: `1px solid ${color}10` }}>
-          {noteOpen ? (
-            <div className="space-y-2">
-              <textarea value={noteText} onChange={e => setNoteText(e.target.value)}
-                placeholder="यो धारा बारे note..."
-                className="w-full text-xs rounded-xl px-3 py-2 resize-none focus:outline-none"
-                style={{ background: "rgba(255,255,255,0.05)", border: `1px solid ${color}25`, color: "rgba(255,255,255,.7)" }}
-                rows={2} />
-              <div className="flex gap-2">
-                <button onClick={() => { onNote(noteText); setNoteText(""); setNoteOpen(false); }}
-                  className="flex-1 text-xs py-1.5 rounded-lg transition-colors"
-                  style={{ background: `${color}20`, color }}>
-                  Save
-                </button>
-                <button onClick={() => setNoteOpen(false)}
-                  className="text-xs px-3 py-1.5 rounded-lg text-white/25 hover:text-white/40 transition-colors">
-                  रद्द
-                </button>
-              </div>
+        {article.plainNepaliSummary && (
+          <Section label="सरल व्याख्या" color="#fbbf24">
+            <p style={{ fontSize: "13px", color: "rgba(255,255,255,0.8)", lineHeight: 1.7 }}>
+              {article.plainNepaliSummary}
+            </p>
+          </Section>
+        )}
+
+        {(article.rights?.length ?? 0) > 0 && (
+          <Section label="अधिकार" color="#4ade80">
+            {article.rights!.map((r, i) => (
+              <p key={i} style={{ fontSize: "12px", color: "rgba(255,255,255,0.75)", lineHeight: 1.6 }}>
+                • {r}
+              </p>
+            ))}
+          </Section>
+        )}
+
+        {(article.duties?.length ?? 0) > 0 && (
+          <Section label="कर्तव्य" color="#fbbf24">
+            {article.duties!.map((d, i) => (
+              <p key={i} style={{ fontSize: "12px", color: "rgba(255,255,255,0.75)", lineHeight: 1.6 }}>
+                • {d}
+              </p>
+            ))}
+          </Section>
+        )}
+
+        {(article.obligations?.length ?? 0) > 0 && (
+          <Section label="दायित्व" color="#fb923c">
+            {article.obligations!.map((o, i) => (
+              <p key={i} style={{ fontSize: "12px", color: "rgba(255,255,255,0.75)", lineHeight: 1.6 }}>
+                • {o}
+              </p>
+            ))}
+          </Section>
+        )}
+
+        {(article.institutions?.length ?? 0) > 0 && (
+          <Section label="सम्बन्धित निकाय" color="#818cf8">
+            <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.7)" }}>
+              {article.institutions!.join(" · ")}
+            </p>
+          </Section>
+        )}
+
+        {(article.relatedArticles?.length ?? 0) > 0 && (
+          <Section label="सम्बन्धित धाराहरू" color="#22d3ee">
+            <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.7)" }}>
+              {article.relatedArticles!.join("  ·  ")}
+            </p>
+          </Section>
+        )}
+
+        {article.sourcePage != null && (
+          <Section label="स्रोत पृष्ठ" color="rgba(255,255,255,0.3)">
+            <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.5)" }}>
+              संविधानको पूर्ण पाठ, पृष्ठ {article.sourcePage}
+            </p>
+          </Section>
+        )}
+
+        {article.confidence != null && (
+          <Section label="विश्वास स्तर" color="rgba(255,255,255,0.3)">
+            <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: "4px", height: "6px", overflow: "hidden" }}>
+              <div style={{
+                height: "100%",
+                width: `${Math.round(article.confidence * 100)}%`,
+                background: `linear-gradient(90deg, ${branch.color}, ${branch.color}cc)`,
+                borderRadius: "4px",
+              }} />
             </div>
-          ) : (
-            <button onClick={() => setNoteOpen(true)}
-              className="text-xs text-white/20 hover:text-white/40 transition-colors">
-              📌 Note थप्नुस्
-            </button>
-          )}
-        </div>
+            <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.4)", marginTop: "4px" }}>
+              {Math.round(article.confidence * 100)}%
+            </p>
+          </Section>
+        )}
+
+        {/* Sticky note area */}
+        {!addingNote ? (
+          <button
+            onClick={() => setAddingNote(true)}
+            style={{
+              padding: "10px 14px",
+              background: "rgba(255,200,50,0.08)",
+              border: "1px dashed rgba(255,200,50,0.3)",
+              borderRadius: "10px",
+              color: "rgba(255,200,50,0.7)",
+              fontSize: "12px",
+              cursor: "pointer",
+              textAlign: "left",
+            }}
+          >
+            📌 नोट थप्नुस् (Sticky note)
+          </button>
+        ) : (
+          <div style={{ background: "rgba(255,200,50,0.1)", border: "1px solid rgba(255,200,50,0.3)", borderRadius: "10px", padding: "10px" }}>
+            <textarea
+              value={noteText}
+              onChange={e => setNoteText(e.target.value)}
+              placeholder="यहाँ नोट लेख्नुस्..."
+              rows={3}
+              style={{
+                width: "100%", background: "transparent",
+                border: "none", outline: "none", resize: "none",
+                color: "rgba(255,240,160,0.9)", fontSize: "13px",
+                fontFamily: "inherit",
+              }}
+            />
+            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+              <button onClick={() => setAddingNote(false)} style={{ fontSize: "12px", color: "rgba(255,255,255,0.4)", background: "none", border: "none", cursor: "pointer" }}>
+                रद्द
+              </button>
+              <button onClick={submitNote} disabled={saving || !noteText.trim()} style={{
+                fontSize: "12px", fontWeight: 700,
+                background: "rgba(255,200,50,0.3)", border: "none",
+                borderRadius: "6px", padding: "4px 12px",
+                color: "white", cursor: "pointer", opacity: saving ? 0.5 : 1,
+              }}>
+                {saving ? "सेव…" : "सेव गर्नुस्"}
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Footer buttons */}
+      <div style={{
+        padding: "12px 16px", borderTop: "1px solid rgba(255,255,255,0.08)",
+        display: "flex", gap: "8px", flexShrink: 0,
+      }}>
+        <button style={{
+          flex: 1, padding: "10px",
+          background: branch.color, border: "none",
+          borderRadius: "10px", color: "black",
+          fontSize: "12px", fontWeight: 700, cursor: "pointer",
+        }}>
+          पूरा विवरण हेर्नुहोस्
+        </button>
+        <button onClick={() => setAddingNote(true)} style={{
+          flex: 1, padding: "10px",
+          background: "rgba(255,200,50,0.15)",
+          border: "1px solid rgba(255,200,50,0.3)",
+          borderRadius: "10px", color: "rgba(255,200,50,0.9)",
+          fontSize: "12px", fontWeight: 700, cursor: "pointer",
+        }}>
+          📌 नोट लेख्नुहोस्
+        </button>
       </div>
     </div>
   );
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+function Section({ label, color, children }: { label: string; color: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p style={{ fontSize: "10px", fontWeight: 700, color, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: "6px" }}>
+        {label}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
 
 export default function ConstitutionTreeClient() {
-  const [records,      setRecords]      = useState<ConstitutionalFrameworkRecord[]>([]);
-  const [loading,      setLoading]      = useState(true);
+  const [articles, setArticles]       = useState<ConstitutionalFrameworkRecord[]>([]);
+  const [loading, setLoading]         = useState(true);
   const [activeBranch, setActiveBranch] = useState<Branch | null>(null);
-  const [activeRecord, setActiveRecord] = useState<ConstitutionalFrameworkRecord | null>(null);
-  const [hoveredLeaf,  setHoveredLeaf]  = useState<string | null>(null);
-  const [search,       setSearch]       = useState("");
-  const [showSearch,   setShowSearch]   = useState(false);
-  const [mode,         setMode]         = useState<"tree" | "list">("tree");
-  const searchRef                       = useRef<HTMLInputElement>(null);
+  const [activeArticle, setActiveArticle] = useState<ConstitutionalFrameworkRecord | null>(null);
+  const [search, setSearch]           = useState("");
+  const [mode, setMode]               = useState<"tree" | "list">("tree");
 
+  // Load all published articles
   useEffect(() => {
     getDocs(query(collection(db, "constitutional_framework"), where("publishToJanta", "==", true)))
-      .then(snap => setRecords(snap.docs.map(d => ({ id: d.id, ...d.data() } as ConstitutionalFrameworkRecord))))
-      .catch(() => {}).finally(() => setLoading(false));
+      .then(snap => {
+        const docs = snap.docs.map(d => d.data() as ConstitutionalFrameworkRecord);
+        docs.sort((a, b) => (a.article ?? 0) - (b.article ?? 0));
+        setArticles(docs);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
-  // ESC to go back
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        if (activeRecord)     { setActiveRecord(null); return; }
-        if (activeBranch)     { setActiveBranch(null); return; }
-        if (showSearch)       { setShowSearch(false); setSearch(""); }
-      }
-    };
-    addEventListener("keydown", h);
-    return () => removeEventListener("keydown", h);
-  }, [activeRecord, activeBranch, showSearch]);
-
-  // Focus search input when opened
-  useEffect(() => {
-    if (showSearch) setTimeout(() => searchRef.current?.focus(), 50);
-  }, [showSearch]);
-
-  // Article counts — tighter matching (only specific branch keywords)
-  const articleCounts = useMemo(() => {
-    const c: Record<string, number> = {};
-    BRANCHES.forEach(b => {
-      c[b.id] = records.filter(r => {
-        const bag = [
-          ...(r.sectors ?? []),
-          ...(r.constitutionalThemes ?? []),
-          r.titleNepali ?? "",
-          r.titleEnglish ?? "",
-        ].join(" ").toLowerCase();
-        return b.keywords.some(k => bag.includes(k.toLowerCase()));
-      }).length;
-    });
-    return c;
-  }, [records]);
-
-  // Articles for active branch (max 20 visible leaves)
+  // Articles for the active branch (max 14 leaves)
   const branchArticles = useMemo(() => {
     if (!activeBranch) return [];
-    const matched = records.filter(r => {
-      const bag = [
-        ...(r.sectors ?? []),
-        ...(r.constitutionalThemes ?? []),
-        r.titleNepali ?? "",
-        r.titleEnglish ?? "",
-      ].join(" ").toLowerCase();
-      return activeBranch.keywords.some(k => bag.includes(k.toLowerCase()));
-    }).sort((a, b) => a.article - b.article);
-    return matched.slice(0, 20);
-  }, [activeBranch, records]);
+    return articles
+      .filter(a => articleMatchesBranch(a, activeBranch))
+      .slice(0, 14);
+  }, [activeBranch, articles]);
 
-  // Leaf positions in SVG space
-  const leaves = useMemo(() => {
-    if (!activeBranch || !branchArticles.length) return [];
-    const positions = leafPositions(activeBranch, branchArticles.length);
-    return branchArticles.map((r, i) => ({ record: r, ...positions[i] }));
-  }, [activeBranch, branchArticles]);
-
-  // Search results
+  // Search results (list mode or search overlay)
   const searchResults = useMemo(() => {
     if (!search.trim()) return [];
     const q = search.toLowerCase();
-    return records.filter(r =>
-      [r.titleNepali, r.titleEnglish, r.plainNepaliSummary, ...(r.keywords ?? [])]
-        .join(" ").toLowerCase().includes(q)
-    ).slice(0, 15);
-  }, [search, records]);
+    return articles.filter(a =>
+      [a.titleEnglish, a.titleNepali, a.plainNepaliSummary, ...(a.keywords ?? [])]
+        .some(f => f?.toLowerCase().includes(q))
+    ).slice(0, 30);
+  }, [search, articles]);
 
-  const handleBranchClick = useCallback((b: Branch) => {
-    setActiveBranch(prev => prev?.id === b.id ? null : b);
-    setActiveRecord(null);
-  }, []);
+  const handleBranchClick = (b: Branch) => {
+    if (activeBranch?.id === b.id) {
+      setActiveBranch(null);
+      setActiveArticle(null);
+    } else {
+      setActiveBranch(b);
+      setActiveArticle(null);
+    }
+  };
 
-  const handleSaveNote = useCallback(async (text: string) => {
-    if (!text.trim() || !activeRecord) return;
+  const handleArticleClick = (a: ConstitutionalFrameworkRecord) => {
+    setActiveArticle(a);
+  };
+
+  const handleNote = async (text: string) => {
+    if (!activeArticle || !activeBranch) return;
     await addDoc(collection(db, "tree_ui_notes"), {
-      treeId: "constitution", targetType: "article",
-      targetId: activeRecord.articleId ?? `art-${activeRecord.article}`,
-      noteText: text.trim(), status: "open", createdAt: Timestamp.now(),
-    }).catch(() => {});
-  }, [activeRecord]);
+      treeId:     "nepal-constitution",
+      targetType: "article",
+      targetId:   activeArticle.articleId,
+      branchId:   activeBranch.id,
+      noteText:   text,
+      status:     "active",
+      createdAt:  new Date().toISOString(),
+    });
+  };
 
-  const hasData = records.length > 0;
+  // ESC: article → branch → forest
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (activeArticle) { setActiveArticle(null); return; }
+      if (activeBranch)  { setActiveBranch(null);  return; }
+    };
+    addEventListener("keydown", handler);
+    return () => removeEventListener("keydown", handler);
+  }, [activeArticle, activeBranch]);
+
+  const activeBranchForArticle = activeBranch
+    ?? (activeArticle
+      ? BRANCHES.find(b => articleMatchesBranch(activeArticle, b)) ?? BRANCHES[0]
+      : BRANCHES[0]);
 
   return (
     <>
+      {/* ── CSS keyframes ────────────────────────────────────────────────────── */}
       <style>{`
-        @keyframes sway-0{0%,100%{transform:rotate(-3deg)}50%{transform:rotate(3deg)}}
-        @keyframes sway-1{0%,100%{transform:rotate(2deg)}50%{transform:rotate(-2deg)}}
-        @keyframes sway-2{0%,100%{transform:rotate(-1.5deg)}50%{transform:rotate(2deg)}}
-        @keyframes leaf-emerge{from{opacity:0;transform:scale(.3)}to{opacity:1;transform:scale(1)}}
-        @keyframes panel-float{from{opacity:0;transform:translateY(-16px) scale(.97)}to{opacity:1;transform:none}}
-        @keyframes fade-in{from{opacity:0}to{opacity:1}}
-        .panel-float{animation:panel-float .3s cubic-bezier(.16,1,.3,1) both}
-        .fade-in{animation:fade-in .4s ease both}
+        @keyframes leaf-emerge {
+          from { opacity: 0; transform: translate(-50%, -50%) scale(0.3); }
+          to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        }
+        @keyframes panel-slide-in {
+          from { opacity: 0; transform: translateX(24px); }
+          to   { opacity: 1; transform: translateX(0); }
+        }
+        @keyframes pulse-dot {
+          0%, 100% { box-shadow: 0 0 6px currentColor; }
+          50%       { box-shadow: 0 0 18px currentColor, 0 0 30px currentColor; }
+        }
+        @keyframes trunk-glow {
+          0%, 100% { text-shadow: 0 0 20px #f59e0b, 0 0 40px rgba(245,158,11,0.4); }
+          50%       { text-shadow: 0 0 30px #f59e0b, 0 0 60px rgba(245,158,11,0.6), 0 0 80px rgba(245,158,11,0.2); }
+        }
+        @keyframes float-note {
+          0%, 100% { transform: rotate(-2deg) translateY(0); }
+          50%       { transform: rotate(-2deg) translateY(-4px); }
+        }
+        .branch-label:hover { opacity: 1 !important; transform: translate(-50%,-50%) scale(1.06) !important; }
       `}</style>
 
-      {/* Full-screen world */}
-      <div className="fixed inset-0 overflow-hidden"
-        style={{ background: "linear-gradient(to bottom, #020a02 0%, #041004 25%, #061506 50%, #091d07 72%, #0d260a 100%)" }}
-        onClick={e => {
-          // Click on empty space: close panels
-          if ((e.target as HTMLElement).closest("svg") || (e.target as HTMLElement).closest("[data-ui]")) return;
-          if (activeRecord) { setActiveRecord(null); return; }
-        }}
-      >
-        {/* Mountain silhouettes */}
-        <svg className="absolute bottom-0 left-0 w-full pointer-events-none" viewBox="0 0 1000 220"
-          preserveAspectRatio="none" style={{ zIndex: 1, opacity: .45 }}>
-          <path d="M0,220 L0,145 L80,65 L160,125 L260,20 L360,105 L440,52 L520,135 L600,32 L700,115 L780,58 L860,125 L940,48 L1000,105 L1000,220Z" fill="#0d2008" />
-          <path d="M0,220 L0,165 L100,105 L180,155 L280,82 L380,145 L470,92 L560,158 L660,88 L750,148 L840,98 L920,155 L1000,118 L1000,220Z" fill="#0a1a07" />
-        </svg>
+      <div style={{ position: "fixed", inset: 0, background: "#020600", overflow: "hidden" }}>
 
-        {/* Atmospheric glow behind trunk */}
-        <div className="absolute pointer-events-none" style={{
-          left: "35%", right: "35%", top: "15%", bottom: "5%", zIndex: 1,
-          background: "radial-gradient(ellipse at center 70%, rgba(120,60,10,0.12) 0%, transparent 70%)",
-        }} />
-
+        {/* ── Forest background ─────────────────────────────────────────────── */}
+        <div style={FOREST_STYLE} />
+        <div style={VIGNETTE_STYLE} />
         <FireflyCanvas />
 
-        {/* Main tree world */}
-        <WorldSVG
-          activeBranch={activeBranch}
-          leaves={leaves}
-          hoveredLeaf={hoveredLeaf}
-          onBranchClick={handleBranchClick}
-          onLeafClick={r => setActiveRecord(r)}
-          onLeafHover={id => setHoveredLeaf(id)}
-          articleCounts={articleCounts}
-        />
-
-        {/* ── Floating UI layer ── */}
-
-        {/* Top search toggle */}
-        <div data-ui className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2"
-          style={{ zIndex: 40 }}>
-          {showSearch ? (
-            <div className="relative fade-in">
-              <input ref={searchRef} type="text" value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="धारा, विषय, अधिकार खोज्नुस्..."
-                className="text-sm pl-4 pr-8 py-2.5 rounded-full text-white placeholder-white/25 focus:outline-none w-72"
-                style={{ background: "rgba(5,14,5,0.9)", border: "1px solid rgba(74,222,128,0.2)", backdropFilter: "blur(12px)" }}
-              />
-              <button onClick={() => { setShowSearch(false); setSearch(""); }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white/60">×</button>
-            </div>
-          ) : (
-            <button data-ui onClick={() => setShowSearch(true)}
-              className="flex items-center gap-2 px-4 py-2 rounded-full text-white/40 hover:text-white/70 transition-colors text-sm"
-              style={{ background: "rgba(5,14,5,0.6)", border: "1px solid rgba(255,255,255,0.06)", backdropFilter: "blur(8px)" }}>
-              🔍 <span>खोज्नुस्...</span>
-            </button>
-          )}
-        </div>
-
-        {/* Search results dropdown */}
-        {showSearch && search && searchResults.length > 0 && (
-          <div data-ui className="absolute left-1/2 -translate-x-1/2 w-80 fade-in"
-            style={{ top: "64px", zIndex: 45, maxHeight: "60vh", overflowY: "auto" }}>
-            <div className="rounded-2xl overflow-hidden"
-              style={{ background: "rgba(4,12,4,0.97)", border: "1px solid rgba(74,222,128,0.12)", backdropFilter: "blur(16px)" }}>
-              {searchResults.map(r => (
-                <button key={r.id}
-                  onClick={() => { setActiveRecord(r); setShowSearch(false); setSearch(""); }}
-                  className="w-full text-left px-4 py-3 border-b border-white/4 hover:bg-green-950/25 transition-colors last:border-0">
-                  <p className="text-white/75 text-sm font-medium">{r.titleNepali || r.titleEnglish}</p>
-                  <p className="text-green-400/45 text-xs font-mono mt-0.5">धारा {r.article} · {r.part?.slice(0,25)}</p>
-                </button>
-              ))}
-            </div>
+        {/* ── Top navigation ────────────────────────────────────────────────── */}
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, height: "60px",
+          zIndex: 200,
+          background: "rgba(4,10,3,0.88)",
+          backdropFilter: "blur(16px)",
+          borderBottom: "1px solid rgba(255,255,255,0.07)",
+          display: "flex", alignItems: "center", paddingLeft: "20px", paddingRight: "20px",
+          gap: "16px",
+        }}>
+          {/* Logo */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+            <span style={{
+              fontSize: "16px", fontWeight: 900, color: "#4ade80",
+              letterSpacing: "-0.03em",
+            }}>ZZC</span>
+            <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.3)", fontWeight: 600 }}>JANTA</span>
           </div>
-        )}
 
-        {/* Mode toggle — top right */}
-        <div data-ui className="absolute top-4 right-4" style={{ zIndex: 40 }}>
-          <div className="flex rounded-full overflow-hidden text-xs"
-            style={{ background: "rgba(5,14,5,0.7)", border: "1px solid rgba(255,255,255,0.06)", backdropFilter: "blur(8px)" }}>
-            {(["tree","list"] as const).map(m => (
-              <button key={m} onClick={() => setMode(m)}
-                className="px-3 py-1.5 transition-colors"
-                style={{ background: mode===m ? "rgba(74,222,128,0.18)" : "transparent",
-                  color: mode===m ? "#4ade80" : "rgba(255,255,255,.3)" }}>
-                {m === "tree" ? "Tree" : "List"}
+          {/* Search */}
+          <div style={{
+            flex: 1, position: "relative", maxWidth: "420px",
+          }}>
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="खोज्नुहोस्... (धारा, विषय, अधिकार)"
+              style={{
+                width: "100%",
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.12)",
+                borderRadius: "24px",
+                padding: "8px 16px 8px 38px",
+                color: "white",
+                fontSize: "13px",
+                outline: "none",
+              }}
+            />
+            <span style={{ position: "absolute", left: "13px", top: "50%", transform: "translateY(-50%)", color: "rgba(255,255,255,0.35)", fontSize: "14px" }}>
+              🔍
+            </span>
+          </div>
+
+          {/* Spacer */}
+          <div style={{ flex: 1 }} />
+
+          {/* Mode toggle */}
+          <div style={{
+            display: "flex", background: "rgba(255,255,255,0.06)",
+            border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: "24px", padding: "3px", gap: "2px",
+            flexShrink: 0,
+          }}>
+            {(["tree", "list"] as const).map(m => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                style={{
+                  padding: "5px 14px", borderRadius: "20px", fontSize: "12px",
+                  fontWeight: 600, border: "none", cursor: "pointer",
+                  background: mode === m ? "#4ade80" : "transparent",
+                  color: mode === m ? "#000" : "rgba(255,255,255,0.5)",
+                  transition: "all 0.2s",
+                }}
+              >
+                {m === "tree" ? "Tree Mode" : "List Mode"}
               </button>
             ))}
           </div>
+
+          {/* Note button */}
+          <button style={{
+            padding: "7px 14px", borderRadius: "24px",
+            background: "rgba(255,200,50,0.1)",
+            border: "1px solid rgba(255,200,50,0.25)",
+            color: "rgba(255,200,50,0.85)",
+            fontSize: "12px", fontWeight: 600, cursor: "pointer",
+            flexShrink: 0,
+          }}>
+            📌 नोट लेख्नुहोस्
+          </button>
         </div>
 
-        {/* ← Back nav — top left, minimal */}
-        <Link href="/janta" data-ui
-          className="absolute top-4 left-4 text-white/20 hover:text-white/50 transition-colors text-xs"
-          style={{ zIndex: 40 }}>
-          ← जनता
-        </Link>
+        {/* ── Tree canvas (everything positioned within this area) ──────────── */}
+        <div
+          style={{
+            position: "fixed", top: "60px", left: 0, right: activeArticle ? "clamp(300px,28vw,360px)" : 0,
+            bottom: "100px",
+            zIndex: 10,
+            transition: "right 0.3s ease",
+          }}
+          onClick={e => {
+            if (e.target === e.currentTarget) {
+              setActiveBranch(null);
+              setActiveArticle(null);
+            }
+          }}
+        >
+          {/* ── Trunk text ─────────────────────────────────────────────────── */}
+          <div style={{
+            position: "absolute", left: "50%", top: "60%",
+            transform: "translate(-50%, -50%)",
+            textAlign: "center", pointerEvents: "none", userSelect: "none",
+            zIndex: 15,
+          }}>
+            <p style={{
+              fontSize: "clamp(22px, 3.5vw, 36px)", fontWeight: 900,
+              color: "#f59e0b",
+              animation: "trunk-glow 4s ease-in-out infinite",
+              letterSpacing: "0.04em", lineHeight: 1.25,
+            }}>
+              नेपालको
+            </p>
+            <p style={{
+              fontSize: "clamp(16px, 2.5vw, 26px)", fontWeight: 700,
+              color: "#fde68a",
+              textShadow: "0 0 16px rgba(245,158,11,0.5)",
+              letterSpacing: "0.08em",
+            }}>
+              संविधान
+            </p>
+          </div>
 
-        {/* Floating article detail panel */}
-        {activeRecord && (
-          <FloatingPanel
-            record={activeRecord}
+          {/* ── Root words at base ─────────────────────────────────────────── */}
+          <div style={{
+            position: "absolute", bottom: "4%", left: "50%",
+            transform: "translateX(-50%)",
+            display: "flex", gap: "clamp(12px, 2.5vw, 28px)",
+            pointerEvents: "none", zIndex: 15,
+          }}>
+            {["जनता", "सार्वभौमसत्ता", "लोकतन्त्र", "स्वतन्त्रता", "संविधानको मूल आधार"].map(w => (
+              <span key={w} style={{
+                fontSize: "clamp(9px, 1.1vw, 12px)", fontWeight: 600,
+                color: "rgba(253,230,138,0.65)",
+                textShadow: "0 0 8px rgba(245,158,11,0.35)",
+                whiteSpace: "nowrap",
+              }}>{w}</span>
+            ))}
+          </div>
+
+          {/* ── Nepal flag ─────────────────────────────────────────────────── */}
+          <div style={{
+            position: "absolute", left: "12%", bottom: "14%",
+            fontSize: "clamp(20px, 2.5vw, 32px)",
+            zIndex: 15, pointerEvents: "none", opacity: 0.7,
+          }}>🇳🇵</div>
+
+          {/* ── Sample sticky note ─────────────────────────────────────────── */}
+          <div style={{
+            position: "absolute", left: "58%", top: "19%",
+            zIndex: 50, pointerEvents: "none",
+            animation: "float-note 5s ease-in-out infinite",
+          }}>
+            <div style={{
+              background: "#fef08a",
+              boxShadow: "2px 4px 16px rgba(0,0,0,0.5)",
+              padding: "10px 14px",
+              borderRadius: "3px",
+              maxWidth: "160px",
+              transform: "rotate(-3deg)",
+              fontSize: "11px",
+              color: "#1a1a00",
+              lineHeight: 1.5,
+              fontWeight: 500,
+            }}>
+              📌 यो शाखामा एनीमेशन थप गर्नुस्!
+              <span style={{ display: "block", marginTop: "6px", fontSize: "10px", color: "#555", fontStyle: "italic" }}>– Admin Note</span>
+            </div>
+          </div>
+
+          {/* ── Branch labels ──────────────────────────────────────────────── */}
+          {BRANCHES.map(branch => {
+            const bArticles = articles.filter(a => articleMatchesBranch(a, branch));
+            const isActive  = activeBranch?.id === branch.id;
+            const isDimmed  = activeBranch !== null && !isActive;
+            return (
+              <BranchLabel
+                key={branch.id}
+                branch={branch}
+                isActive={isActive}
+                isDimmed={isDimmed}
+                articleCount={bArticles.length}
+                onClick={() => handleBranchClick(branch)}
+              />
+            );
+          })}
+
+          {/* ── Article leaves (appear when branch active) ─────────────────── */}
+          {activeBranch && branchArticles.map((article, i) => {
+            const offsets = leafOffsets(branchArticles.length, activeBranch.x, activeBranch.y);
+            const { dx, dy } = offsets[i] ?? { dx: 0, dy: 0 };
+            return (
+              <ArticleLeaf
+                key={article.articleId}
+                article={article}
+                branch={activeBranch}
+                dx={dx} dy={dy}
+                isActive={activeArticle?.articleId === article.articleId}
+                index={i}
+                onClick={() => handleArticleClick(article)}
+              />
+            );
+          })}
+
+          {/* ── No articles hint ───────────────────────────────────────────── */}
+          {!activeBranch && !loading && (
+            <div style={{
+              position: "absolute", bottom: "16%", left: "50%",
+              transform: "translateX(-50%)",
+              color: "rgba(255,255,255,0.3)",
+              fontSize: "12px", fontWeight: 500,
+              textAlign: "center", pointerEvents: "none",
+              zIndex: 15,
+            }}>
+              शाखा छुनुस् र खोज्नुस् · Click any branch to explore
+            </div>
+          )}
+
+          {/* ── Search results overlay ─────────────────────────────────────── */}
+          {search.trim() && searchResults.length > 0 && (
+            <div style={{
+              position: "absolute", top: "8px", left: "50%",
+              transform: "translateX(-50%)",
+              width: "min(500px, 90%)",
+              background: "rgba(5,14,3,0.95)",
+              backdropFilter: "blur(20px)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: "16px",
+              zIndex: 60,
+              maxHeight: "55%",
+              overflowY: "auto",
+            }}>
+              <p style={{ padding: "12px 16px 6px", fontSize: "11px", color: "rgba(255,255,255,0.4)" }}>
+                {searchResults.length} धाराहरू फेला
+              </p>
+              {searchResults.map(a => (
+                <button
+                  key={a.articleId}
+                  onClick={() => {
+                    const branch = BRANCHES.find(b => articleMatchesBranch(a, b));
+                    if (branch) setActiveBranch(branch);
+                    setActiveArticle(a);
+                    setSearch("");
+                  }}
+                  style={{
+                    display: "block", width: "100%", textAlign: "left",
+                    padding: "10px 16px",
+                    background: "transparent", border: "none",
+                    borderBottom: "1px solid rgba(255,255,255,0.05)",
+                    cursor: "pointer",
+                    transition: "background 0.15s",
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.05)")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                >
+                  <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.4)", marginRight: "8px" }}>
+                    धारा {a.article}
+                  </span>
+                  <span style={{ fontSize: "13px", color: "white", fontWeight: 600 }}>
+                    {a.titleNepali || a.titleEnglish}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* ── List mode overlay ──────────────────────────────────────────── */}
+          {mode === "list" && (
+            <div style={{
+              position: "absolute", inset: 0, zIndex: 55,
+              background: "rgba(4,10,3,0.95)", backdropFilter: "blur(20px)",
+              overflowY: "auto", padding: "16px",
+            }}>
+              <div style={{ maxWidth: "700px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "4px" }}>
+                <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.35)", marginBottom: "8px" }}>
+                  {articles.length} धाराहरू · Nepal Constitution 2015/2072 BS
+                </p>
+                {articles.map(a => {
+                  const branch = BRANCHES.find(b => articleMatchesBranch(a, b));
+                  return (
+                    <button
+                      key={a.articleId}
+                      onClick={() => {
+                        if (branch) setActiveBranch(branch);
+                        setActiveArticle(a);
+                        setMode("tree");
+                      }}
+                      style={{
+                        display: "flex", alignItems: "flex-start", gap: "12px",
+                        padding: "10px 14px",
+                        background: "rgba(255,255,255,0.03)",
+                        border: `1px solid ${branch ? branch.color + "20" : "rgba(255,255,255,0.06)"}`,
+                        borderRadius: "10px", cursor: "pointer",
+                        textAlign: "left", width: "100%",
+                        transition: "background 0.15s",
+                      }}
+                      onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.06)")}
+                      onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.03)")}
+                    >
+                      <span style={{
+                        fontSize: "11px", fontWeight: 800,
+                        color: branch?.color ?? "rgba(255,255,255,0.3)",
+                        minWidth: "40px",
+                      }}>
+                        {a.article}
+                      </span>
+                      <div>
+                        <p style={{ fontSize: "13px", fontWeight: 600, color: "white" }}>
+                          {a.titleNepali || a.titleEnglish}
+                        </p>
+                        {a.plainNepaliSummary && (
+                          <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.4)", marginTop: "2px", lineHeight: 1.5 }}>
+                            {a.plainNepaliSummary.slice(0, 80)}…
+                          </p>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Right detail panel ────────────────────────────────────────────── */}
+        {activeArticle && activeBranch && (
+          <DetailPanel
+            article={activeArticle}
             branch={activeBranch}
-            onClose={() => setActiveRecord(null)}
-            onNote={handleSaveNote}
+            onClose={() => setActiveArticle(null)}
+            onNote={handleNote}
           />
         )}
 
-        {/* List mode overlay */}
-        {mode === "list" && (
-          <div data-ui className="absolute inset-0 overflow-y-auto fade-in"
-            style={{ zIndex: 35, paddingTop: "64px", paddingBottom: "48px",
-              background: "rgba(2,8,2,0.92)", backdropFilter: "blur(4px)" }}>
-            <div className="max-w-lg mx-auto px-4 py-4 space-y-1.5">
-              <p className="text-green-400/40 text-xs text-center mb-4">
-                {hasData ? `${records.length} articles extracted` : "Loading..."}
-              </p>
-              {BRANCHES.map(b => (
-                <div key={b.id}>
-                  <button onClick={() => { setActiveBranch(prev => prev?.id===b.id ? null : b); setMode("tree"); }}
-                    className="w-full text-left px-4 py-2.5 rounded-xl flex items-center gap-3 transition-colors"
-                    style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${b.color}18` }}>
-                    <span>{b.emoji}</span>
-                    <span className="font-bold text-sm" style={{ color: b.color }}>{b.nepali}</span>
-                    <span className="text-white/20 text-xs ml-auto">{articleCounts[b.id]??0} articles</span>
-                    <span style={{ color: `${b.color}60` }} className="text-xs">→ tree</span>
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* ── Bottom bar (breadcrumb + controls) ───────────────────────────── */}
+        <div style={{
+          position: "fixed", bottom: "44px", left: 0,
+          right: activeArticle ? "clamp(300px,28vw,360px)" : 0,
+          height: "36px", zIndex: 150,
+          background: "rgba(4,10,3,0.85)", backdropFilter: "blur(12px)",
+          borderTop: "1px solid rgba(255,255,255,0.06)",
+          display: "flex", alignItems: "center",
+          paddingLeft: "16px", paddingRight: "16px",
+          gap: "8px",
+          transition: "right 0.3s ease",
+        }}>
+          {activeBranch ? (
+            <span style={{ fontSize: "12px", color: "rgba(255,255,255,0.5)", display: "flex", alignItems: "center", gap: "6px" }}>
+              <span style={{ color: activeBranch.color }}>● {activeBranch.nepali}</span>
+              {activeArticle && (
+                <>
+                  <span style={{ color: "rgba(255,255,255,0.2)" }}>›</span>
+                  <span style={{ color: "white" }}>धारा {activeArticle.article}</span>
+                </>
+              )}
+            </span>
+          ) : (
+            <span style={{ fontSize: "12px", color: "rgba(255,255,255,0.25)" }}>
+              नेपालको संविधान २०७२ · {articles.length} धाराहरू
+              {loading && " · लोड हुँदैछ…"}
+            </span>
+          )}
+          <div style={{ flex: 1 }} />
+          <button
+            onClick={() => { setActiveBranch(null); setActiveArticle(null); }}
+            style={{ fontSize: "11px", color: "rgba(255,255,255,0.35)", background: "none", border: "none", cursor: "pointer" }}
+          >
+            Reset View
+          </button>
+          <span style={{ color: "rgba(255,255,255,0.15)", fontSize: "10px" }}>·</span>
+          <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.25)" }}>ESC छोड्नुस्</span>
+        </div>
 
-        {/* Branch active — minimal top hint */}
-        {activeBranch && !activeRecord && mode === "tree" && (
-          <div data-ui className="absolute top-16 left-1/2 -translate-x-1/2 fade-in"
-            style={{ zIndex: 30 }}>
-            <div className="flex items-center gap-2 px-4 py-1.5 rounded-full text-xs"
-              style={{ background: "rgba(4,12,4,0.8)", border: `1px solid ${activeBranch.color}25`,
-                backdropFilter: "blur(8px)", color: `${activeBranch.color}80` }}>
-              {activeBranch.emoji} {activeBranch.nepali} ·{" "}
-              <span className="text-white/30">{branchArticles.length} leaves — click to explore</span>
-              <button onClick={() => setActiveBranch(null)} className="text-white/20 hover:text-white/50 ml-1">×</button>
-            </div>
-          </div>
-        )}
+        {/* ── Quick access pills ────────────────────────────────────────────── */}
+        <div style={{
+          position: "fixed", bottom: 0, left: 0,
+          right: activeArticle ? "clamp(300px,28vw,360px)" : 0,
+          height: "44px", zIndex: 150,
+          background: "rgba(3,8,2,0.92)", backdropFilter: "blur(12px)",
+          borderTop: "1px solid rgba(255,255,255,0.05)",
+          display: "flex", alignItems: "center",
+          paddingLeft: "12px", gap: "6px",
+          overflowX: "auto",
+          transition: "right 0.3s ease",
+        }}>
+          <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.3)", whiteSpace: "nowrap", marginRight: "4px" }}>
+            छिटो पहुँचे
+          </span>
+          {QUICK_CATS.map(cat => {
+            const branch = cat.branchId ? BRANCHES.find(b => b.id === cat.branchId) : null;
+            const count  = branch
+              ? articles.filter(a => articleMatchesBranch(a, branch)).length
+              : null;
+            return (
+              <button
+                key={cat.label}
+                onClick={() => { if (branch) handleBranchClick(branch); }}
+                style={{
+                  padding: "4px 12px", borderRadius: "20px",
+                  background: branch && activeBranch?.id === branch.id
+                    ? `${branch.color}30`
+                    : "rgba(255,255,255,0.05)",
+                  border: `1px solid ${branch && activeBranch?.id === branch.id
+                    ? branch.color + "60"
+                    : "rgba(255,255,255,0.1)"}`,
+                  color: "rgba(255,255,255,0.7)",
+                  fontSize: "11px", fontWeight: 600,
+                  whiteSpace: "nowrap", cursor: branch ? "pointer" : "default",
+                  display: "flex", alignItems: "center", gap: "5px",
+                  flexShrink: 0,
+                }}
+              >
+                {cat.label}
+                {count !== null && (
+                  <span style={{ fontSize: "9px", color: "rgba(255,255,255,0.4)" }}>({count})</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
 
-        {/* Loading */}
-        {loading && (
-          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 text-green-400/30 text-xs animate-pulse"
-            style={{ zIndex: 30 }}>
-            संविधान load हुँदैछ...
-          </div>
-        )}
-
-        {/* Default hint */}
-        {!loading && hasData && !activeBranch && !activeRecord && mode === "tree" && (
-          <div className="absolute bottom-10 left-1/2 -translate-x-1/2 text-center"
-            style={{ zIndex: 10, pointerEvents: "none" }}>
-            <p className="text-white/15 text-xs">शाखा छुनुस् र खोज्नुस्</p>
-          </div>
-        )}
-
-        {/* No data hint */}
-        {!loading && !hasData && (
-          <div className="absolute bottom-16 left-1/2 -translate-x-1/2 fade-in text-center"
-            style={{ zIndex: 30 }}>
-            <Link href="/vault/documents" data-ui
-              className="text-xs px-4 py-2 rounded-full text-amber-300/70 hover:text-amber-300 transition-colors"
-              style={{ background: "rgba(120,60,0,0.3)", border: "1px solid rgba(180,100,0,0.2)" }}>
-              📜 Constitution Extract गर्नुस् →
-            </Link>
-          </div>
-        )}
-
-        {/* Subtle footer */}
-        <p className="absolute bottom-2 left-1/2 -translate-x-1/2 text-white/8 text-center pointer-events-none"
-          style={{ fontSize: "10px", zIndex: 10 }}>
-          नेपालको संविधान २०७२ · ३०८ धारा · ३५ भाग
-        </p>
       </div>
     </>
   );
