@@ -11,8 +11,8 @@ import { db } from "../firebase";
 import type { ConstitutionalFrameworkRecord } from "../../lib/types/constitutional-framework";
 
 // ── Swap in a real generated/photorealistic banyan tree image here ─────────────
-// e.g. "/banyan-tree.jpg" or a CDN URL — leave empty for CSS fallback
-const TREE_BG_IMAGE = "";
+// Drop your generated banyan tree image at /public/banyan-tree.jpg — no code change needed.
+const TREE_BG_IMAGE = "/banyan-tree.jpg";
 
 // ─── Branch layout (organic positions on tree, % of the tree canvas area) ─────
 
@@ -189,20 +189,37 @@ function FireflyCanvas() {
   );
 }
 
-// ─── Forest atmosphere (CSS background when no image) ─────────────────────────
+// ─── Forest atmosphere — image layer + gradient overlay (always applied) ────────
 
+// Base layer: real image if available, dark forest fallback otherwise
 const FOREST_STYLE: React.CSSProperties = {
-  position: "absolute", inset: 0,
-  background: TREE_BG_IMAGE ? `url(${TREE_BG_IMAGE}) center/cover no-repeat` : [
-    "radial-gradient(ellipse 90% 90% at 88% -18%, rgba(255,145,25,0.38) 0%, transparent 50%)",
-    "radial-gradient(ellipse 55% 38% at 43% 0%, rgba(110,175,225,0.2) 0%, transparent 48%)",
-    "radial-gradient(ellipse 22% 55% at 50% 88%, rgba(75,38,4,0.55) 0%, transparent 52%)",
-    "radial-gradient(ellipse 42% 38% at 28% 12%, rgba(8,28,4,0.75) 0%, transparent 55%)",
-    "radial-gradient(ellipse 38% 90% at 0% 50%, rgba(2,8,1,0.95) 0%, transparent 52%)",
-    "radial-gradient(ellipse 38% 90% at 100% 50%, rgba(2,8,1,0.95) 0%, transparent 52%)",
-    "linear-gradient(178deg, #0c1a07 0%, #060e03 38%, #040c02 68%, #020700 100%)",
-  ].join(", "),
-  zIndex: 0,
+  position: "absolute", inset: 0, zIndex: 0,
+  backgroundImage: TREE_BG_IMAGE ? `url(${TREE_BG_IMAGE})` : undefined,
+  backgroundSize: "cover",
+  backgroundPosition: "center bottom",
+  backgroundColor: "#040a03", // fallback color while image loads
+};
+
+// CSS atmosphere layer — always on top of image (adds mist, depth, edge darkening)
+const ATMOSPHERE_STYLE: React.CSSProperties = {
+  position: "absolute", inset: 0, zIndex: 1, pointerEvents: "none",
+  background: TREE_BG_IMAGE
+    // With real image: lighter overlay — let the art breathe
+    ? [
+        "radial-gradient(ellipse 100% 25% at 50% 0%, rgba(0,0,0,0.55) 0%, transparent 100%)",
+        "radial-gradient(ellipse 30% 60% at 0% 50%, rgba(0,0,0,0.5) 0%, transparent 65%)",
+        "radial-gradient(ellipse 30% 60% at 100% 50%, rgba(0,0,0,0.5) 0%, transparent 65%)",
+      ].join(", ")
+    // Without image: full CSS forest painting
+    : [
+        "radial-gradient(ellipse 90% 90% at 88% -18%, rgba(255,145,25,0.38) 0%, transparent 50%)",
+        "radial-gradient(ellipse 55% 38% at 43% 0%, rgba(110,175,225,0.2) 0%, transparent 48%)",
+        "radial-gradient(ellipse 22% 55% at 50% 88%, rgba(75,38,4,0.55) 0%, transparent 52%)",
+        "radial-gradient(ellipse 42% 38% at 28% 12%, rgba(8,28,4,0.75) 0%, transparent 55%)",
+        "radial-gradient(ellipse 38% 90% at 0% 50%, rgba(2,8,1,0.95) 0%, transparent 52%)",
+        "radial-gradient(ellipse 38% 90% at 100% 50%, rgba(2,8,1,0.95) 0%, transparent 52%)",
+        "linear-gradient(178deg, #0c1a07 0%, #060e03 38%, #040c02 68%, #020700 100%)",
+      ].join(", "),
 };
 
 // Atmospheric overlay (darkens top for text contrast + vignette)
@@ -694,6 +711,7 @@ export default function ConstitutionTreeClient() {
 
         {/* ── Forest background ─────────────────────────────────────────────── */}
         <div style={FOREST_STYLE} />
+        <div style={ATMOSPHERE_STYLE} />
         <div style={VIGNETTE_STYLE} />
         <FireflyCanvas />
 
