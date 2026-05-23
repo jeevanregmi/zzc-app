@@ -19,18 +19,27 @@ function toNp(n: number) {
   return String(n).split("").map(c => "०१२३४५६७८९"[+c] ?? c).join("");
 }
 
-function fmtDay(iso: string) {
+function safeDate(iso: string | undefined): Date | null {
+  if (!iso) return null;
   const d = new Date(iso);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function fmtDay(iso: string | undefined) {
+  const d = safeDate(iso);
+  if (!d) return "";
   return `${toNp(d.getDate())} ${NP_MONTHS[d.getMonth()]}`;
 }
 
-function fmtMonthYear(iso: string) {
-  const d = new Date(iso);
+function fmtMonthYear(iso: string | undefined) {
+  const d = safeDate(iso);
+  if (!d) return "अज्ञात मिति";
   return `${NP_MONTHS[d.getMonth()]} ${toNp(d.getFullYear())}`;
 }
 
-function monthKey(iso: string) {
-  const d = new Date(iso);
+function monthKey(iso: string | undefined) {
+  const d = safeDate(iso);
+  if (!d) return "0000-00";
   return `${d.getFullYear()}-${String(d.getMonth()).padStart(2, "0")}`;
 }
 
@@ -942,7 +951,9 @@ export default function JantaClient() {
     Promise.all([docsPromise, contentPromise, pointsPromise])
       .then(([docItems, queueItems, pts]) => {
         setDocs(docItems.sort((a, b) => (b.uploadedAt ?? "").localeCompare(a.uploadedAt ?? "")));
-        setContentItems(queueItems.sort((a, b) => (b.jantaPublishedAt ?? b.createdAt ?? "").localeCompare(a.jantaPublishedAt ?? a.createdAt ?? "")));
+        setContentItems(queueItems.sort((a, b) =>
+          (b.jantaPublishedAt ?? b.createdAt ?? "").localeCompare(a.jantaPublishedAt ?? a.createdAt ?? "")
+        ));
         setPolicyPoints(pts.sort((a, b) => a.pointNumber - b.pointNumber));
         setLoading(false);
       })
@@ -962,7 +973,7 @@ export default function JantaClient() {
   const allEntries: TimelineEntry[] = [
     ...filteredDocs.map(d => ({ kind: "doc"     as const, item: d, date: d.uploadedAt })),
     ...filteredContent.map(c => ({ kind: "content" as const, item: c, date: c.jantaPublishedAt ?? c.createdAt })),
-  ].sort((a, b) => b.date.localeCompare(a.date));
+  ].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
 
   const totalCount = allEntries.length;
 

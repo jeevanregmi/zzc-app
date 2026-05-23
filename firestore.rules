@@ -241,6 +241,18 @@ service cloud.firestore {
       allow delete: if isOwner(resource.data.ownerId) || isDevOwner(resource.data.ownerId);
     }
 
+    // ── JANTA: civic term dictionary (Constitution, policy glossary) ─────────
+    match /civic_terms/{docId} {
+      // All published terms are publicly readable — this is the foundational
+      // dictionary for ZZC Janta public intelligence
+      allow read:   if resource.data.publishToJanta == true
+                    || isOwner(resource.data.ownerId)
+                    || isDevOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner() || isDevOwner(request.resource.data.ownerId);
+      allow update: if (isOwner(resource.data.ownerId) && ownerUnchanged()) || isDevOwner(resource.data.ownerId);
+      allow delete: if isOwner(resource.data.ownerId) || isDevOwner(resource.data.ownerId);
+    }
+
     // ── JANTA: per-point gaming cards (extracted from intelligence docs) ──────
     match /vault_policy_points/{docId} {
       // Published points are publicly readable on /janta
