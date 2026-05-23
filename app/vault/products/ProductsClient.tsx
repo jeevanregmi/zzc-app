@@ -470,7 +470,8 @@ function ProductForm({
 // ─── Main Client ──────────────────────────────────────────────────────────────
 
 export default function ProductsClient() {
-  const { uid, loading: authLoading } = useVaultAuth();
+  const { user, loading: authLoading } = useVaultAuth();
+  const uid = user?.uid ?? null;
   const [products, setProducts]       = useState<ZzcProduct[]>([]);
   const [loading, setLoading]         = useState(true);
   const [editTarget, setEditTarget]   = useState<ZzcProduct | null>(null);
