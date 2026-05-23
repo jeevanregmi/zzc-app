@@ -280,12 +280,28 @@ Return ONLY this JSON (no markdown, no explanation):
       maxTokens: 16384,
     });
 
-    const [parsed, parseErr] = extractJson(result.text);
+    // Strip markdown fences Gemini 2.5-flash adds despite instructions,
+    // then fix raw newlines inside string values (also invalid in JSON).
+    let responseText = result.text.trim();
+    responseText = responseText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+    // Fix literal newlines inside string values
+    { let inStr = false, esc = false, fixed = "";
+      for (const c of responseText) {
+        if (esc)                        { fixed += c; esc = false; }
+        else if (c === "\\" && inStr)   { fixed += c; esc = true;  }
+        else if (c === '"')             { fixed += c; inStr = !inStr; }
+        else if (inStr && (c === "\n" || c === "\r")) fixed += " ";
+        else                             fixed += c;
+      }
+      responseText = fixed;
+    }
+
+    const [parsed, parseErr] = extractJson(responseText);
     if (parseErr || !parsed) {
-      const preview = result.text.slice(0, 300);
-      log("extract-intelligence", "pdf_parse_error", { docId: body.docId, textLen: result.text.length, preview });
+      const preview = responseText.slice(0, 300);
+      log("extract-intelligence", "pdf_parse_error", { docId: body.docId, textLen: responseText.length, preview });
       return clientError(
-        `AI response not JSON (${result.text.length} chars, model: ${result.model}). Preview: "${preview}"`,
+        `AI response not JSON (${responseText.length} chars, model: ${result.model}). Preview: "${preview}"`,
         422,
         "NO_RECORDS_EXTRACTED",
       );
