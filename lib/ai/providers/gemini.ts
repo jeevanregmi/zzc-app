@@ -72,9 +72,10 @@ export async function callGemini(opts: {
         system_instruction: { parts: [{ text: opts.system }] },
         contents:           [{ role: "user", parts: opts.parts }],
         generationConfig:   {
-            maxOutputTokens: maxTokens,
-            temperature:     0.1,
-            ...(opts.jsonMode ? { responseMimeType: "application/json" } : { thinkingConfig: { thinkingBudget: 0 } }),
+            maxOutputTokens:  maxTokens,
+            temperature:      0.1,
+            thinkingConfig:   { thinkingBudget: 0 },
+            ...(opts.jsonMode ? { responseMimeType: "application/json" } : {}),
           },
       }),
     },
@@ -100,9 +101,9 @@ export async function callGemini(opts: {
     usageMetadata?: { promptTokenCount: number; candidatesTokenCount: number };
   };
 
-  // Thinking models (gemini-2.5-*) return thought parts first — skip them
+  // Skip thought parts — only use the actual response part
   const parts = data.candidates?.[0]?.content?.parts ?? [];
-  const textPart = parts.find(p => !p.thought && p.text != null) ?? parts[0];
+  const textPart = parts.find(p => !p.thought && p.text != null);
   const text = textPart?.text?.trim() ?? "";
 
   return {
