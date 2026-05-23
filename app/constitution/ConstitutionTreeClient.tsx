@@ -270,6 +270,7 @@ function BranchLabel({
         cursor: "pointer",
         transition: "all 0.25s ease",
         whiteSpace: "nowrap",
+        pointerEvents: "auto", // re-enable inside the no-pointer-events container
       }}
     >
       {/* Pulsing leaf indicator */}
@@ -598,6 +599,80 @@ function Section({ label, color, children }: { label: string; color: string; chi
   );
 }
 
+// ─── Parallax breathing hook ──────────────────────────────────────────────────
+// All DOM updates happen outside React via direct style mutation — zero re-renders.
+
+function useParallax(
+  bgRef:     React.RefObject<HTMLDivElement | null>,
+  labelsRef: React.RefObject<HTMLDivElement | null>,
+  fogRef:    React.RefObject<HTMLDivElement | null>,
+) {
+  useEffect(() => {
+    // Skip on touch devices — no mouse to follow
+    const isTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+
+    const cur    = { x: 0.5, y: 0.5 };   // current smoothed position (0–1)
+    const target = { x: 0.5, y: 0.5 };   // raw mouse position (0–1)
+    let phase    = 0;                      // breathing phase
+    let rafId    = 0;
+
+    // Max parallax: 1.5% for background, 0.65% counter for labels
+    const BG_SHIFT    = 1.5;
+    const LABEL_SHIFT = 0.65;
+    const LERP        = isTouch ? 0 : 0.038;   // no lerp on touch
+    const BREATHE_AMP = 0.0035;                 // 0.35% scale pulse — subconscious
+    const BREATHE_SPD = 0.00022;                // ~28 s full cycle — very slow
+
+    const onMouseMove = (e: MouseEvent) => {
+      target.x = e.clientX / window.innerWidth;
+      target.y = e.clientY / window.innerHeight;
+    };
+
+    if (!isTouch) window.addEventListener("mousemove", onMouseMove, { passive: true });
+
+    const tick = () => {
+      // Smooth lerp toward mouse target
+      cur.x += (target.x - cur.x) * LERP;
+      cur.y += (target.y - cur.y) * LERP;
+
+      // Centered offset: range [-1, +1] → scaled to shift %
+      const dx = (cur.x - 0.5) * 2;
+      const dy = (cur.y - 0.5) * 2;
+
+      // Breathing
+      phase += BREATHE_SPD;
+      const breathe = 1 + Math.sin(phase) * BREATHE_AMP;
+
+      // Background: slow drift + breathing scale (GPU-only: transform)
+      if (bgRef.current) {
+        bgRef.current.style.transform =
+          `scale(${breathe}) translate(${dx * BG_SHIFT}%, ${dy * BG_SHIFT}%)`;
+      }
+
+      // Labels container: opposite direction, lower intensity — creates depth
+      if (labelsRef.current) {
+        labelsRef.current.style.transform =
+          `translate(${-dx * LABEL_SHIFT}%, ${-dy * LABEL_SHIFT}%)`;
+      }
+
+      // Fog layer: drifts at 0.25× background — independent depth plane
+      if (fogRef.current) {
+        fogRef.current.style.transform =
+          `translate(${dx * 0.4}%, ${dy * 0.25}%) scaleX(${1 + Math.sin(phase * 0.4) * 0.008})`;
+      }
+
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      if (!isTouch) window.removeEventListener("mousemove", onMouseMove);
+    };
+  }, [bgRef, labelsRef, fogRef]);
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function ConstitutionTreeClient() {
@@ -607,6 +682,12 @@ export default function ConstitutionTreeClient() {
   const [activeArticle, setActiveArticle] = useState<ConstitutionalFrameworkRecord | null>(null);
   const [search, setSearch]           = useState("");
   const [mode, setMode]               = useState<"tree" | "list">("tree");
+
+  // Parallax refs — attached to DOM nodes, updated outside React
+  const bgRef     = useRef<HTMLDivElement>(null);
+  const labelsRef = useRef<HTMLDivElement>(null);
+  const fogRef    = useRef<HTMLDivElement>(null);
+  useParallax(bgRef, labelsRef, fogRef);
 
   // Load all published articles
   useEffect(() => {
@@ -704,15 +785,73 @@ export default function ConstitutionTreeClient() {
           0%, 100% { transform: rotate(-2deg) translateY(0); }
           50%       { transform: rotate(-2deg) translateY(-4px); }
         }
+        /* Foreground leaf silhouettes — drift at their own depth plane */
+        @keyframes leaf-drift-1 {
+          0%, 100% { transform: translate(0, 0) rotate(0deg); opacity: 0.18; }
+          33%       { transform: translate(6px, -8px) rotate(5deg); opacity: 0.22; }
+          66%       { transform: translate(-4px, 4px) rotate(-3deg); opacity: 0.15; }
+        }
+        @keyframes leaf-drift-2 {
+          0%, 100% { transform: translate(0, 0) rotate(0deg); opacity: 0.12; }
+          40%       { transform: translate(-8px, -5px) rotate(-6deg); opacity: 0.18; }
+          75%       { transform: translate(5px, 8px) rotate(4deg); opacity: 0.1; }
+        }
         .branch-label:hover { opacity: 1 !important; transform: translate(-50%,-50%) scale(1.06) !important; }
       `}</style>
 
       <div style={{ position: "fixed", inset: 0, background: "#020600", overflow: "hidden" }}>
 
-        {/* ── Forest background ─────────────────────────────────────────────── */}
-        <div style={FOREST_STYLE} />
+        {/* ── Forest background (parallax + breathing applied by useParallax) ── */}
+        <div
+          ref={bgRef}
+          style={{
+            ...FOREST_STYLE,
+            // scale(1) initial — useParallax overrides this via direct DOM style
+            // will-change hints to browser: keep on GPU compositor layer
+            willChange: "transform",
+            transformOrigin: "center center",
+          }}
+        />
         <div style={ATMOSPHERE_STYLE} />
+
+        {/* ── Fog drift layer (independent depth plane) ─────────────────────── */}
+        <div
+          ref={fogRef}
+          style={{
+            position: "absolute", inset: 0, zIndex: 3, pointerEvents: "none",
+            willChange: "transform",
+            background: [
+              "radial-gradient(ellipse 70% 18% at 30% 72%, rgba(180,210,160,0.035) 0%, transparent 65%)",
+              "radial-gradient(ellipse 55% 14% at 70% 80%, rgba(160,200,140,0.025) 0%, transparent 60%)",
+            ].join(", "),
+          }}
+        />
+
         <div style={VIGNETTE_STYLE} />
+
+        {/* ── Foreground leaf silhouettes (independent depth plane) ─────────── */}
+        {/* These sit in front of the tree image but behind labels — adds 2.5D layering */}
+        <div style={{ position: "absolute", inset: 0, zIndex: 11, pointerEvents: "none" }}>
+          {[
+            { left: "3%",  top: "15%", size: 60, anim: "leaf-drift-1 18s ease-in-out infinite" },
+            { left: "88%", top: "8%",  size: 70, anim: "leaf-drift-2 22s ease-in-out infinite 3s" },
+            { left: "6%",  top: "55%", size: 50, anim: "leaf-drift-1 25s ease-in-out infinite 8s" },
+            { left: "91%", top: "48%", size: 65, anim: "leaf-drift-2 20s ease-in-out infinite 12s" },
+            { left: "1%",  top: "75%", size: 55, anim: "leaf-drift-1 30s ease-in-out infinite 5s" },
+            { left: "85%", top: "72%", size: 72, anim: "leaf-drift-2 16s ease-in-out infinite 9s" },
+          ].map((l, i) => (
+            <div key={i} style={{
+              position: "absolute",
+              left: l.left, top: l.top,
+              width: l.size, height: l.size,
+              borderRadius: "60% 40% 70% 30% / 50% 60% 40% 55%",
+              background: "radial-gradient(ellipse, rgba(20,60,10,0.5) 0%, rgba(10,40,5,0.15) 60%, transparent 100%)",
+              animation: l.anim,
+              filter: "blur(1px)",
+            }} />
+          ))}
+        </div>
+
         <FireflyCanvas />
 
         {/* ── Top navigation ────────────────────────────────────────────────── */}
@@ -886,22 +1025,32 @@ export default function ConstitutionTreeClient() {
             </div>
           </div>
 
-          {/* ── Branch labels ──────────────────────────────────────────────── */}
-          {BRANCHES.map(branch => {
-            const bArticles = articles.filter(a => articleMatchesBranch(a, branch));
-            const isActive  = activeBranch?.id === branch.id;
-            const isDimmed  = activeBranch !== null && !isActive;
-            return (
-              <BranchLabel
-                key={branch.id}
-                branch={branch}
-                isActive={isActive}
-                isDimmed={isDimmed}
-                articleCount={bArticles.length}
-                onClick={() => handleBranchClick(branch)}
-              />
-            );
-          })}
+          {/* ── Branch labels (counter-parallax container) ─────────────────── */}
+          {/* useParallax moves this container opposite to background — creates 2.5D depth */}
+          <div
+            ref={labelsRef}
+            style={{
+              position: "absolute", inset: 0,
+              willChange: "transform",
+              pointerEvents: "none", // labels inside re-enable pointer-events individually
+            }}
+          >
+            {BRANCHES.map(branch => {
+              const bArticles = articles.filter(a => articleMatchesBranch(a, branch));
+              const isActive  = activeBranch?.id === branch.id;
+              const isDimmed  = activeBranch !== null && !isActive;
+              return (
+                <BranchLabel
+                  key={branch.id}
+                  branch={branch}
+                  isActive={isActive}
+                  isDimmed={isDimmed}
+                  articleCount={bArticles.length}
+                  onClick={() => handleBranchClick(branch)}
+                />
+              );
+            })}
+          </div>
 
           {/* ── Article leaves (appear when branch active) ─────────────────── */}
           {activeBranch && branchArticles.map((article, i) => {
