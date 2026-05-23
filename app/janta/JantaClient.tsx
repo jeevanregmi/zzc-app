@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { collection, query, where, getDocs } from "firebase/firestore";
-import { db } from "../firebase";
+import { db, auth } from "../firebase";
 import type { IntelligenceDocument } from "../../lib/types/documents";
 import type { QueueItem } from "../../lib/types/queue";
 import type { PolicyPoint } from "../../lib/types/policy-points";
@@ -1353,11 +1353,23 @@ export default function JantaClient() {
     )).then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as PolicyPoint)))
       .catch(err => { console.warn("vault_policy_points fetch:", err?.message ?? err); return [] as PolicyPoint[]; });
 
-    const intelPromise = getDocs(query(
+    const user = auth.currentUser;
+    const intelPublicPromise = getDocs(query(
       collection(db, "janta_intelligence"),
       where("publishToJanta", "==", true),
     )).then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as IntelligenceRecord)))
-      .catch(err => { console.warn("janta_intelligence fetch:", err?.message ?? err); return [] as IntelligenceRecord[]; });
+      .catch(err => { console.warn("janta_intelligence public fetch:", err?.message ?? err); return [] as IntelligenceRecord[]; });
+
+    const intelOwnerPromise = user ? getDocs(query(
+      collection(db, "janta_intelligence"),
+      where("ownerId", "==", user.uid),
+    )).then(snap => snap.docs.map(d => ({ id: d.id, ...d.data() } as IntelligenceRecord)))
+      .catch(() => [] as IntelligenceRecord[]) : Promise.resolve([] as IntelligenceRecord[]);
+
+    const intelPromise = Promise.all([intelPublicPromise, intelOwnerPromise]).then(([pub, own]) => {
+      const seen = new Set(pub.map(r => r.id));
+      return [...pub, ...own.filter(r => !seen.has(r.id))];
+    });
 
     Promise.all([docsPromise, contentPromise, pointsPromise, intelPromise])
       .then(([docItems, queueItems, pts, intel]) => {

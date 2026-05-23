@@ -277,8 +277,10 @@ service cloud.firestore {
 
     // ── JANTA: deep intelligence records (all structured civic data) ─────────
     match /janta_intelligence/{docId} {
-      // Published records are publicly readable on /janta
+      // publishToJanta=true: publicly readable on /janta
+      // domain==finance: NRB/banking docs are public circulars, readable on /finance
       allow read:   if resource.data.publishToJanta == true
+                    || resource.data.domain == "finance"
                     || isOwner(resource.data.ownerId)
                     || isDevOwner(resource.data.ownerId);
       allow create: if isCreatingAsOwner() || isDevOwner(request.resource.data.ownerId);
