@@ -186,6 +186,50 @@ function normalizeRecord(r: RawRecord, docId: string, docTitle: string, ownerId:
   };
 }
 
+// ─── JSON salvage — recover completed records from a token-truncated response ──
+// Gemini cuts the output at maxOutputTokens, leaving the JSON array incomplete.
+// This walks the records array bracket-by-bracket and extracts every record that
+// closed before the truncation point, so a 65-article batch that truncates at
+// article 60 still saves 60 articles rather than 0.
+
+function salvageTruncatedJson(text: string): { records: unknown[]; salvaged: boolean } {
+  const recordsKey = text.indexOf('"records"');
+  if (recordsKey === -1) return { records: [], salvaged: false };
+  const arrayOpen = text.indexOf('[', recordsKey);
+  if (arrayOpen === -1) return { records: [], salvaged: false };
+
+  let depth      = 0;
+  let inStr      = false;
+  let esc        = false;
+  const ends: number[] = []; // positions of each depth-0 closing }
+
+  for (let i = arrayOpen + 1; i < text.length; i++) {
+    const c = text[i];
+    if (esc)                      { esc = false; continue; }
+    if (c === "\\" && inStr)      { esc = true;  continue; }
+    if (c === '"')                { inStr = !inStr; continue; }
+    if (inStr)                    continue;
+    if (c === "{")                { depth++; }
+    else if (c === "}")           {
+      depth--;
+      if (depth === 0) ends.push(i); // closed a top-level record in the array
+    } else if (c === "]" && depth === 0) break; // normal array end
+  }
+
+  if (ends.length === 0) return { records: [], salvaged: false };
+
+  const lastEnd    = ends[ends.length - 1];
+  const arraySlice = text.slice(arrayOpen + 1, lastEnd + 1).replace(/,\s*$/, "");
+  const repaired   = `{"records":[${arraySlice}],"partsExtracted":[],"summaryNote":"salvaged"}`;
+
+  try {
+    const parsed = JSON.parse(repaired) as { records: unknown[] };
+    return { records: Array.isArray(parsed.records) ? parsed.records : [], salvaged: true };
+  } catch {
+    return { records: [], salvaged: false };
+  }
+}
+
 // ─── Main handler ─────────────────────────────────────────────────────────────
 
 interface PagesContext { request: Request; env: Env; }
@@ -238,7 +282,7 @@ export const onRequestPost = async ({ request, env }: PagesContext): Promise<Res
           { inline_data: { mime_type: "application/pdf", data: pdfResult.base64 } },
           { text: buildPrompt(body.partRange, body.docTitle || "Nepal Constitution 2015") },
         ],
-        maxTokens: 24576,
+        maxTokens: 65536,
       });
       geminiText = result.text;
       log("extract-constitution", "gemini_ok", {
@@ -275,39 +319,58 @@ export const onRequestPost = async ({ request, env }: PagesContext): Promise<Res
       text = fixed;
     }
 
-    const [parsed, parseErr] = extractJson<{ records?: unknown[]; summaryNote?: string; partsExtracted?: string[]; totalArticlesInConstitution?: number }>(text);
-    if (parseErr || !parsed) {
-      log("extract-constitution", "parse_error", { docId: body.documentId, len: text.length, err: parseErr ?? "null" });
-      return providerError(
-        `AI response could not be parsed as constitutional framework JSON.`,
-        "PARSE_ERROR",
-        `Response length: ${text.length}. ${parseErr ?? ""}`,
-      );
-    }
+    let parsedRecords: unknown[];
+    let partsExtracted: string[] = [];
+    let summaryNote = "";
+    let wasSalvaged = false;
 
-    if (!Array.isArray(parsed.records) || parsed.records.length === 0) {
-      return providerError("AI returned no constitutional framework records.", "NO_RECORDS");
+    const [parsed, parseErr] = extractJson<{ records?: unknown[]; summaryNote?: string; partsExtracted?: string[]; totalArticlesInConstitution?: number }>(text);
+    if (parseErr || !parsed || !Array.isArray(parsed.records) || parsed.records.length === 0) {
+      // Primary parse failed — attempt salvage of completed records before the truncation point
+      const salvage = salvageTruncatedJson(text);
+      if (salvage.salvaged && salvage.records.length > 0) {
+        log("extract-constitution", "salvaged", {
+          docId:     body.documentId,
+          count:     salvage.records.length,
+          parseErr:  parseErr ?? "no_records",
+          textLen:   text.length,
+        });
+        parsedRecords = salvage.records;
+        wasSalvaged   = true;
+      } else {
+        log("extract-constitution", "parse_error", { docId: body.documentId, len: text.length, err: parseErr ?? "null" });
+        return providerError(
+          `AI response could not be parsed as constitutional framework JSON.`,
+          "PARSE_ERROR",
+          `Response length: ${text.length}. ${parseErr ?? ""}`,
+        );
+      }
+    } else {
+      parsedRecords  = parsed.records;
+      partsExtracted = parsed.partsExtracted ?? [];
+      summaryNote    = parsed.summaryNote    ?? "";
     }
 
     // ── Normalize records ──────────────────────────────────────────────────────
     const now     = new Date().toISOString();
-    const records = (parsed.records as RawRecord[]).map(r =>
+    const records = (parsedRecords as RawRecord[]).map(r =>
       normalizeRecord(r, body.documentId, body.docTitle, body.ownerId, now)
     );
 
     log("extract-constitution", "records_ready", {
-      docId:   body.documentId,
-      count:   records.length,
-      parts:   parsed.partsExtracted ?? [],
+      docId:     body.documentId,
+      count:     records.length,
+      parts:     partsExtracted,
+      salvaged:  wasSalvaged,
     });
 
     return new Response(JSON.stringify({
       ok:           true,
       count:        records.length,
       records,
-      partsExtracted:              parsed.partsExtracted ?? [],
-      totalArticlesInConstitution: parsed.totalArticlesInConstitution ?? null,
-      summaryNote:                 parsed.summaryNote ?? "",
+      partsExtracted,
+      totalArticlesInConstitution: parsed?.totalArticlesInConstitution ?? null,
+      summaryNote:  wasSalvaged ? `salvaged ${records.length} records (JSON was truncated — try re-extracting this batch for complete coverage)` : summaryNote,
     }), { status: 200, headers: CORS });
 
   } catch (err) {

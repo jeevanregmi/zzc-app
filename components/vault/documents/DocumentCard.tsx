@@ -420,7 +420,7 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
         </div>
       )}
 
-      {/* Constitution Framework Extract — full 35 parts, 3 batches */}
+      {/* Constitution Framework Extract — full 35 parts, 6 batches */}
       {isApproved && isConstitutionDoc(doc) && !!onExtractConstitution && !isExtractingConstitution && constitutionCount === 0 && (
         <button
           onClick={() => onExtractConstitution!(doc)}
