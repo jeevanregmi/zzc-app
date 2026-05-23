@@ -15,7 +15,7 @@
  * Output: { ok, records[], totalFound, chunkCount, docSummary }
  */
 
-import { callGemini } from "../../lib/ai/providers/gemini";
+import { callGemini, GeminiCallError } from "../../lib/ai/providers/gemini";
 import { CORS, extractJson, log, clientError, providerError, internalError } from "./_shared";
 
 interface Env { GEMINI_API_KEY: string; }
@@ -217,8 +217,16 @@ async function extractFromPdf(
     }
     if (!res.ok) throw new Error(`PDF fetch failed: HTTP ${res.status} from ${body.downloadUrl!.slice(0, 80)}`);
     const buf = await res.arrayBuffer();
-    if (buf.byteLength > 30 * 1024 * 1024) {
-      return clientError(`PDF too large for direct extraction (${(buf.byteLength / 1024 / 1024).toFixed(1)} MB). Max 30 MB.`, 413, "FILE_TOO_LARGE");
+    const sizeMB = buf.byteLength / 1024 / 1024;
+    // Gemini inline_data accepts up to ~20 MB base64 ≈ 15 MB raw binary.
+    // Files larger than this get rejected with a 400 — return a clear error.
+    if (sizeMB > 15) {
+      log("extract-intelligence", "pdf_too_large", { docId: body.docId, sizeMB: sizeMB.toFixed(1) });
+      return clientError(
+        `PDF too large for direct extraction (${sizeMB.toFixed(1)} MB). Gemini inline limit is 15 MB. Re-upload a compressed version of the document.`,
+        413,
+        "FILE_TOO_LARGE",
+      );
     }
     base64 = toBase64(buf);
   } catch (err) {
@@ -315,6 +323,11 @@ Return JSON array:
       { headers: CORS },
     );
   } catch (err) {
+    if (err instanceof GeminiCallError) {
+      log("extract-intelligence", "gemini_error", { docId: body.docId, code: err.code, status: err.statusCode, msg: err.message.slice(0, 200) });
+      if (err.code === "quota_exceeded") return providerError("Gemini quota exhausted. Top up or wait for reset.", "QUOTA_EXHAUSTED");
+      if (err.code === "bad_request")    return clientError(`Gemini rejected the PDF (HTTP 400). The file may be too large or corrupt. Error: ${err.message.slice(0, 150)}`, 422, "GEMINI_BAD_REQUEST");
+    }
     return internalError(err);
   }
 }
