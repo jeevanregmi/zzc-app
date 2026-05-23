@@ -84,6 +84,23 @@ export default function DocumentsClient() {
   const [extractingIntelId, setExtractingIntelId] = useState<string | null>(null);
   const [intelCountByDoc, setIntelCountByDoc] = useState<Record<string, number>>({});
   const [relCountByDoc, setRelCountByDoc] = useState<Record<string, number>>({});
+
+  // Load persisted intel + relationship counts from Firestore on mount
+  useEffect(() => {
+    if (!user?.uid) return;
+    getDocs(query(
+      collection(db, "janta_intelligence"),
+      where("ownerId", "==", user.uid),
+      limit(2000),
+    )).then(snap => {
+      const counts: Record<string, number> = {};
+      snap.docs.forEach(d => {
+        const docId = (d.data() as Record<string, unknown>).sourceDocId as string;
+        if (docId) counts[docId] = (counts[docId] ?? 0) + 1;
+      });
+      setIntelCountByDoc(counts);
+    }).catch(() => {});
+  }, [user?.uid]);
   const [matchingIntelId, setMatchingIntelId] = useState<string | null>(null);
   const [processError,        setProcessError]        = useState<string | null>(null);
   const [processErrorCode,    setProcessErrorCode]    = useState<string | null>(null);

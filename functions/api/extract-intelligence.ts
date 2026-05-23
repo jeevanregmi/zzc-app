@@ -259,7 +259,7 @@ Return ONLY valid JSON — start with { end with } — no markdown, no code fenc
   try {
     const result = await callGemini({
       apiKey:    context.env.GEMINI_API_KEY,
-      system:    "You are Nepal's civic intelligence extraction engine. Return ONLY valid JSON — no markdown fences, no code blocks, no explanation. Start your response directly with { and end with }.",
+      system:    "You are Nepal's civic intelligence extraction engine. Return ONLY valid JSON. Start with { end with }. No markdown. No code fences. No extra fields beyond the schema. NEVER include summaryNepali.",
       parts:     [
         { inline_data: { mime_type: "application/pdf", data: base64 } },
         { text: prompt },
