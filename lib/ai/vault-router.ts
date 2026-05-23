@@ -113,7 +113,7 @@ async function tryGemini(
   // most reliable model across all free-tier AI Studio keys.
   const MODEL_SEQUENCE = env.GEMINI_MODEL
     ? [env.GEMINI_MODEL]
-    : ["gemini-2.5-flash", "gemini-2.0-flash-lite"];
+    : ["gemini-2.0-flash", "gemini-2.0-flash-lite"];
 
   let lastErr = "";
   for (const model of MODEL_SEQUENCE) {
