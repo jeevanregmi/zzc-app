@@ -126,7 +126,17 @@ export function log(
  * Returns [parsed, null] on success, [null, errorMessage] on failure.
  */
 export function extractJson<T = unknown>(text: string): [T, null] | [null, string] {
-  const match = text.match(/\{[\s\S]*\}/);
+  const t = text.trim();
+
+  // 1. Direct parse (model returned bare JSON)
+  try { const d = JSON.parse(t); if (d && typeof d === "object") return [d as T, null]; } catch {}
+
+  // 2. Strip markdown code fences (```json ... ``` or ``` ... ```)
+  const stripped = t.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+  try { const d = JSON.parse(stripped); if (d && typeof d === "object") return [d as T, null]; } catch {}
+
+  // 3. Extract first {...} block (handles preamble/postamble)
+  const match = stripped.match(/\{[\s\S]*\}/);
   if (!match) return [null, "No JSON object found in AI response"];
   try {
     return [JSON.parse(match[0]) as T, null];
