@@ -234,64 +234,50 @@ async function extractFromPdf(
     return internalError(err);
   }
 
-  const prompt = `तपाईं Nepal को national civic intelligence extraction engine हुनुहुन्छ।
-यो ${body.docType ?? "government document"} ("${body.docTitle}") बाट सबै structured intelligence records निकाल्नुहोस्।
+  const prompt = `Extract the TOP 50 most specific, trackable civic intelligence records from this ${body.docType ?? "government document"}: "${body.docTitle}".
 
-हरेक record एउटा specific, traceable civic item हो:
-- Budget allocations (amount, ministry, target)
-- Government promises / commitments
-- Projects (name, cost, timeline, location)
-- Institutions / bodies created
-- Policy reforms (what changed, new rules)
-- Employment / social program targets
-- Financial rules (rates, limits, eligibility)
+PRIORITY: budget allocations with amounts, numbered targets, policy reforms, new institutions, employment targets.
+SKIP: vague aspirational statements, duplicates, anything without a specific number/name/date.
 
-RULES:
-- Be EXHAUSTIVE — हरेक specific item निकाल्नुस् (100+ records expected for large documents)
-- हरेक record मा sourceQuote (exact text from document) राख्नुस्
-- Generic statements skip गर्नुस् — specific numbers, names, amounts भएको मात्र
-- titleNepali र summaryNepali सधैं नेपालीमा
-- confidence: 0.9 = exact number/date from doc; 0.7 = clear commitment; 0.5 = implied
-
-Return JSON array:
+Return ONLY this JSON (no markdown, no explanation):
 {
   "records": [
     {
       "type": "budget_target|promise|project|institution|reform|social_program|employment_target|financial_inclusion|other",
       "title": "5-word English title",
       "titleNepali": "नेपाली शीर्षक",
-      "summaryNepali": "१-२ वाक्य नेपालीमा",
+      "summaryNepali": "१-२ वाक्य",
       "sector": "education|health|agriculture|infrastructure|energy|finance|governance|youth|other",
-      "ministry": "Exact ministry name",
-      "target": "specific number/target if any",
+      "ministry": "ministry name",
+      "target": "number/metric or null",
       "measurable": true,
-      "timeline": "fiscal year or date",
-      "budgetAmount": "रु. X करोड/अर्ब",
-      "geoScope": "national|provincial|district|municipality",
+      "timeline": "date/year or null",
+      "budgetAmount": "रु. X करोड or null",
+      "geoScope": "national|provincial|district",
       "governmentLevel": "federal|provincial|local",
-      "tags": ["tag1", "tag2"],
+      "tags": ["tag1","tag2","tag3"],
       "confidence": 0.85,
-      "affectedGroups": ["युवा", "कृषक"],
-      "affectedSectors": ["agriculture", "finance"],
+      "affectedGroups": ["युवा","कृषक"],
+      "affectedSectors": ["agriculture","finance"],
       "traceability": {
-        "sourceQuote": "exact quote from document",
-        "rawParagraph": "full paragraph",
-        "extractionReasoning": "why this is trackable"
+        "sourceQuote": "exact quote ≤100 chars",
+        "rawParagraph": "paragraph ≤200 chars",
+        "extractionReasoning": "why trackable ≤60 chars"
       }
     }
   ],
-  "sectionSummary": "brief summary of this document section"
+  "sectionSummary": "one sentence"
 }`;
 
   try {
     const result = await callGemini({
       apiKey:    context.env.GEMINI_API_KEY,
-      system:    "You are Nepal's national civic intelligence extraction engine. Extract ALL trackable structured records from government documents. Be exhaustive — 100+ records expected for large documents. Return only valid JSON.",
+      system:    "You are Nepal's civic intelligence extraction engine. Extract the top 50 most specific, trackable records from this government document. Return ONLY valid JSON — no markdown, no explanation.",
       parts:     [
         { inline_data: { mime_type: "application/pdf", data: base64 } },
         { text: prompt },
       ],
-      maxTokens: 32768,
+      maxTokens: 16384,
     });
 
     const [parsed, parseErr] = extractJson(result.text);
