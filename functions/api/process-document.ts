@@ -87,7 +87,7 @@ const CORS: Record<string, string> = {
   "Content-Type":                 "application/json",
 };
 
-const MAX_BYTES    = 15 * 1024 * 1024;  // 15 MB
+const MAX_BYTES    = 30 * 1024 * 1024;  // 30 MB
 const TEXT_MIMES   = new Set(["text/plain", "text/markdown", "text/x-markdown"]);
 
 const SYSTEM_PROMPT = `You are Nepal's premier AI intelligence analyst for ZZC — the country's only AI-native financial and civic intelligence platform for Gen Z (age 18–35, salary NPR 30k–150k/month).
