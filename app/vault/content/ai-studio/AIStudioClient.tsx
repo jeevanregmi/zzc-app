@@ -7,7 +7,7 @@ import { updateQueueItem, getQueueItem } from "../../../../lib/vault/firestore";
 import type { QueueItem } from "../../../../lib/types/queue";
 import { useLearningMode } from "../../../../contexts/LearningModeContext";
 
-type Tool = "script" | "thumbnail-prompt";
+type Tool = "script" | "thumbnail-prompt" | "publish";
 type ScriptFormat = "long-form" | "short" | "reel";
 type ThumbnailStyle = "calculator-screen" | "talking-head" | "data-viz" | "split-screen" | "text-only";
 
@@ -82,6 +82,8 @@ export default function AIStudioClient() {
   const [subline,     setSubline]     = useState("");
   const [style,       setStyle]       = useState<ThumbnailStyle>("calculator-screen");
   const [thumbResult, setThumbResult] = useState<ThumbnailResult | null>(null);
+  const [thumbImageUrl, setThumbImageUrl] = useState<string | null>(null);
+  const [thumbImageLoading, setThumbImageLoading] = useState(false);
 
   const [loading,        setLoading]        = useState(false);
   const [error,          setError]          = useState("");
@@ -151,6 +153,24 @@ export default function AIStudioClient() {
       setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function generateThumbnailImage() {
+    if (!thumbResult?.prompts?.[0]?.prompt) return;
+    setThumbImageLoading(true);
+    setThumbImageUrl(null);
+    const seed = Math.floor(Math.random() * 99999);
+    const prompt = thumbResult.prompts[0].prompt;
+    const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1280&height=720&model=flux&nologo=true&seed=${seed}`;
+    // Pre-load to detect errors
+    const img = new window.Image();
+    img.onload  = () => { setThumbImageUrl(url); setThumbImageLoading(false); };
+    img.onerror = () => { setThumbImageUrl(url); setThumbImageLoading(false); }; // show anyway
+    img.src = url;
+    // Save to queue item
+    if (queueId) {
+      await updateQueueItem(queueId, { thumbnailImageUrl: url, updatedAt: new Date().toISOString() }).catch(() => {});
     }
   }
 
@@ -278,15 +298,16 @@ export default function AIStudioClient() {
       )}
 
       {/* Tool selector */}
-      <div className="flex gap-2 mb-6">
+      <div className="flex gap-2 mb-6 overflow-x-auto pb-1">
         {([
-          { id: "script" as Tool,           label: "📝 Script Generator" },
-          { id: "thumbnail-prompt" as Tool, label: "🖼 Thumbnail Prompt" },
+          { id: "script" as Tool,           label: "📝 Script" },
+          { id: "thumbnail-prompt" as Tool, label: "🖼 Thumbnail" },
+          { id: "publish" as Tool,          label: "📣 Publish Hub" },
         ]).map(t => (
           <button
             key={t.id}
-            onClick={() => { setTool(t.id); setError(""); setScriptResult(null); setThumbResult(null); }}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            onClick={() => { setTool(t.id); setError(""); }}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap shrink-0 ${
               tool === t.id
                 ? "bg-zinc-700 text-white"
                 : "bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white"
@@ -459,7 +480,257 @@ export default function AIStudioClient() {
 
           {error && <p className="text-red-400 text-xs px-1">{error}</p>}
 
-          {thumbResult && <ThumbnailOutput result={thumbResult} />}
+          {thumbResult && (
+            <>
+              <ThumbnailOutput result={thumbResult} />
+
+              {/* Actual image generation from first prompt */}
+              <div className="p-4 bg-zinc-900 border border-purple-900/50 rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-black text-purple-300">🖼 AI Thumbnail Image</p>
+                    <p className="text-xs text-zinc-500 mt-0.5">Pollinations.ai (Flux) — free, no API key needed</p>
+                  </div>
+                  <button
+                    onClick={generateThumbnailImage}
+                    disabled={thumbImageLoading}
+                    className="px-4 py-2 rounded-xl text-xs font-black bg-purple-700 hover:bg-purple-600 text-white transition-colors disabled:opacity-50"
+                  >
+                    {thumbImageLoading ? "Generate हुँदैछ…" : thumbImageUrl ? "🔄 Regenerate" : "⚡ Generate Image"}
+                  </button>
+                </div>
+
+                {thumbImageLoading && (
+                  <div className="w-full aspect-video bg-zinc-950 rounded-xl border border-zinc-800 flex items-center justify-center">
+                    <div className="text-center space-y-2">
+                      <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                      <p className="text-xs text-zinc-500">Flux model generate गर्दैछ (~10–30s)…</p>
+                    </div>
+                  </div>
+                )}
+
+                {thumbImageUrl && !thumbImageLoading && (
+                  <div className="space-y-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={thumbImageUrl}
+                      alt="Generated thumbnail"
+                      className="w-full rounded-xl border border-zinc-700"
+                      style={{ aspectRatio: "16/9", objectFit: "cover" }}
+                    />
+                    <div className="flex gap-2">
+                      <a
+                        href={thumbImageUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        download="thumbnail.jpg"
+                        className="flex-1 py-2 rounded-xl text-xs font-bold text-center bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
+                      >
+                        ⬇ Download
+                      </a>
+                      <button
+                        onClick={() => navigator.clipboard.writeText(thumbImageUrl)}
+                        className="flex-1 py-2 rounded-xl text-xs font-bold bg-zinc-800 hover:bg-zinc-700 text-zinc-300 transition-colors"
+                      >
+                        📋 Copy URL
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── Publish Hub ── */}
+      {tool === "publish" && (
+        <div className="space-y-4">
+          {/* /janta */}
+          <div className="p-4 bg-zinc-950 border border-green-900/50 rounded-2xl">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <p className="text-sm font-black text-green-400">🌐 ZZC Janta</p>
+                <p className="text-xs text-zinc-500">Public Intelligence page — zzc.jeevanregmi.com.np/janta</p>
+              </div>
+              <button
+                onClick={publishToJanta}
+                disabled={!queueId}
+                className={`px-4 py-2 rounded-xl text-xs font-black transition-colors ${
+                  queueItem?.publishToJanta
+                    ? "bg-green-900/60 border border-green-700 text-green-300 hover:bg-red-950 hover:border-red-800 hover:text-red-400"
+                    : "bg-green-700 hover:bg-green-600 text-white"
+                }`}
+              >
+                {queueItem?.publishToJanta ? "✅ Live — Unpublish गर्नुस्" : "🚀 Janta मा Publish"}
+              </button>
+            </div>
+            {queueItem?.publishToJanta && (
+              <div className="text-xs text-green-700 bg-green-950/30 rounded-xl px-3 py-2">
+                Timeline मा देखिन्छ · Readers ले पढ्न र सुन्न सक्छन् (TTS) · Hero image भए देखिन्छ
+              </div>
+            )}
+          </div>
+
+          {/* Facebook */}
+          <div className="p-4 bg-zinc-950 border border-blue-900/50 rounded-2xl space-y-3">
+            <div className="flex items-center gap-2 mb-1">
+              <p className="text-sm font-black text-blue-400">📘 Facebook Page</p>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-950 text-blue-600 border border-blue-900">Manual — Copy & Paste</span>
+            </div>
+            <p className="text-xs text-zinc-500">Script → Caption बनाएर Facebook Page मा paste गर्नुस्। Image: Thumbnail बाट download।</p>
+
+            {/* Caption builder */}
+            {scriptResult ? (
+              <div className="space-y-2">
+                <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-3">
+                  <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1.5">FB Caption (copy गर्नुस्)</p>
+                  <p className="text-xs text-zinc-300 whitespace-pre-wrap leading-relaxed">
+                    {[
+                      scriptResult.hook ?? "",
+                      "",
+                      scriptResult.caption ?? "",
+                      "",
+                      scriptResult.hashtags?.join(" ") ?? "#Nepal #ZZC #Finance",
+                    ].join("\n")}
+                  </p>
+                </div>
+                <button
+                  onClick={() => navigator.clipboard.writeText(
+                    [scriptResult.hook ?? "", "", scriptResult.caption ?? "", "", scriptResult.hashtags?.join(" ") ?? "#Nepal #ZZC #Finance"].join("\n")
+                  )}
+                  className="w-full py-2 rounded-xl text-xs font-bold bg-blue-900/40 hover:bg-blue-900/70 border border-blue-800 text-blue-300 transition-colors"
+                >
+                  📋 FB Caption Copy गर्नुहोस्
+                </button>
+              </div>
+            ) : (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-4 text-center">
+                <p className="text-xs text-zinc-500">पहिले Script Generator मा script बनाउनुस् — तब FB caption यहाँ तयार हुन्छ।</p>
+                <button onClick={() => setTool("script")} className="mt-2 text-xs text-blue-400 hover:text-blue-300 underline">
+                  → Script Generate गर्नुस्
+                </button>
+              </div>
+            )}
+
+            {/* Image reminder */}
+            {thumbImageUrl ? (
+              <div className="flex items-center gap-3 bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={thumbImageUrl} alt="thumb" className="w-16 h-9 object-cover rounded" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-zinc-400">Thumbnail ready</p>
+                  <p className="text-[10px] text-zinc-600 truncate">{thumbImageUrl}</p>
+                </div>
+                <a href={thumbImageUrl} target="_blank" rel="noopener noreferrer"
+                   className="text-xs px-2 py-1 bg-zinc-800 rounded text-zinc-400 hover:text-white shrink-0">
+                  Download
+                </a>
+              </div>
+            ) : (
+              <div className="text-xs text-zinc-600 text-center">
+                Thumbnail image छैन —{" "}
+                <button onClick={() => setTool("thumbnail-prompt")} className="text-purple-400 hover:text-purple-300 underline">
+                  Thumbnail tab मा generate गर्नुस्
+                </button>
+              </div>
+            )}
+
+            {/* Workflow steps */}
+            <div className="space-y-1.5 pt-1">
+              {[
+                "1. Caption copy गर्नुस् (माथि बटन)",
+                "2. Thumbnail download गर्नुस्",
+                "3. facebook.com/pages → Create Post → Photo",
+                "4. Image upload → Caption paste → Schedule 7 PM NST",
+                "5. Boost: ₹500 top-performing post 48h पछि",
+              ].map(s => (
+                <div key={s} className="flex items-start gap-2 text-xs text-zinc-500">
+                  <span className="text-blue-800 shrink-0">›</span>
+                  <span>{s}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* YouTube */}
+          <div className="p-4 bg-zinc-950 border border-red-900/50 rounded-2xl space-y-3">
+            <div className="flex items-center gap-2 mb-1">
+              <p className="text-sm font-black text-red-400">▶ YouTube</p>
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-red-950 text-red-700 border border-red-900">Manual Upload</span>
+            </div>
+            <p className="text-xs text-zinc-500">Script record गर्नुस् → Upload। AI ले description + tags ready गरिदिन्छ।</p>
+
+            {scriptResult ? (
+              <div className="space-y-2">
+                {/* Title */}
+                <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-3">
+                  <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Video Title</p>
+                  <p className="text-xs text-white font-semibold">{scriptResult.title}</p>
+                  <button onClick={() => navigator.clipboard.writeText(scriptResult.title)}
+                    className="mt-1.5 text-[10px] text-zinc-500 hover:text-zinc-300 underline">Copy</button>
+                </div>
+                {/* Description */}
+                <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-3">
+                  <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Description</p>
+                  <p className="text-xs text-zinc-300 whitespace-pre-wrap leading-relaxed">
+                    {scriptResult.description ?? [scriptResult.hook, "", "ZZC — Nepal को लागि AI-powered financial intelligence।", "Website: zzc.jeevanregmi.com.np", "", scriptResult.tags?.join(" ") ?? ""].join("\n")}
+                  </p>
+                  <button
+                    onClick={() => navigator.clipboard.writeText(scriptResult.description ?? [scriptResult.hook, "", "ZZC — Nepal को लागि AI-powered financial intelligence।", "Website: zzc.jeevanregmi.com.np", "", scriptResult.tags?.join(" ") ?? ""].join("\n"))}
+                    className="mt-1.5 text-[10px] text-zinc-500 hover:text-zinc-300 underline">Copy Description</button>
+                </div>
+                {/* Tags */}
+                {scriptResult.tags && scriptResult.tags.length > 0 && (
+                  <div className="bg-zinc-900 border border-zinc-700 rounded-xl p-3">
+                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">Tags</p>
+                    <p className="text-xs text-zinc-400">{scriptResult.tags.join(", ")}</p>
+                    <button onClick={() => navigator.clipboard.writeText(scriptResult.tags!.join(", "))}
+                      className="mt-1.5 text-[10px] text-zinc-500 hover:text-zinc-300 underline">Copy Tags</button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-4 text-center">
+                <p className="text-xs text-zinc-500">Script generate गर्नुस् — YouTube title, description, tags automatically तयार हुन्छ।</p>
+                <button onClick={() => setTool("script")} className="mt-2 text-xs text-red-400 hover:text-red-300 underline">
+                  → Script Generate गर्नुस्
+                </button>
+              </div>
+            )}
+
+            {/* Upload checklist */}
+            <div className="space-y-1.5 pt-1">
+              <p className="text-[10px] text-zinc-600 uppercase tracking-wider">Upload Checklist</p>
+              {[
+                "Script record गर्नुस् (teleprompter app use गर्नुस्)",
+                "Video edit गर्नुस् — captions burn-in गर्नुस् (Nepali)",
+                "Thumbnail upload (1280×720, download माथिबाट)",
+                "studio.youtube.com → Upload → Title/Desc/Tags paste गर्नुस्",
+                "Schedule: 7 PM NST · Visibility: Public",
+                "Upload भएपछि Facebook मा short clip post गर्नुस्",
+              ].map(s => (
+                <div key={s} className="flex items-start gap-2 text-xs text-zinc-500">
+                  <span className="text-red-800 shrink-0">›</span>
+                  <span>{s}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Summary status */}
+          <div className="grid grid-cols-3 gap-2 pt-2">
+            {[
+              { label: "/janta", status: queueItem?.publishToJanta ? "✅ Live" : "⬜ Not published", color: queueItem?.publishToJanta ? "text-green-400" : "text-zinc-600" },
+              { label: "Facebook", status: scriptResult ? "📋 Caption ready" : "⬜ Script चाहिन्छ", color: scriptResult ? "text-blue-400" : "text-zinc-600" },
+              { label: "YouTube", status: scriptResult ? "📋 Meta ready" : "⬜ Script चाहिन्छ", color: scriptResult ? "text-red-400" : "text-zinc-600" },
+            ].map(c => (
+              <div key={c.label} className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 text-center">
+                <p className="text-[10px] text-zinc-600 mb-1">{c.label}</p>
+                <p className={`text-xs font-black ${c.color}`}>{c.status}</p>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

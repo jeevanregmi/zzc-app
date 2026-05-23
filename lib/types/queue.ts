@@ -68,6 +68,9 @@ export interface QueueItem {
   jantaPublishedAt?: string;    // when it was published to /janta
   jantaHeroImageUrl?: string;   // optional image for the /janta content card
 
+  // ── Media assets ──────────────────────────────────────────────────────────────
+  thumbnailImageUrl?: string;   // AI-generated thumbnail image URL (Pollinations.ai)
+
   // ── Timestamps ────────────────────────────────────────────────────────────────
   createdAt:          string;
   updatedAt:          string;

@@ -76,6 +76,7 @@ export default function DocumentsClient() {
   const [viewing,       setViewing]      = useState<IntelligenceDocument | null>(null);
   const [processingId,  setProcessingId] = useState<string | null>(null);
   const [generatingImageId, setGeneratingImageId] = useState<string | null>(null);
+  const [bulkImageProgress, setBulkImageProgress] = useState<{ done: number; total: number } | null>(null);
   const [extractingPointsId, setExtractingPointsId] = useState<string | null>(null);
   const [pointCountByDoc, setPointCountByDoc] = useState<Record<string, number>>({});
   const [processError,        setProcessError]        = useState<string | null>(null);
@@ -377,6 +378,36 @@ export default function DocumentsClient() {
     }
   };
 
+  const handleBulkGenerateImages = async () => {
+    const targets = docs.filter(d => d.adminApprovalStatus === "approved" && !d.heroImageUrl);
+    if (targets.length === 0) return;
+    setBulkImageProgress({ done: 0, total: targets.length });
+    for (let i = 0; i < targets.length; i++) {
+      const doc = targets[i];
+      setGeneratingImageId(doc.id);
+      try {
+        const res = await fetch("/api/generate-hero-image", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title:           doc.title,
+            nepaliExplainer: doc.nepaliExplainer,
+            affectedSectors: doc.affectedSectors,
+            sourceAuthority: doc.sourceAuthority,
+            aiKeyInsights:   doc.aiKeyInsights,
+          }),
+        });
+        const data = await res.json() as { ok: boolean; heroImageUrl?: string; error?: string };
+        if (data.ok && data.heroImageUrl) {
+          await updateIntelligenceDoc(doc.id, { heroImageUrl: data.heroImageUrl });
+        }
+      } catch { /* skip failed, continue */ }
+      setBulkImageProgress({ done: i + 1, total: targets.length });
+    }
+    setGeneratingImageId(null);
+    setBulkImageProgress(null);
+  };
+
   const aiReadyCount    = docs.filter(d => d.processingStatus === "ai_ready").length;
   const readyCount      = docs.filter(d => d.processingStatus === "ready").length;
   const awaitingReview  = docs.filter(d =>
@@ -531,6 +562,49 @@ export default function DocumentsClient() {
             </div>
           </div>
         )}
+
+        {/* Bulk hero image generator — shown when approved docs need images */}
+        {(() => {
+          const needsImage = docs.filter(d => d.adminApprovalStatus === "approved" && !d.heroImageUrl);
+          if (needsImage.length === 0 && !bulkImageProgress) return null;
+          return (
+            <div className="mb-5 rounded-2xl border border-purple-900/60 bg-purple-950/30 px-5 py-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-black text-purple-300">🖼 Janta Hero Images</p>
+                  {bulkImageProgress ? (
+                    <p className="text-xs text-purple-400 mt-0.5">
+                      Generate हुँदैछ… {bulkImageProgress.done}/{bulkImageProgress.total} docs
+                    </p>
+                  ) : (
+                    <p className="text-xs text-purple-500 mt-0.5">
+                      {needsImage.length} approved doc{needsImage.length !== 1 ? "s" : ""} मा image छैन — /janta मा visual नदेखिने
+                    </p>
+                  )}
+                </div>
+                {bulkImageProgress ? (
+                  <div className="shrink-0 text-right">
+                    <div className="w-32 bg-purple-900/40 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="h-full bg-purple-400 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.round((bulkImageProgress.done / bulkImageProgress.total) * 100)}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-purple-600 mt-1">{Math.round((bulkImageProgress.done / bulkImageProgress.total) * 100)}% done</p>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleBulkGenerateImages}
+                    disabled={needsImage.length === 0}
+                    className="shrink-0 px-4 py-2 rounded-xl text-xs font-black bg-purple-600 hover:bg-purple-500 text-white transition-colors disabled:opacity-40"
+                  >
+                    सबैको Image Generate गर्नुहोस्
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Search + filter */}
         <div className="flex flex-col gap-2 mb-5">
