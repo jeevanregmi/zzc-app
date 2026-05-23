@@ -47,7 +47,7 @@ function RecordCard({ record, onDelete }: {
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-amber-400 font-mono text-xs font-bold">
-              {record.articleId?.replace("art-", "Art. ")}
+              {record.articleId?.replace("art-", "धारा ")}
             </span>
             <span className="text-zinc-600 text-xs">·</span>
             <span className="text-zinc-500 text-xs">{record.part}</span>

@@ -24,84 +24,84 @@ const BRANCHES: Branch[] = [
     id: "education", label: "Education", nepali: "शिक्षा", emoji: "📚",
     color: "green",
     keywords: ["शिक्षा", "education", "school", "university", "vidyalaya", "padhna"],
-    articles: ["Art. 31"],
+    articles: ["धारा ३१"],
     type: "branch",
   },
   {
     id: "health", label: "Health", nepali: "स्वास्थ्य", emoji: "🏥",
     color: "red",
     keywords: ["स्वास्थ्य", "health", "hospital", "medicine", "aushadhi", "ausadhi"],
-    articles: ["Art. 35"],
+    articles: ["धारा ३५"],
     type: "branch",
   },
   {
     id: "employment", label: "Employment", nepali: "रोजगारी", emoji: "💼",
     color: "blue",
     keywords: ["रोजगारी", "rojgari", "employment", "work", "labour", "shramik", "job"],
-    articles: ["Art. 33", "Art. 34"],
+    articles: ["धारा ३३", "धारा ३४"],
     type: "branch",
   },
   {
     id: "finance", label: "Finance / Economy", nepali: "अर्थ/वित्त", emoji: "💰",
     color: "yellow",
     keywords: ["अर्थ", "वित्त", "finance", "economy", "budget", "tax", "bittiya"],
-    articles: ["Art. 51(d)", "Art. 119", "Art. 120"],
+    articles: ["धारा ५१(घ)", "धारा ११९", "धारा १२०"],
     type: "branch",
   },
   {
     id: "women", label: "Women", nepali: "महिला", emoji: "👩",
     color: "pink",
     keywords: ["महिला", "mahila", "women", "gender", "linga", "samanta"],
-    articles: ["Art. 38"],
+    articles: ["धारा ३८"],
     type: "branch",
   },
   {
     id: "children", label: "Children", nepali: "बालबालिका", emoji: "👶",
     color: "purple",
     keywords: ["बालबालिका", "bal", "children", "child", "minor", "baccha"],
-    articles: ["Art. 39"],
+    articles: ["धारा ३९"],
     type: "branch",
   },
   {
     id: "environment", label: "Environment", nepali: "वातावरण", emoji: "🌿",
     color: "emerald",
     keywords: ["वातावरण", "vatavaran", "environment", "jungle", "ban", "nature", "climate"],
-    articles: ["Art. 30"],
+    articles: ["धारा ३०"],
     type: "branch",
   },
   {
     id: "federalism", label: "Federalism", nepali: "संघीयता", emoji: "🗺️",
     color: "orange",
     keywords: ["संघीयता", "sanghiyata", "federalism", "province", "pradesh", "municipality", "palika"],
-    articles: ["Art. 56", "Art. 57", "Art. 232"],
+    articles: ["धारा ५६", "धारा ५७", "धारा २३२"],
     type: "branch",
   },
   {
     id: "agriculture", label: "Agriculture", nepali: "कृषि", emoji: "🌾",
     color: "lime",
     keywords: ["कृषि", "krishi", "agriculture", "farmer", "kisan", "land", "jagga"],
-    articles: ["Art. 51(c)"],
+    articles: ["धारा ५१(ग)"],
     type: "branch",
   },
   {
     id: "governance", label: "Governance", nepali: "सुशासन", emoji: "⚖️",
     color: "cyan",
     keywords: ["सुशासन", "sushasan", "governance", "corruption", "bhrashtachar", "transparency"],
-    articles: ["Art. 51(e)", "Art. 17"],
+    articles: ["धारा ५१(ङ)", "धारा १७"],
     type: "branch",
   },
   {
     id: "dalits", label: "Dalits / Inclusion", nepali: "दलित/समावेशिता", emoji: "🤝",
     color: "violet",
     keywords: ["दलित", "dalit", "marginalized", "inclusion", "samaveshi", "janajati", "aadivasi"],
-    articles: ["Art. 40", "Art. 42"],
+    articles: ["धारा ४०", "धारा ४२"],
     type: "branch",
   },
   {
     id: "justice", label: "Justice / Judiciary", nepali: "न्याय", emoji: "⚖️",
     color: "indigo",
     keywords: ["न्याय", "nyay", "justice", "court", "adalat", "supreme court", "constitution court"],
-    articles: ["Art. 126", "Art. 127", "Art. 137"],
+    articles: ["धारा १२६", "धारा १२७", "धारा १३७"],
     type: "branch",
   },
 ];
@@ -147,7 +147,7 @@ function ArticleCard({
           <p className="text-white font-bold text-sm leading-snug">
             {record.titleNepali || record.titleEnglish}
           </p>
-          <p className="text-zinc-500 text-xs mt-0.5">{record.articleId?.replace("art-", "Art. ")}</p>
+          <p className="text-zinc-500 text-xs mt-0.5">{record.articleId?.replace("art-", "धारा ")}</p>
         </div>
       </div>
       <p className="text-zinc-300 text-xs leading-relaxed line-clamp-3">
@@ -196,7 +196,7 @@ function SidePanel({
   if (!record && !branch) return null;
 
   const title    = record ? (record.titleNepali || record.titleEnglish) : (branch?.nepali ?? "");
-  const subtitle = record ? record.articleId?.replace("art-", "Art. ") : branch?.articles.join(", ") ?? "";
+  const subtitle = record ? record.articleId?.replace("art-", "धारा ") : branch?.articles.join(", ") ?? "";
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-5 space-y-4 sticky top-4">
@@ -445,8 +445,8 @@ export default function ConstitutionTreeClient() {
 
           {/* Root */}
           <div className="bg-zinc-900 border border-amber-800/60 rounded-2xl px-6 py-3 text-center">
-            <p className="text-amber-400 font-black text-sm">🌱 Root — जनताको संप्रभुता</p>
-            <p className="text-zinc-600 text-xs">Art. 1–4 · Nepal is a sovereign, socialist, secular, democratic republic</p>
+            <p className="text-amber-400 font-black text-sm">🌱 मूल — जनताको संप्रभुता</p>
+            <p className="text-zinc-600 text-xs">धारा १–४ · नेपाल एक स्वतन्त्र, अविभाज्य, सार्वभौमसत्तासम्पन्न, धर्मनिरपेक्ष, समाजवादउन्मुख लोकतान्त्रिक गणतन्त्र</p>
           </div>
 
           {/* Connector */}
@@ -454,13 +454,13 @@ export default function ConstitutionTreeClient() {
 
           {/* Trunk */}
           <div className="bg-zinc-900 border border-zinc-700 rounded-2xl px-6 py-3 w-full max-w-xl text-center space-y-1.5">
-            <p className="text-zinc-300 font-black text-xs uppercase tracking-widest">Trunk — Constitutional Foundations</p>
+            <p className="text-zinc-300 font-black text-xs uppercase tracking-widest">काण्ड — संवैधानिक आधारहरू</p>
             <div className="flex items-center justify-center gap-3 flex-wrap">
               {[
-                { label: "मौलिक हक",        sub: "Part 3 · Art. 16–46", color: "text-green-400" },
-                { label: "निर्देशक सिद्धान्त", sub: "Part 4 · Art. 48–51", color: "text-blue-400" },
-                { label: "नागरिक कर्तव्य",   sub: "Part 5 · Art. 48",    color: "text-purple-400" },
-                { label: "राज्य संरचना",     sub: "Part 5+ · Art. 56+",  color: "text-orange-400" },
+                { label: "मौलिक हकहरू",           sub: "भाग ३ · धारा १६–४६", color: "text-green-400" },
+                { label: "निर्देशक सिद्धान्त",    sub: "भाग ४ · धारा ४७–५१", color: "text-blue-400" },
+                { label: "मौलिक कर्तव्य",         sub: "भाग ४ · धारा ४८",    color: "text-purple-400" },
+                { label: "राज्यशक्तिको बाँडफाँड", sub: "भाग ५+ · धारा ५६+",  color: "text-orange-400" },
               ].map(t => (
                 <div key={t.label} className="text-center">
                   <p className={`${t.color} text-xs font-bold`}>{t.label}</p>
@@ -593,10 +593,10 @@ export default function ConstitutionTreeClient() {
         {/* Footer note */}
         <div className="border-t border-zinc-900 pt-6 text-center space-y-1">
           <p className="text-zinc-700 text-xs">
-            Nepal Constitution 2015 (2072 BS) · 308 Articles · 35 Parts · 9 Schedules
+            नेपालको संविधान २०७२ · ३०८ धाराहरू · ३५ भागहरू · ९ अनुसूचीहरू
           </p>
           <p className="text-zinc-800 text-xs">
-            ZZC Constitutional Intelligence · Root Ontology Layer · Governance Graph Foundation
+            ZZC संवैधानिक बुद्धिमत्ता · मूल ज्ञान तह · शासन ग्राफको आधार
           </p>
         </div>
       </div>

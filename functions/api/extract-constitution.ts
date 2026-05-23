@@ -33,21 +33,35 @@ You are building the ROOT SEMANTIC FRAMEWORK for a civic intelligence system.
 Return ONLY valid JSON. Start with { end with }. No markdown. No code fences. No extra fields.`;
 
 function buildPrompt(docTitle: string): string {
-  return `Extract the 25 most foundational constitutional provisions from: "${docTitle}"
+  return `तपाईं नेपालको संविधान २०७२ बाट संवैधानिक ज्ञान निकाल्दै हुनुहुन्छ।
+Extract the 25 most foundational constitutional provisions from: "${docTitle}"
 
-PRIORITY ORDER — extract in this order:
-1. Fundamental Rights (Part 3, Articles 16–46) — pick the 15 most important (equality, freedom, life, education, health, labour, women, children, dalits, property, religion, privacy, justice)
-2. Directive Principles (Part 4, Article 51) — pick 4 most important clauses
-3. Key State Institutions — President, Parliament, Supreme Court (3 records)
-4. Federal Structure — federal/provincial/local power division (3 records)
+CONSTITUTIONAL TERMINOLOGY — use these exact Nepali terms in all Nepali fields:
+- भाग (Bhag) = Part
+- धारा (Dhara) = Article
+- खण्ड (Khand) = Clause
+- उपखण्ड = Sub-clause
 
-For each article, ONE record. Keep all text SHORT and compact.
+PRIORITY ORDER:
+१. मौलिक हकहरू (भाग ३, धारा १६–४६) — 15 most important:
+   समानताको हक (१८), स्वतन्त्रताको हक (१७), जीवनको हक (१६), शिक्षाको हक (३१),
+   स्वास्थ्यको हक (३५), रोजगारीको हक (३३), श्रमको हक (३४), महिलाको हक (३८),
+   बालबालिकाको हक (३९), दलितको हक (४०), सामाजिक न्यायको हक (४२),
+   सम्पत्तिको हक (२५), धर्मको हक (२६), निजताको हक (२८), न्यायको हक (२०)
+२. राज्यका निर्देशक सिद्धान्त (भाग ४, धारा ५१) — 4 key clauses
+३. संवैधानिक निकाय — राष्ट्रपति, संसद, सर्वोच्च अदालत (3 records)
+४. संघीय संरचना — संघ/प्रदेश/स्थानीय तहको अधिकार बाँडफाँड (3 records)
 
-RULES — STRICT:
-- "originalText": max 150 chars verbatim
-- "plainNepaliSummary": max 50 chars
-- ALL array fields: max 4 items each, max 30 chars per item
-- "articleId": "art-{article}" or "art-{article}-{clause}" e.g. "art-18", "art-51-j"
+RULES — STRICTLY FOLLOW:
+- "part": MUST be in Nepali Devanagari with Devanagari numerals.
+  Example: "भाग ३ — मौलिक हकहरू", "भाग ४ — राज्यका निर्देशक सिद्धान्त, नीति तथा दायित्वहरू"
+- "titleNepali": exact title from PDF, proper constitutional Nepali (e.g. "समानताको हक")
+- "titleEnglish": English translation (e.g. "Right to Equality")
+- "originalText": verbatim Nepali text from PDF, max 150 chars
+- "plainNepaliSummary": capture BOTH the rule AND its constitutional philosophy/spirit — WHY this right exists, what value it protects. max 60 chars. Pure Nepali, NO English.
+- "rights", "duties", "obligations", "institutions", "governanceStructures": Nepali preferred, max 4 items each, max 35 chars per item
+- "sectors", "affectedGroups", "keywords", "relatedArticles", "constitutionalThemes": max 4 items each, max 35 chars per item
+- "articleId": system ID only — "art-{number}" or "art-{number}-{clause}" e.g. "art-18", "art-51-j"
 - "confidence": 0.0–1.0
 
 Return ONLY valid JSON:
@@ -55,30 +69,30 @@ Return ONLY valid JSON:
   "records": [
     {
       "articleId": "art-18",
-      "part": "Part 3 — Fundamental Rights",
+      "part": "भाग ३ — मौलिक हकहरू",
       "partNumber": 3,
       "article": 18,
       "clause": null,
       "titleEnglish": "Right to Equality",
       "titleNepali": "समानताको हक",
-      "originalText": "All citizens shall be equal before the law. No discrimination shall be made in the application of general laws on grounds of origin...",
-      "plainNepaliSummary": "सबै नागरिक कानुनको अगाडि बराबर छन्।",
-      "rights": ["equality before law", "non-discrimination"],
+      "originalText": "सबै नागरिक कानुनको दृष्टिमा समान हुनेछन्। कानुनको समान संरक्षणबाट कोही पनि वञ्चित हुने छैन।",
+      "plainNepaliSummary": "राज्यले कुनै पनि नागरिकलाई जात, लिंग, धर्मका आधारमा भेदभाव गर्न पाउँदैन — समता नै लोकतन्त्रको आधार हो।",
+      "rights": ["कानुनको समान संरक्षण", "भेदभावमुक्त व्यवहार"],
       "duties": [],
-      "obligations": ["State shall not discriminate on grounds of origin, religion, race, caste, sex"],
+      "obligations": ["राज्यले भेदभाव नगर्ने", "समान अवसर प्रदान गर्ने"],
       "institutions": [],
-      "governanceStructures": ["federal"],
-      "sectors": ["governance", "human rights"],
-      "affectedGroups": ["all citizens", "women", "dalits", "marginalized groups"],
-      "keywords": ["equality", "discrimination", "law", "citizens"],
+      "governanceStructures": ["संघीय सरकार"],
+      "sectors": ["मानव अधिकार", "शासन"],
+      "affectedGroups": ["सबै नागरिक", "महिला", "दलित", "सीमान्तकृत समूह"],
+      "keywords": ["समानता", "भेदभाव", "कानुन", "नागरिक"],
       "relatedArticles": ["art-40", "art-42"],
-      "constitutionalThemes": ["fundamental rights", "equality", "non-discrimination"],
+      "constitutionalThemes": ["मौलिक हक", "समानता", "भेदभावविरुद्ध"],
       "sourcePage": 12,
       "confidence": 0.95
     }
   ],
   "totalArticlesInConstitution": 308,
-  "partsExtracted": ["Part 3 — Fundamental Rights", "Part 4 — Directive Principles"],
+  "partsExtracted": ["भाग ३ — मौलिक हकहरू", "भाग ४ — राज्यका निर्देशक सिद्धान्त"],
   "summaryNote": "one English sentence about what was extracted"
 }`;
 }
