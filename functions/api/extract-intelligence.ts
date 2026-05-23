@@ -234,27 +234,26 @@ async function extractFromPdf(
     return internalError(err);
   }
 
-  const prompt = `Extract the TOP 50 most specific, trackable civic records from: "${body.docTitle}".
+  const prompt = `Extract the 30 most specific, trackable records from: "${body.docTitle}".
 
-PRIORITY: budget amounts, numbered targets, policy changes, new institutions.
-SKIP: vague statements without specific numbers/names/dates.
+PRIORITY: items with exact numbers, amounts (NPR), percentages, dates, named targets.
+SKIP: vague or aspirational statements without specific data.
 
-Return ONLY valid JSON (no markdown fences, no explanation):
+Return ONLY valid JSON — start with { end with } — no markdown, no code fences:
 {
   "records": [
     {
       "type": "budget_target|promise|project|institution|reform|social_program|employment_target|financial_inclusion|other",
-      "title": "English title (max 8 words)",
-      "titleNepali": "नेपाली (max 6 words)",
-      "summaryNepali": "एक वाक्य मात्र (max 20 words)",
+      "title": "concise English title (5-8 words)",
+      "titleNepali": "छोटो नेपाली शीर्षक",
       "sector": "education|health|agriculture|infrastructure|energy|finance|governance|youth|other",
-      "ministry": "ministry (max 6 words)",
-      "target": "exact number/% or null",
+      "ministry": "ministry name",
+      "target": "exact figure from doc or null",
       "confidence": 0.9,
-      "sourceQuote": "exact quote from doc (max 80 chars)"
+      "sourceQuote": "verbatim quote from doc (max 60 chars)"
     }
   ],
-  "sectionSummary": "one sentence"
+  "sectionSummary": "one English sentence"
 }`;
 
   try {

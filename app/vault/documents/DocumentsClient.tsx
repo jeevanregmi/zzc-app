@@ -531,6 +531,7 @@ export default function DocumentsClient() {
       const savePromises = data.records.map(r => {
         const record = {
           // defaults for fields the lean prompt omits
+          summaryNepali:   "",
           measurable:      true,
           timeline:        null,
           budgetAmount:    null,
