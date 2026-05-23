@@ -33,22 +33,21 @@ You are building the ROOT SEMANTIC FRAMEWORK for a civic intelligence system.
 Return ONLY valid JSON. Start with { end with }. No markdown. No code fences. No extra fields.`;
 
 function buildPrompt(docTitle: string): string {
-  return `Extract the 40 most foundational constitutional provisions from: "${docTitle}"
+  return `Extract the 25 most foundational constitutional provisions from: "${docTitle}"
 
 PRIORITY ORDER — extract in this order:
-1. Fundamental Rights (Part 3, Articles 16–46) — citizen rights, state restrictions
-2. Directive Principles & State Policies (Part 4, Article 51) — state obligations
-3. Duties of Citizens (Part 5, Article 48)
-4. Key State Institutions — President, Parliament, Supreme Court, Constitutional Bodies
-5. Federal Structure — powers of federal, provincial, local governments
+1. Fundamental Rights (Part 3, Articles 16–46) — pick the 15 most important (equality, freedom, life, education, health, labour, women, children, dalits, property, religion, privacy, justice)
+2. Directive Principles (Part 4, Article 51) — pick 4 most important clauses
+3. Key State Institutions — President, Parliament, Supreme Court (3 records)
+4. Federal Structure — federal/provincial/local power division (3 records)
 
-For each article/clause, create ONE record. If an article has multiple distinct clauses (e.g., 51a, 51b), create separate records per clause.
+For each article, ONE record. Keep all text SHORT and compact.
 
-RULES:
-- "originalText": verbatim quote from document, max 200 chars
-- "plainNepaliSummary": max 60 chars, simple Nepali (NO English words)
-- "rights", "duties", "obligations", "institutions", "governanceStructures", "sectors", "affectedGroups", "keywords", "relatedArticles", "constitutionalThemes": arrays, each item max 40 chars, max 6 items each
-- "articleId": format "art-{article}" or "art-{article}-{clause}" e.g. "art-18", "art-51-j-3"
+RULES — STRICT:
+- "originalText": max 150 chars verbatim
+- "plainNepaliSummary": max 50 chars
+- ALL array fields: max 4 items each, max 30 chars per item
+- "articleId": "art-{article}" or "art-{article}-{clause}" e.g. "art-18", "art-51-j"
 - "confidence": 0.0–1.0
 
 Return ONLY valid JSON:
@@ -225,7 +224,7 @@ export const onRequestPost = async ({ request, env }: PagesContext): Promise<Res
           { inline_data: { mime_type: "application/pdf", data: pdfResult.base64 } },
           { text: buildPrompt(body.docTitle || "Nepal Constitution 2015") },
         ],
-        maxTokens: 16384,
+        maxTokens: 24576,
       });
       geminiText = result.text;
       log("extract-constitution", "gemini_ok", {
