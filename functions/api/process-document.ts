@@ -163,7 +163,12 @@ function toBase64(buffer: ArrayBuffer): string {
 }
 
 function parseIntelligence(text: string): IntelligenceResult | null {
-  const match = text.match(/\{[\s\S]*\}/);
+  const t = text.trim();
+  if (!t) return null;
+  // 1. Direct parse — works when responseMimeType: application/json is set
+  try { const d = JSON.parse(t); if (d && typeof d === "object" && !Array.isArray(d)) return d as IntelligenceResult; } catch {}
+  // 2. Extract first {...} block — handles preamble/postamble or markdown fences
+  const match = t.match(/\{[\s\S]*\}/);
   if (!match) return null;
   try { return JSON.parse(match[0]) as IntelligenceResult; } catch { return null; }
 }
@@ -267,9 +272,15 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
   // ── Parse AI response ──────────────────────────────────────────────────────
   const intelligence = parseIntelligence(result.text);
   if (!intelligence) {
-    log("process-document", "parse_error", { docId, provider: result.provider, preview: result.text.slice(0, 100) });
+    log("process-document", "parse_error", {
+      docId,
+      provider: result.provider,
+      model:    result.model,
+      textLen:  result.text.length,
+      preview:  result.text.slice(0, 300),
+    });
     return json({
-      error:      "AI returned unparseable response. Retry.",
+      error:      `AI returned unparseable response (${result.provider}/${result.model}, ${result.text.length} chars). Retry.`,
       code:       "AI_PARSE_ERROR",
       rawPreview: result.text.slice(0, 400),
     }, 500);
