@@ -234,6 +234,7 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     context.env,
     SYSTEM_PROMPT,
     { mimeType, fileName, textBody, base64 },
+    4096,
   );
 
   if (!result.ok) {

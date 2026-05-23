@@ -71,7 +71,11 @@ export async function callGemini(opts: {
       body:    JSON.stringify({
         system_instruction: { parts: [{ text: opts.system }] },
         contents:           [{ role: "user", parts: opts.parts }],
-        generationConfig:   { maxOutputTokens: maxTokens, temperature: 0.1, responseMimeType: opts.jsonMode ? "application/json" : undefined, thinkingConfig: { thinkingBudget: 0 } },
+        generationConfig:   {
+            maxOutputTokens: maxTokens,
+            temperature:     0.1,
+            ...(opts.jsonMode ? { responseMimeType: "application/json" } : { thinkingConfig: { thinkingBudget: 0 } }),
+          },
       }),
     },
   );
