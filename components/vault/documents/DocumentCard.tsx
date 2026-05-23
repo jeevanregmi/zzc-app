@@ -61,6 +61,9 @@ interface Props {
   onExtractPoints?:  (doc: IntelligenceDocument) => void;
   isExtractingPoints?: boolean;
   pointCount?:       number;
+  onExtractPromises?: (doc: IntelligenceDocument) => void;
+  isExtractingPromises?: boolean;
+  promiseCount?:     number;
 }
 
 const PROVIDER_LABEL: Record<string, string> = {
@@ -76,7 +79,7 @@ const SOURCE_TYPE_BADGE: Record<SourceType, { label: string; cls: string }> = {
   unknown:    { label: "? Unknown",    cls: "bg-zinc-800   text-zinc-500   border border-zinc-700"   },
 };
 
-export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onGenerateQueue, onResetStuck, onGenerateImage, isGeneratingImage = false, onExtractPoints, isExtractingPoints = false, pointCount = 0 }: Props) {
+export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onGenerateQueue, onResetStuck, onGenerateImage, isGeneratingImage = false, onExtractPoints, isExtractingPoints = false, pointCount = 0, onExtractPromises, isExtractingPromises = false, promiseCount = 0 }: Props) {
   const [showFullNotes, setShowFullNotes] = useState(false);
   const displayStatus  = isProcessing ? "processing_ai" : doc.processingStatus;
 
@@ -390,6 +393,32 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
           <button
             onClick={() => onExtractPoints?.(doc)}
             className="underline text-amber-500 hover:text-amber-300 text-xs"
+          >
+            Re-extract
+          </button>
+        </div>
+      )}
+
+      {/* Promise extraction — civic accountability layer */}
+      {isApproved && !!onExtractPromises && !isExtractingPromises && promiseCount === 0 && (
+        <button
+          onClick={() => onExtractPromises!(doc)}
+          className="w-full text-xs font-bold py-2 rounded-xl bg-blue-900/40 hover:bg-blue-900 text-blue-300 border border-blue-800 transition-colors"
+        >
+          📜 वाचाहरू निकाल्नुहोस् (Accountability Layer)
+        </button>
+      )}
+      {isExtractingPromises && (
+        <div className="w-full text-xs py-2 rounded-xl bg-blue-900/20 text-blue-400 border border-blue-800 text-center animate-pulse">
+          📜 वाचाहरू निकाल्दैछ — Gemini ले analyze गर्दैछ…
+        </div>
+      )}
+      {isApproved && promiseCount > 0 && !isExtractingPromises && (
+        <div className="w-full text-xs py-2 rounded-xl bg-blue-900/20 text-blue-400 border border-blue-800 text-center flex items-center justify-center gap-2">
+          <span>📜 {promiseCount} वाचाहरू tracked</span>
+          <button
+            onClick={() => onExtractPromises?.(doc)}
+            className="underline text-blue-500 hover:text-blue-300 text-xs"
           >
             Re-extract
           </button>

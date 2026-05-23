@@ -79,6 +79,8 @@ export default function DocumentsClient() {
   const [bulkImageProgress, setBulkImageProgress] = useState<{ done: number; total: number } | null>(null);
   const [extractingPointsId, setExtractingPointsId] = useState<string | null>(null);
   const [pointCountByDoc, setPointCountByDoc] = useState<Record<string, number>>({});
+  const [extractingPromisesId, setExtractingPromisesId] = useState<string | null>(null);
+  const [promiseCountByDoc, setPromiseCountByDoc] = useState<Record<string, number>>({});
   const [processError,        setProcessError]        = useState<string | null>(null);
   const [processErrorCode,    setProcessErrorCode]    = useState<string | null>(null);
   const [processErrorDetails, setProcessErrorDetails] = useState<string | null>(null);
@@ -408,6 +410,59 @@ export default function DocumentsClient() {
     setBulkImageProgress(null);
   };
 
+  const handleExtractPromises = async (doc: IntelligenceDocument) => {
+    if (!user?.uid) return;
+    setExtractingPromisesId(doc.id);
+    try {
+      const text = doc.aiSummary ?? doc.nepaliExplainer ?? "";
+      if (!text) { alert("Document मा AI summary छैन — पहिले AI analyze गर्नुस्।"); return; }
+
+      const res = await fetch("/api/extract-promises", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          text:       text + "\n\n" + (doc.aiKeyInsights ?? []).join("\n"),
+          docTitle:   doc.title,
+          docType:    doc.detectedTopics?.[0] ?? "government document",
+          sourceYear: new Date(doc.uploadedAt).getFullYear().toString(),
+          ownerId:    user.uid,
+          docId:      doc.id,
+        }),
+      });
+      const data = await res.json() as { ok: boolean; promises?: unknown[]; error?: string };
+      if (!data.ok || !data.promises) throw new Error(data.error ?? "Extraction failed");
+
+      // Delete existing promises for this doc
+      const existing = await getDocs(query(
+        collection(db, "policy_promises"),
+        where("sourceDocId", "==", doc.id),
+        where("ownerId",     "==", user.uid),
+      ));
+      await Promise.all(existing.docs.map(d => deleteDoc(d.ref)));
+
+      // Insert new promises
+      const now = new Date().toISOString();
+      const batch = (data.promises as Record<string, unknown>[]).map(p =>
+        addDoc(collection(db, "policy_promises"), {
+          ...p,
+          ownerId:        user.uid,
+          sourceDocId:    doc.id,
+          sourceDocTitle: doc.title,
+          status:         "promised",
+          publishToJanta: true,
+          createdAt:      now,
+          updatedAt:      now,
+        })
+      );
+      await Promise.all(batch);
+      setPromiseCountByDoc(prev => ({ ...prev, [doc.id]: data.promises!.length }));
+    } catch (err) {
+      alert(`वाचाहरू निकाल्न सकिएन: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setExtractingPromisesId(null);
+    }
+  };
+
   const aiReadyCount    = docs.filter(d => d.processingStatus === "ai_ready").length;
   const readyCount      = docs.filter(d => d.processingStatus === "ready").length;
   const awaitingReview  = docs.filter(d =>
@@ -701,6 +756,9 @@ export default function DocumentsClient() {
                 onExtractPoints={handleExtractPoints}
                 isExtractingPoints={extractingPointsId === doc.id}
                 pointCount={pointCountByDoc[doc.id] ?? 0}
+                onExtractPromises={handleExtractPromises}
+                isExtractingPromises={extractingPromisesId === doc.id}
+                promiseCount={promiseCountByDoc[doc.id] ?? 0}
               />
             ))}
           </div>

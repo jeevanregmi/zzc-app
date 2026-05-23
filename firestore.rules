@@ -253,6 +253,17 @@ service cloud.firestore {
       allow delete: if isOwner(resource.data.ownerId) || isDevOwner(resource.data.ownerId);
     }
 
+    // ── JANTA: civic promises (accountability layer — promise vs reality) ───────
+    match /policy_promises/{docId} {
+      // Published promises are publicly readable — core of the accountability layer
+      allow read:   if resource.data.publishToJanta == true
+                    || isOwner(resource.data.ownerId)
+                    || isDevOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner() || isDevOwner(request.resource.data.ownerId);
+      allow update: if (isOwner(resource.data.ownerId) && ownerUnchanged()) || isDevOwner(resource.data.ownerId);
+      allow delete: if isOwner(resource.data.ownerId) || isDevOwner(resource.data.ownerId);
+    }
+
     // ── JANTA: per-point gaming cards (extracted from intelligence docs) ──────
     match /vault_policy_points/{docId} {
       // Published points are publicly readable on /janta
