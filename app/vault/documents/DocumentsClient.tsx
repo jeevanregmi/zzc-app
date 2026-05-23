@@ -530,6 +530,22 @@ export default function DocumentsClient() {
       const savedRecords: Array<Record<string, unknown>> = [];
       const savePromises = data.records.map(r => {
         const record = {
+          // defaults for fields the lean prompt omits
+          measurable:      true,
+          timeline:        null,
+          budgetAmount:    null,
+          geoScope:        "national",
+          governmentLevel: "federal",
+          tags:            [],
+          affectedGroups:  [],
+          affectedSectors: [],
+          department:      null,
+          traceability: {
+            sourceQuote:         (r as Record<string,unknown>).sourceQuote ?? "",
+            rawParagraph:        "",
+            extractionReasoning: "",
+          },
+          // actual record fields override defaults
           ...r,
           domain,
           ownerId:              user.uid,

@@ -234,36 +234,24 @@ async function extractFromPdf(
     return internalError(err);
   }
 
-  const prompt = `Extract the TOP 50 most specific, trackable civic intelligence records from this ${body.docType ?? "government document"}: "${body.docTitle}".
+  const prompt = `Extract the TOP 50 most specific, trackable civic records from: "${body.docTitle}".
 
-PRIORITY: budget allocations with amounts, numbered targets, policy reforms, new institutions, employment targets.
-SKIP: vague aspirational statements, duplicates, anything without a specific number/name/date.
+PRIORITY: budget amounts, numbered targets, policy changes, new institutions.
+SKIP: vague statements without specific numbers/names/dates.
 
-Return ONLY this JSON (no markdown, no explanation):
+Return ONLY valid JSON (no markdown fences, no explanation):
 {
   "records": [
     {
       "type": "budget_target|promise|project|institution|reform|social_program|employment_target|financial_inclusion|other",
-      "title": "5-word English title",
-      "titleNepali": "नेपाली शीर्षक",
-      "summaryNepali": "१-२ वाक्य",
+      "title": "English title (max 8 words)",
+      "titleNepali": "नेपाली (max 6 words)",
+      "summaryNepali": "एक वाक्य मात्र (max 20 words)",
       "sector": "education|health|agriculture|infrastructure|energy|finance|governance|youth|other",
-      "ministry": "ministry name",
-      "target": "number/metric or null",
-      "measurable": true,
-      "timeline": "date/year or null",
-      "budgetAmount": "रु. X करोड or null",
-      "geoScope": "national|provincial|district",
-      "governmentLevel": "federal|provincial|local",
-      "tags": ["tag1","tag2","tag3"],
-      "confidence": 0.85,
-      "affectedGroups": ["युवा","कृषक"],
-      "affectedSectors": ["agriculture","finance"],
-      "traceability": {
-        "sourceQuote": "exact quote ≤100 chars",
-        "rawParagraph": "paragraph ≤200 chars",
-        "extractionReasoning": "why trackable ≤60 chars"
-      }
+      "ministry": "ministry (max 6 words)",
+      "target": "exact number/% or null",
+      "confidence": 0.9,
+      "sourceQuote": "exact quote from doc (max 80 chars)"
     }
   ],
   "sectionSummary": "one sentence"
@@ -272,7 +260,7 @@ Return ONLY this JSON (no markdown, no explanation):
   try {
     const result = await callGemini({
       apiKey:    context.env.GEMINI_API_KEY,
-      system:    "You are Nepal's civic intelligence extraction engine. Extract the top 50 most specific, trackable records from this government document. Return ONLY valid JSON — no markdown, no explanation.",
+      system:    "You are Nepal's civic intelligence extraction engine. Return ONLY valid JSON — no markdown fences, no code blocks, no explanation. Start your response directly with { and end with }.",
       parts:     [
         { inline_data: { mime_type: "application/pdf", data: base64 } },
         { text: prompt },
