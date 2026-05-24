@@ -11,157 +11,161 @@ import {
   type BranchHealth,
   type BranchHealthState,
 } from "../../../../lib/constitution/healthComputer";
+import {
+  computeAllStructuralProfiles,
+  type PartStructuralProfile,
+} from "../../../../lib/constitution/structuralComputer";
 import type { IntelligenceRecord } from "../../../../lib/types/intelligence-record";
+import type { ConstitutionalFrameworkRecord } from "../../../../lib/types/constitutional-framework";
 import { PARTS_META } from "./partsMeta";
 
-// ─── Metric definitions ───────────────────────────────────────────────────────
-
-interface MetricDef {
-  id:      string;
-  icon:    string;
-  label:   string;
-  color:   string;
-  value:   (h: BranchHealth) => number;
-  explain: string; // {count} is replaced with actual number
-}
-
-const METRICS: MetricDef[] = [
-  {
-    id:    "total",
-    icon:  "📋",
-    label: "कुल अभिलेख",
-    color: "#e2e8f0",
-    value: h => h.totalRecords,
-    explain:
-      "यस भागसँग सम्बन्धित {count} वटा सरकारी प्रतिबद्धता, योजना वा कार्यक्रम फेला परेका छन्। " +
-      "संख्या जति बढी, त्यति बढी यस क्षेत्रमा सरकारको ध्यान गएको देखिन्छ।",
-  },
-  {
-    id:    "positive",
-    icon:  "✓",
-    label: "सकारात्मक",
-    color: "#4ade80",
-    value: h => h.positiveCount,
-    explain:
-      "यो शाखामा सफलतापूर्वक लागू भएका, प्रगतिमा रहेका वा थालिएका {count} वटा राम्रा कामहरू छन्। " +
-      "यो संख्या बढी हुनु राम्रो संकेत हो — सरकारले भनेको कुरा गरिरहेको छ।",
-  },
-  {
-    id:    "warning",
-    icon:  "⚠",
-    label: "चेतावनी",
-    color: "#fde047",
-    value: h => h.warningCount,
-    explain:
-      "यस भागमा ढिलाइ भएका वा विवादमा परेका {count} वटा कामहरू फेला परेका छन्। " +
-      "यो संख्या बढी हुनु भनेको सरकारका वाचाहरू समयमा पूरा भइरहेका छैनन् भन्ने हो — ध्यान दिन जरुरी।",
-  },
-  {
-    id:    "funding",
-    icon:  "₹",
-    label: "कोष",
-    color: "#60a5fa",
-    value: h => h.fundingCount,
-    explain:
-      "यस क्षेत्रमा बजेट, लगानी वा आर्थिक सहयोगसँग सम्बन्धित {count} वटा अभिलेख छन्। " +
-      "पैसा छुट्याउनु राम्रो कदम हो, तर मात्र खर्च हुनु महत्वपूर्ण छ।",
-  },
-  {
-    id:    "progress",
-    icon:  "→",
-    label: "प्रगति",
-    color: "#a78bfa",
-    value: h => h.progressCount,
-    explain:
-      "यो शाखामा काम थालिएको वा अगाडि बढिरहेको देखाउने {count} वटा अभिलेख छन्। " +
-      "कागजमा लेखिएको योजना मात्र होइन — वास्तवमा काम भइरहेको छ भन्ने संकेत।",
-  },
-  {
-    id:    "contradiction",
-    icon:  "✗",
-    label: "विरोध",
-    color: "#f87171",
-    value: h => h.contradictionCount,
-    explain:
-      "यस क्षेत्रमा संविधान वा वाचाविपरीत गएका, असफल भएका वा रद्द भएका {count} वटा काम भेटिएका छन्। " +
-      "यो संख्या बढी हुनु भनेको सरकारले आफ्नै वाचा तोडिरहेको छ — गम्भीर समस्याको संकेत।",
-  },
-];
-
-// ─── Section order ────────────────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const SECTION_ORDER: BranchHealthState[] = [
   "healthy", "fruiting", "budding", "weak", "yellow", "dry", "damaged", "unknown",
 ];
 
-// ─── Score bar ────────────────────────────────────────────────────────────────
+const PART_NUMBERS = Array.from({ length: 35 }, (_, i) => i + 1);
+
+// ─── Layer 1: Structural metric definitions ───────────────────────────────────
+
+interface StructMetricDef {
+  id:      string;
+  icon:    string;
+  label:   string;
+  color:   string;
+  value:   (p: PartStructuralProfile) => number | string;
+  explain: string; // {val} replaced with actual value
+}
+
+const STRUCT_METRICS: StructMetricDef[] = [
+  {
+    id: "atoms", icon: "⬡", label: "ज्ञान इकाई", color: "#c084fc",
+    value: p => p.atomCount,
+    explain: "यस भागमा {val} वटा संवैधानिक अंश (धारा र खण्डहरू) उत्खनन गरिएका छन्। यी नै संविधानका आधारभूत ज्ञान इकाइहरू हुन्।",
+  },
+  {
+    id: "dharas", icon: "📜", label: "धाराहरू", color: "#a78bfa",
+    value: p => p.dharaCount,
+    explain: "यस भागमा {val} वटा फरक-फरक धाराहरू छन्। प्रत्येक धाराले एक विशेष संवैधानिक प्रावधान समेट्छ।",
+  },
+  {
+    id: "density", icon: "◉", label: "घनत्व", color: "#818cf8",
+    value: p => p.clauseDensity,
+    explain: "प्रति धारामा औसत {val} वटा खण्डहरू छन्। घनत्व बढी हुनु भनेको त्यो धारा जटिल र विस्तृत छ।",
+  },
+  {
+    id: "rights", icon: "⚖", label: "अधिकार", color: "#4ade80",
+    value: p => p.rightsComplexity,
+    explain: "यस भागले नागरिकलाई {val} वटा अधिकार प्रदान गर्छ। यो संख्या बढी हुनु नागरिक हकको बलियो संरक्षण हो।",
+  },
+  {
+    id: "institutions", icon: "🏛", label: "संस्थाहरू", color: "#60a5fa",
+    value: p => p.institutionCount,
+    explain: "यस भागले {val} वटा फरक सरकारी निकाय वा संस्थाको उल्लेख गर्छ। यी संस्थाहरू संविधान कार्यान्वयनका जिम्मेवार हुन्।",
+  },
+  {
+    id: "deps", icon: "🔗", label: "सम्बन्ध", color: "#38bdf8",
+    value: p => p.dependencyCount,
+    explain: "यस भागका धाराहरू संविधानका अन्य {val} वटा धाराहरूसँग जोडिएका छन्। धेरै सम्बन्ध = जटिल संवैधानिक संरचना।",
+  },
+  {
+    id: "groups", icon: "👥", label: "समूह", color: "#34d399",
+    value: p => p.affectedGroupCount,
+    explain: "यस भागले {val} वटा फरक नागरिक समूहलाई प्रत्यक्ष असर गर्छ — महिला, दलित, जनजाति, युवा आदि।",
+  },
+];
+
+// ─── Layer 2: Live intelligence metric definitions ────────────────────────────
+
+interface LiveMetricDef {
+  id:      string;
+  icon:    string;
+  label:   string;
+  color:   string;
+  value:   (h: BranchHealth) => number;
+  explain: string;
+}
+
+const LIVE_METRICS: LiveMetricDef[] = [
+  {
+    id: "total", icon: "📋", label: "कुल अभिलेख", color: "#e2e8f0",
+    value: h => h.totalRecords,
+    explain: "यस भागसँग सम्बन्धित {count} वटा सरकारी प्रतिबद्धता, योजना वा कार्यक्रम फेला परेका छन्।",
+  },
+  {
+    id: "positive", icon: "✓", label: "सकारात्मक", color: "#4ade80",
+    value: h => h.positiveCount,
+    explain: "लागू भएका, प्रगतिमा रहेका वा थालिएका {count} वटा राम्रा कामहरू छन्। बढी हुनु = सरकार वाचामा खरो।",
+  },
+  {
+    id: "warning", icon: "⚠", label: "चेतावनी", color: "#fde047",
+    value: h => h.warningCount,
+    explain: "ढिलाइ भएका वा विवादमा परेका {count} वटा कामहरू — ध्यान दिन जरुरी।",
+  },
+  {
+    id: "funding", icon: "₹", label: "कोष", color: "#60a5fa",
+    value: h => h.fundingCount,
+    explain: "बजेट वा आर्थिक सहयोगसँग सम्बन्धित {count} वटा अभिलेख। पैसा छुट्याउनु राम्रो — खर्च हुनु महत्वपूर्ण।",
+  },
+  {
+    id: "progress", icon: "→", label: "प्रगति", color: "#a78bfa",
+    value: h => h.progressCount,
+    explain: "काम थालिएको वा अगाडि बढिरहेको देखाउने {count} वटा अभिलेख — वास्तवमा भइरहेको कामको संकेत।",
+  },
+  {
+    id: "contradiction", icon: "✗", label: "विरोध", color: "#f87171",
+    value: h => h.contradictionCount,
+    explain: "संविधान वा वाचाविपरीत गएका, असफल वा रद्द भएका {count} वटा काम — गम्भीर समस्याको संकेत।",
+  },
+];
+
+// ─── Shared UI helpers ────────────────────────────────────────────────────────
 
 function ScoreBar({ score, color }: { score: number; color: string }) {
   return (
-    <div style={{ height: "6px", background: "rgba(255,255,255,0.07)", borderRadius: "4px", overflow: "hidden" }}>
-      <div style={{ width: `${score}%`, height: "100%", background: color, borderRadius: "4px" }} />
+    <div style={{ height: "5px", background: "rgba(255,255,255,0.07)", borderRadius: "3px", overflow: "hidden" }}>
+      <div style={{ width: `${score}%`, height: "100%", background: color, borderRadius: "3px" }} />
     </div>
   );
 }
 
-// ─── Metric pill — learning-aware ─────────────────────────────────────────────
+function LearnCard({ text }: { text: string }) {
+  return (
+    <div style={{ background: "rgba(8,40,50,0.90)", border: "1px solid #0e7490", borderRadius: "9px", padding: "10px 13px", marginTop: "4px" }}>
+      <p style={{ fontSize: "12px", color: "rgba(103,232,249,0.88)", lineHeight: 1.72, margin: 0 }}>{text}</p>
+    </div>
+  );
+}
 
-function MetricPill({
-  metric,
-  value,
-  activeId,
-  onToggle,
-  learnOn,
+// ─── Layer 1: Structural metric pill ─────────────────────────────────────────
+
+function StructPill({
+  m, profile, activeId, onToggle, learnOn,
 }: {
-  metric:    MetricDef;
-  value:     number;
-  activeId:  string | null;
-  onToggle:  (id: string) => void;
-  learnOn:   boolean;
+  m: StructMetricDef; profile: PartStructuralProfile;
+  activeId: string | null; onToggle: (id: string) => void; learnOn: boolean;
 }) {
-  const isActive = activeId === metric.id;
-
+  const val      = m.value(profile);
+  const isActive = activeId === m.id;
   return (
     <button
-      onClick={() => learnOn ? onToggle(metric.id) : undefined}
+      onClick={() => learnOn ? onToggle(m.id) : undefined}
       style={{
-        display:        "flex",
-        flexDirection:  "column",
-        alignItems:     "center",
-        minWidth:       "56px",
-        padding:        "8px 10px",
-        background:     isActive && learnOn ? `${metric.color}20` : "rgba(255,255,255,0.04)",
-        borderRadius:   "9px",
-        border:         `1px solid ${isActive && learnOn ? metric.color + "55" : metric.color + "20"}`,
-        cursor:         learnOn ? "pointer" : "default",
-        position:       "relative",
-        transition:     "background 0.15s, border-color 0.15s",
+        display: "flex", flexDirection: "column", alignItems: "center",
+        minWidth: "52px", padding: "7px 9px",
+        background: isActive && learnOn ? `${m.color}20` : "rgba(255,255,255,0.03)",
+        border: `1px solid ${isActive && learnOn ? m.color + "55" : m.color + "18"}`,
+        borderRadius: "8px", cursor: learnOn ? "pointer" : "default",
+        position: "relative",
       }}
     >
-      <span style={{ fontSize: "17px", fontWeight: 900, color: metric.color, lineHeight: 1 }}>{value}</span>
-      <span style={{ fontSize: "9px", color: "rgba(255,255,255,0.35)", marginTop: "3px", textAlign: "center", lineHeight: 1.3 }}>
-        {metric.icon} {metric.label}
+      <span style={{ fontSize: "15px", fontWeight: 900, color: m.color, lineHeight: 1 }}>{val}</span>
+      <span style={{ fontSize: "9px", color: "rgba(255,255,255,0.32)", marginTop: "3px", textAlign: "center", lineHeight: 1.3 }}>
+        {m.icon} {m.label}
       </span>
-
-      {/* Learning mode indicator dot */}
       {learnOn && (
-        <span style={{
-          position:    "absolute",
-          top:         "-4px",
-          right:       "-4px",
-          width:       "13px",
-          height:      "13px",
-          borderRadius:"50%",
-          background:  isActive ? "#06b6d4" : "#164e63",
-          border:      "1px solid #0e7490",
-          color:       isActive ? "#fff" : "#67e8f9",
-          fontSize:    "8px",
-          fontWeight:  900,
-          display:     "flex",
-          alignItems:  "center",
-          justifyContent: "center",
-          lineHeight:  1,
-        }}>
+        <span style={{ position: "absolute", top: "-4px", right: "-4px", width: "13px", height: "13px", borderRadius: "50%", background: isActive ? "#06b6d4" : "#164e63", border: "1px solid #0e7490", color: isActive ? "#fff" : "#67e8f9", fontSize: "8px", fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center" }}>
           {isActive ? "×" : "?"}
         </span>
       )}
@@ -169,112 +173,139 @@ function MetricPill({
   );
 }
 
-// ─── Learning explanation card ────────────────────────────────────────────────
+// ─── Layer 2: Live metric pill ────────────────────────────────────────────────
 
-function LearnExplainCard({ metric, value }: { metric: MetricDef; value: number }) {
+function LivePill({
+  m, health, activeId, onToggle, learnOn,
+}: {
+  m: LiveMetricDef; health: BranchHealth;
+  activeId: string | null; onToggle: (id: string) => void; learnOn: boolean;
+}) {
+  const val      = m.value(health);
+  const isActive = activeId === m.id;
   return (
-    <div style={{
-      background:   "rgba(8,40,50,0.92)",
-      border:       "1px solid #0e7490",
-      borderRadius: "10px",
-      padding:      "12px 14px",
-      marginTop:    "4px",
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-        <span style={{
-          fontSize: "11px", fontWeight: 800, color: metric.color,
-          background: `${metric.color}18`, padding: "2px 8px",
-          borderRadius: "8px", border: `1px solid ${metric.color}30`,
-        }}>
-          {metric.icon} {metric.label} — {value}
+    <button
+      onClick={() => learnOn ? onToggle(m.id) : undefined}
+      style={{
+        display: "flex", flexDirection: "column", alignItems: "center",
+        minWidth: "52px", padding: "7px 9px",
+        background: isActive && learnOn ? `${m.color}20` : "rgba(255,255,255,0.03)",
+        border: `1px solid ${isActive && learnOn ? m.color + "55" : m.color + "18"}`,
+        borderRadius: "8px", cursor: learnOn ? "pointer" : "default",
+        position: "relative",
+      }}
+    >
+      <span style={{ fontSize: "15px", fontWeight: 900, color: m.color, lineHeight: 1 }}>{val}</span>
+      <span style={{ fontSize: "9px", color: "rgba(255,255,255,0.32)", marginTop: "3px", textAlign: "center", lineHeight: 1.3 }}>
+        {m.icon} {m.label}
+      </span>
+      {learnOn && (
+        <span style={{ position: "absolute", top: "-4px", right: "-4px", width: "13px", height: "13px", borderRadius: "50%", background: isActive ? "#06b6d4" : "#164e63", border: "1px solid #0e7490", color: isActive ? "#fff" : "#67e8f9", fontSize: "8px", fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          {isActive ? "×" : "?"}
         </span>
-      </div>
-      <p style={{ fontSize: "12.5px", color: "rgba(103,232,249,0.88)", lineHeight: 1.75, margin: 0 }}>
-        {metric.explain.replace("{count}", String(value))}
-      </p>
+      )}
+    </button>
+  );
+}
+
+// ─── Layer divider label ──────────────────────────────────────────────────────
+
+function LayerLabel({ label, sub, color }: { label: string; sub: string; color: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", gap: "8px", marginBottom: "8px" }}>
+      <span style={{ fontSize: "9px", fontWeight: 800, color, letterSpacing: "0.12em", textTransform: "uppercase" }}>{label}</span>
+      <span style={{ fontSize: "9px", color: "rgba(255,255,255,0.22)" }}>{sub}</span>
     </div>
   );
 }
 
-// ─── Part card ────────────────────────────────────────────────────────────────
+// ─── Part card — two layers ───────────────────────────────────────────────────
 
-function PartCard({ h, learnOn }: { h: BranchHealth; learnOn: boolean }) {
-  const title       = PARTS_META[h.partNumber] ?? `भाग ${h.partNumber}`;
-  const col         = HEALTH_COLORS[h.state];
-  const [activeMetricId, setActiveMetricId] = useState<string | null>(null);
+function PartCard({
+  health, structural, learnOn,
+}: {
+  health:     BranchHealth;
+  structural: PartStructuralProfile;
+  learnOn:    boolean;
+}) {
+  const title = PARTS_META[health.partNumber] ?? `भाग ${health.partNumber}`;
+  const col   = HEALTH_COLORS[health.state];
 
-  const toggleMetric = (id: string) =>
-    setActiveMetricId(prev => prev === id ? null : id);
+  const [activeStruct, setActiveStruct] = useState<string | null>(null);
+  const [activeLive,   setActiveLive]   = useState<string | null>(null);
 
-  const activeMetric = METRICS.find(m => m.id === activeMetricId) ?? null;
+  const toggleStruct = (id: string) => { setActiveStruct(p => p === id ? null : id); setActiveLive(null); };
+  const toggleLive   = (id: string) => { setActiveLive(p => p === id ? null : id);   setActiveStruct(null); };
+
+  const activeStructMeta = STRUCT_METRICS.find(m => m.id === activeStruct);
+  const activeLiveMeta   = LIVE_METRICS.find(m => m.id === activeLive);
 
   return (
-    <div style={{
-      background:    "rgba(255,255,255,0.025)",
-      border:        `1px solid ${col.dot}28`,
-      borderRadius:  "10px",
-      padding:       "14px 16px",
-      display:       "flex",
-      flexDirection: "column",
-      gap:           "10px",
-    }}>
+    <div style={{ background: "rgba(255,255,255,0.022)", border: `1px solid ${col.dot}25`, borderRadius: "12px", padding: "16px", display: "flex", flexDirection: "column", gap: "13px" }}>
+
       {/* Header */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "5px" }}>
-            <span style={{
-              fontSize: "10px", fontWeight: 700, color: col.dot,
-              background: `${col.dot}18`, padding: "2px 7px", borderRadius: "8px",
-            }}>
-              भाग {h.partNumber}
+            <span style={{ fontSize: "10px", fontWeight: 700, color: col.dot, background: `${col.dot}18`, padding: "2px 7px", borderRadius: "8px" }}>
+              भाग {health.partNumber}
             </span>
             <span style={{ fontSize: "13px", fontWeight: 600, color: "#fde68a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {title}
             </span>
           </div>
-          <ScoreBar score={h.healthScore} color={col.dot} />
+          <ScoreBar score={health.healthScore} color={col.dot} />
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <p style={{ fontSize: "22px", fontWeight: 900, color: col.dot, margin: 0, lineHeight: 1 }}>{h.healthScore}</p>
+          <p style={{ fontSize: "22px", fontWeight: 900, color: col.dot, margin: 0, lineHeight: 1 }}>{health.healthScore}</p>
           <p style={{ fontSize: "9px", color: "rgba(255,255,255,0.25)", margin: "2px 0 0" }}>/ 100</p>
         </div>
       </div>
 
-      {/* Metric pills */}
-      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-        {METRICS.map(m => (
-          <MetricPill
-            key={m.id}
-            metric={m}
-            value={m.value(h)}
-            activeId={activeMetricId}
-            onToggle={toggleMetric}
-            learnOn={learnOn}
-          />
-        ))}
-      </div>
-
-      {/* Learning mode explanation card */}
-      {learnOn && activeMetric && (
-        <LearnExplainCard metric={activeMetric} value={activeMetric.value(h)} />
-      )}
-
-      {/* Reason lines */}
-      {h.reasonLines.length > 0 ? (
-        <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "8px", display: "flex", flexDirection: "column", gap: "3px" }}>
-          {h.reasonLines.map((line, i) => (
-            <span key={i} style={{ fontSize: "11px", color: "rgba(255,255,255,0.42)", fontFamily: "monospace", lineHeight: 1.6 }}>{line}</span>
+      {/* ── Layer 1: Structural ──────────────────────────────────────────────── */}
+      <div style={{ background: "rgba(192,132,252,0.04)", border: "1px solid rgba(192,132,252,0.12)", borderRadius: "8px", padding: "10px 12px" }}>
+        <LayerLabel label="तह १ · संरचना" sub="constitution atoms only" color="#c084fc" />
+        <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
+          {STRUCT_METRICS.map(m => (
+            <StructPill key={m.id} m={m} profile={structural} activeId={activeStruct} onToggle={toggleStruct} learnOn={learnOn} />
           ))}
         </div>
-      ) : (
-        <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.22)", fontStyle: "italic", margin: 0 }}>
-          यस भागसँग सम्बन्धित कुनै प्रकाशित अभिलेख छैन
-        </p>
-      )}
+        {learnOn && activeStructMeta && (
+          <LearnCard text={activeStructMeta.explain.replace("{val}", String(activeStructMeta.value(structural)))} />
+        )}
+      </div>
 
-      {h.lastUpdated && (
-        <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.18)", margin: 0 }}>
-          अन्तिम अद्यावधिक: {new Date(h.lastUpdated).toLocaleDateString("en-GB")}
+      {/* ── Layer 2: Live Intelligence ───────────────────────────────────────── */}
+      <div style={{ background: "rgba(74,222,128,0.03)", border: "1px solid rgba(74,222,128,0.10)", borderRadius: "8px", padding: "10px 12px" }}>
+        <LayerLabel label="तह २ · जीवित बुद्धि" sub="intelligence records" color={col.dot} />
+        <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
+          {LIVE_METRICS.map(m => (
+            <LivePill key={m.id} m={m} health={health} activeId={activeLive} onToggle={toggleLive} learnOn={learnOn} />
+          ))}
+        </div>
+        {learnOn && activeLiveMeta && (
+          <LearnCard text={activeLiveMeta.explain.replace("{count}", String(activeLiveMeta.value(health)))} />
+        )}
+
+        {/* Reason lines */}
+        {health.reasonLines.length > 0 && (
+          <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", marginTop: "10px", paddingTop: "8px", display: "flex", flexDirection: "column", gap: "2px" }}>
+            {health.reasonLines.map((line, i) => (
+              <span key={i} style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.38)", fontFamily: "monospace", lineHeight: 1.6 }}>{line}</span>
+            ))}
+          </div>
+        )}
+
+        {health.totalRecords === 0 && (
+          <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.20)", fontStyle: "italic", margin: "4px 0 0" }}>
+            कुनै प्रकाशित अभिलेख छैन — तह २ डेटा उपलब्ध नभएको
+          </p>
+        )}
+      </div>
+
+      {health.lastUpdated && (
+        <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.16)", margin: 0 }}>
+          अन्तिम अद्यावधिक: {new Date(health.lastUpdated).toLocaleDateString("en-GB")}
         </p>
       )}
     </div>
@@ -284,61 +315,46 @@ function PartCard({ h, learnOn }: { h: BranchHealth; learnOn: boolean }) {
 // ─── Section ──────────────────────────────────────────────────────────────────
 
 function HealthSection({
-  state,
-  parts,
-  learnOn,
+  state, parts, structMap, learnOn,
 }: {
-  state:   BranchHealthState;
-  parts:   BranchHealth[];
-  learnOn: boolean;
+  state:     BranchHealthState;
+  parts:     BranchHealth[];
+  structMap: Map<number, PartStructuralProfile>;
+  learnOn:   boolean;
 }) {
   const col = HEALTH_COLORS[state];
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <section style={{ borderBottom: "2px solid rgba(255,255,255,0.06)" }}>
+    <section style={{ borderBottom: "2px solid rgba(255,255,255,0.05)" }}>
       <button
         onClick={() => setCollapsed(c => !c)}
-        style={{
-          width:          "100%",
-          textAlign:      "left",
-          background:     `linear-gradient(90deg,${col.dot}14 0%,transparent 60%)`,
-          border:         "none",
-          borderBottom:   "1px solid rgba(255,255,255,0.05)",
-          padding:        "14px 24px",
-          cursor:         "pointer",
-          display:        "flex",
-          alignItems:     "center",
-          gap:            "12px",
-        }}
+        style={{ width: "100%", textAlign: "left", background: `linear-gradient(90deg,${col.dot}12 0%,transparent 55%)`, border: "none", borderBottom: "1px solid rgba(255,255,255,0.04)", padding: "14px 24px", cursor: "pointer", display: "flex", alignItems: "center", gap: "12px" }}
       >
         <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: col.dot, flexShrink: 0, boxShadow: `0 0 8px ${col.dot}` }} />
         <span style={{ fontSize: "15px", fontWeight: 800, color: col.dot, flex: 1 }}>{col.label}</span>
-        <span style={{
-          fontSize:   "12px",
-          fontWeight: 700,
-          color:      parts.length === 0 ? "rgba(255,255,255,0.20)" : col.dot,
-          background: parts.length === 0 ? "rgba(255,255,255,0.04)" : `${col.dot}18`,
-          border:     `1px solid ${col.dot}30`,
-          borderRadius: "20px",
-          padding:    "2px 10px",
-          minWidth:   "28px",
-          textAlign:  "center",
-        }}>
+        <span style={{ fontSize: "12px", fontWeight: 700, color: parts.length === 0 ? "rgba(255,255,255,0.18)" : col.dot, background: parts.length === 0 ? "rgba(255,255,255,0.04)" : `${col.dot}18`, border: `1px solid ${col.dot}28`, borderRadius: "20px", padding: "2px 10px" }}>
           {parts.length} भाग
         </span>
-        <span style={{ color: "rgba(255,255,255,0.22)", fontSize: "12px", transform: collapsed ? "rotate(-90deg)" : "none", transition: "transform 0.2s" }}>▼</span>
+        <span style={{ color: "rgba(255,255,255,0.20)", fontSize: "12px", transform: collapsed ? "rotate(-90deg)" : "none", transition: "transform 0.2s" }}>▼</span>
       </button>
 
       {!collapsed && (
         <div style={{ padding: "16px 24px 20px" }}>
           {parts.length === 0 ? (
-            <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.20)", fontStyle: "italic", margin: 0 }}>
+            <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.18)", fontStyle: "italic", margin: 0 }}>
               यस अवस्थामा कुनै भाग छैन
             </p>
           ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(320px,1fr))", gap: "12px" }}>
-              {parts.map(h => <PartCard key={h.partNumber} h={h} learnOn={learnOn} />)}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(340px,1fr))", gap: "14px" }}>
+              {parts.map(h => (
+                <PartCard
+                  key={h.partNumber}
+                  health={h}
+                  structural={structMap.get(h.partNumber) ?? { partNumber: h.partNumber, atomCount: 0, dharaCount: 0, clauseDensity: 0, rightsComplexity: 0, institutionCount: 0, dutyCount: 0, obligationCount: 0, dependencyCount: 0, governanceScope: [], keywordCount: 0, affectedGroupCount: 0 }}
+                  learnOn={learnOn}
+                />
+              ))}
             </div>
           )}
         </div>
@@ -347,31 +363,15 @@ function HealthSection({
   );
 }
 
-// ─── Learning mode banner ─────────────────────────────────────────────────────
+// ─── Learning banner ──────────────────────────────────────────────────────────
 
 function LearnBanner() {
   return (
-    <div style={{
-      margin:       "0 24px 0",
-      background:   "rgba(8,40,50,0.70)",
-      border:       "1px solid #0e7490",
-      borderTop:    "none",
-      borderRadius: "0 0 12px 12px",
-      padding:      "12px 16px",
-      display:      "flex",
-      alignItems:   "flex-start",
-      gap:          "10px",
-    }}>
-      <span style={{ fontSize: "16px", flexShrink: 0 }}>🌿</span>
-      <div>
-        <p style={{ fontSize: "12px", fontWeight: 700, color: "#67e8f9", margin: "0 0 3px" }}>
-          सिकाइ मोड सक्रिय छ
-        </p>
-        <p style={{ fontSize: "11.5px", color: "rgba(103,232,249,0.75)", margin: 0, lineHeight: 1.65 }}>
-          प्रत्येक कार्ड मा रहेका संख्याहरूमा <strong style={{ color: "#67e8f9" }}>? थिच्नुहोस्</strong> — त्यो संख्याको वास्तविक अर्थ र महत्व सजिलो नेपालीमा देखिनेछ।
-          यो जानकारी नागरिकहरूलाई आफ्नो सरकार बुझ्न मद्दत गर्न बनाइएको छ।
-        </p>
-      </div>
+    <div style={{ margin: "0 24px", background: "rgba(8,40,50,0.70)", border: "1px solid #0e7490", borderTop: "none", borderRadius: "0 0 12px 12px", padding: "11px 16px", display: "flex", alignItems: "flex-start", gap: "10px" }}>
+      <span style={{ fontSize: "15px", flexShrink: 0 }}>🌿</span>
+      <p style={{ fontSize: "11.5px", color: "rgba(103,232,249,0.80)", margin: 0, lineHeight: 1.65 }}>
+        <strong style={{ color: "#67e8f9" }}>सिकाइ मोड:</strong> प्रत्येक कार्डमा <strong style={{ color: "#67e8f9" }}>?</strong> भएको संख्यामा थिच्नुहोस् — त्यो संख्याको वास्तविक अर्थ सजिलो नेपालीमा देखिनेछ।
+      </p>
     </div>
   );
 }
@@ -379,26 +379,35 @@ function LearnBanner() {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function HealthDebugClient() {
-  const { user }  = useVaultAuth();
-  const { on: learnOn } = useLearningMode();
-  const [healthMap, setHealthMap] = useState<Map<number, BranchHealth>>(new Map());
-  const [loading,   setLoading]   = useState(true);
-  const [totalRecs, setTotalRecs] = useState(0);
+  const { user }          = useVaultAuth();
+  const { on: learnOn }   = useLearningMode();
+  const [healthMap,   setHealthMap]   = useState<Map<number, BranchHealth>>(new Map());
+  const [structMap,   setStructMap]   = useState<Map<number, PartStructuralProfile>>(new Map());
+  const [loading,     setLoading]     = useState(true);
+  const [totalIntel,  setTotalIntel]  = useState(0);
+  const [totalAtoms,  setTotalAtoms]  = useState(0);
 
   useEffect(() => {
     if (!user) return;
-    getDocs(query(collection(db, "janta_intelligence"), where("publishToJanta", "==", true)))
-      .then(snap => {
-        const records: IntelligenceRecord[] = snap.docs.map(d => ({ id: d.id, ...d.data() } as IntelligenceRecord));
-        setTotalRecs(records.length);
-        const partNums = Array.from({ length: 35 }, (_, i) => i + 1);
-        setHealthMap(computeAllPartsHealth(partNums, records));
+    Promise.all([
+      // Layer 2: intelligence records
+      getDocs(query(collection(db, "janta_intelligence"), where("publishToJanta", "==", true))),
+      // Layer 1: constitutional atoms
+      getDocs(query(collection(db, "constitutional_framework"), where("publishToJanta", "==", true))),
+    ])
+      .then(([intelSnap, atomSnap]) => {
+        const records = intelSnap.docs.map(d => ({ id: d.id, ...d.data() } as IntelligenceRecord));
+        const atoms   = atomSnap.docs.map(d => ({ id: d.id, ...d.data() } as ConstitutionalFrameworkRecord));
+        setTotalIntel(records.length);
+        setTotalAtoms(atoms.length);
+        setHealthMap(computeAllPartsHealth(PART_NUMBERS, records));
+        setStructMap(computeAllStructuralProfiles(PART_NUMBERS, atoms));
       })
       .catch(err => console.error("[HealthDebug]", err))
       .finally(() => setLoading(false));
   }, [user]);
 
-  // Group parts by state, sorted by score desc within each group
+  // Group by health state
   const grouped = new Map<BranchHealthState, BranchHealth[]>();
   for (const state of SECTION_ORDER) grouped.set(state, []);
   for (const h of healthMap.values()) grouped.get(h.state)?.push(h);
@@ -414,39 +423,52 @@ export default function HealthDebugClient() {
     <div style={{ minHeight: "100vh", background: "#020805", color: "#fde68a", fontFamily: "system-ui, sans-serif" }}>
 
       {/* Header */}
-      <div style={{ padding: "28px 24px 20px", borderBottom: "1px solid rgba(255,255,255,0.07)", background: "rgba(0,0,0,0.30)" }}>
-        <p style={{ fontSize: "10px", color: "rgba(253,230,138,0.35)", letterSpacing: "0.14em", fontWeight: 700, margin: "0 0 6px" }}>
+      <div style={{ padding: "28px 24px 20px", borderBottom: "1px solid rgba(255,255,255,0.07)", background: "rgba(0,0,0,0.28)" }}>
+        <p style={{ fontSize: "10px", color: "rgba(253,230,138,0.35)", letterSpacing: "0.14em", fontWeight: 700, margin: "0 0 5px" }}>
           VAULT · CONSTITUTION · HEALTH
         </p>
-        <h1 style={{ fontSize: "24px", fontWeight: 900, margin: "0 0 6px" }}>शाखा स्वास्थ्य नियन्त्रण कक्ष</h1>
-        <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.32)", margin: 0 }}>
-          संविधानका ३५ भागहरूको जीवित स्वास्थ्य स्थिति — क्षेत्र अनुमानद्वारा गणना
+        <h1 style={{ fontSize: "24px", fontWeight: 900, margin: "0 0 5px" }}>शाखा स्वास्थ्य नियन्त्रण कक्ष</h1>
+        <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.30)", margin: 0 }}>
+          दुई तहको संवैधानिक बुद्धि — संरचना र जीवित डेटा
         </p>
 
-        {!loading && totalParts > 0 && (
+        {!loading && (
           <div style={{ display: "flex", gap: "20px", marginTop: "16px", flexWrap: "wrap" }}>
             {[
-              { label: "कुल भागहरू", value: totalParts, color: "#e2e8f0" },
-              { label: "डेटा भएका",  value: withData,   color: "#4ade80" },
-              { label: "औसत स्कोर",  value: avgScore,   color: "#fbbf24" },
-              { label: "अभिलेखहरू",  value: totalRecs,  color: "#60a5fa" },
+              { label: "संवैधानिक अंश",   value: totalAtoms,  color: "#c084fc" },
+              { label: "जीवित अभिलेख",    value: totalIntel,  color: "#4ade80" },
+              { label: "डेटा भएका भागहरू", value: withData,    color: "#fbbf24" },
+              { label: "औसत स्वास्थ्य",   value: `${avgScore}/100`, color: "#60a5fa" },
             ].map(s => (
               <div key={s.label}>
                 <p style={{ fontSize: "20px", fontWeight: 900, color: s.color, margin: 0, lineHeight: 1 }}>{s.value}</p>
-                <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.30)", margin: "2px 0 0" }}>{s.label}</p>
+                <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.28)", margin: "2px 0 0" }}>{s.label}</p>
               </div>
             ))}
           </div>
         )}
       </div>
 
-      {/* Learning mode banner — appears directly below header */}
       {learnOn && <LearnBanner />}
+
+      {/* Two-layer architecture legend */}
+      {!loading && (
+        <div style={{ padding: "12px 24px", borderBottom: "1px solid rgba(255,255,255,0.05)", display: "flex", gap: "20px", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
+            <span style={{ width: "8px", height: "8px", borderRadius: "2px", background: "#c084fc", flexShrink: 0 }} />
+            <span style={{ fontSize: "11px", color: "rgba(192,132,252,0.80)" }}>तह १ — संरचना (constitution atoms)</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "7px" }}>
+            <span style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#4ade80", flexShrink: 0 }} />
+            <span style={{ fontSize: "11px", color: "rgba(74,222,128,0.80)" }}>तह २ — जीवित बुद्धि (intelligence records)</span>
+          </div>
+        </div>
+      )}
 
       {/* Sections */}
       {loading ? (
         <div style={{ padding: "60px 24px", textAlign: "center" }}>
-          <p style={{ color: "rgba(255,255,255,0.25)", fontSize: "14px" }}>अभिलेखहरू लोड गर्दै...</p>
+          <p style={{ color: "rgba(255,255,255,0.22)", fontSize: "13px" }}>दुवै तह लोड गर्दै...</p>
         </div>
       ) : (
         SECTION_ORDER.map(state => (
@@ -454,6 +476,7 @@ export default function HealthDebugClient() {
             key={state}
             state={state}
             parts={grouped.get(state) ?? []}
+            structMap={structMap}
             learnOn={learnOn}
           />
         ))
