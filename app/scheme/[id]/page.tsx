@@ -5,7 +5,8 @@ const BASE_URL = "https://zzc.jeevanregmi.com.np";
 const FIRESTORE =
   "https://firestore.googleapis.com/v1/projects/zeneration-z-chautari/databases/(default)/documents/structuredSchemes";
 
-export const dynamicParams = false;
+// dynamicParams = true so requests still work when SSG skips due to rate limits
+export const dynamicParams = true;
 
 // One fetch per build worker — no cache option (force-cache breaks webpack builds)
 let schemesPromise: Promise<Map<string, Record<string, any>>> | null = null;
@@ -14,17 +15,23 @@ function getAllSchemeFields(): Promise<Map<string, Record<string, any>>> {
   if (!schemesPromise) {
     schemesPromise = fetch(`${FIRESTORE}?pageSize=200`)
       .then((r) => {
-        if (!r.ok) throw new Error(`Firestore returned ${r.status}`);
+        if (!r.ok) {
+          console.warn(`[scheme/page] Firestore returned ${r.status} — skipping SSG`);
+          return { documents: [] };
+        }
         return r.json();
       })
       .then((data) => {
         const map = new Map<string, Record<string, any>>();
-        for (const doc of data.documents ?? []) {
+        for (const doc of (data as { documents?: any[] }).documents ?? []) {
           const id: string = doc.name.split("/").pop();
           map.set(id, doc.fields ?? {});
         }
-        if (map.size === 0) throw new Error("Firestore returned 0 schemes — check collection or rules");
         return map;
+      })
+      .catch((err) => {
+        console.warn(`[scheme/page] Firestore fetch failed — skipping SSG: ${err}`);
+        return new Map<string, Record<string, any>>();
       });
   }
   return schemesPromise!;
