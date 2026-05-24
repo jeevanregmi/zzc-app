@@ -160,6 +160,11 @@ export interface IntelligenceRecord {
   // ── Traceability (audit trail, verification, future retraining) ──────────
   traceability?: IntelTraceability;
 
+  // ── Constitutional Linkage ────────────────────────────────────────────────
+  // Explicit part numbers this record relates to (e.g. [3, 4]).
+  // Populated by admin tagging or AI extraction. Overrides sector inference.
+  constitutionalRefs?: number[];
+
   // ── Discovery ────────────────────────────────────────────────────────────
   tags: string[];  // searchable tags for citizen queries
 

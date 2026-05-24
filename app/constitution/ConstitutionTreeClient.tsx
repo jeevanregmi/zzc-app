@@ -7,6 +7,8 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { collection, query, where, getDocs, addDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import type { ConstitutionalFrameworkRecord } from "../../lib/types/constitutional-framework";
+import { useBranchHealth } from "../../hooks/constitution/useBranchHealth";
+import { HEALTH_COLORS, type BranchHealth } from "../../lib/constitution/healthComputer";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -388,6 +390,7 @@ function drawArticleNode(
   t: number,
   zoom: number,
   globalOpacity: number,
+  subCount = 0,
 ) {
   ctx.save();
   ctx.globalAlpha = globalOpacity;
@@ -416,7 +419,7 @@ function drawArticleNode(
   ctx.fill();
   ctx.shadowBlur = 0;
 
-  // Article label (visible only at high zoom)
+  // Article heading label (visible only at high zoom)
   if (zoom > 3.8) {
     const title = (article.titleNepali || article.titleEnglish || "").slice(0, 16);
     const fs = Math.max(7, 10 / zoom);
@@ -424,7 +427,73 @@ function drawArticleNode(
     ctx.fillStyle = "rgba(255,255,255,0.70)";
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
-    ctx.fillText(`${article.article} · ${title}`, x, y + nodeR + 2);
+    ctx.fillText(`धारा ${article.article} · ${title}`, x, y + nodeR + 2);
+  }
+
+  // Sub-clause count badge
+  if (subCount > 1) {
+    const bfs = Math.max(5, 8 / zoom);
+    const br  = Math.max(4, nodeR * 0.85);
+    const bx  = x + nodeR * 0.7;
+    const by  = y - nodeR * 0.7;
+    ctx.beginPath();
+    ctx.arc(bx, by, br, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(255,255,255,0.90)";
+    ctx.fill();
+    ctx.font = `700 ${bfs}px system-ui`;
+    ctx.fillStyle = "#1a1a2e";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(subCount), bx, by);
+  }
+
+  ctx.restore();
+}
+
+function drawSubClauseNode(
+  ctx: CanvasRenderingContext2D,
+  x: number, y: number,
+  clause: ConstitutionalFrameworkRecord,
+  part: ConstitutionPart,
+  isActive: boolean,
+  t: number,
+  zoom: number,
+  globalOpacity: number,
+) {
+  ctx.save();
+  ctx.globalAlpha = globalOpacity;
+
+  const nodeR = (isActive ? 5 : 3) / Math.max(1, zoom * 0.45);
+
+  // Subtle glow
+  const g = ctx.createRadialGradient(x, y, 0, x, y, nodeR * 2.5);
+  g.addColorStop(0, part.color + "55");
+  g.addColorStop(1, "transparent");
+  ctx.beginPath();
+  ctx.arc(x, y, nodeR * 2.5, 0, Math.PI * 2);
+  ctx.fillStyle = g;
+  ctx.fill();
+
+  // Core — dashed outline marks it as a sub-node
+  ctx.beginPath();
+  ctx.arc(x, y, nodeR, 0, Math.PI * 2);
+  ctx.fillStyle = isActive ? part.color + "dd" : part.color + "66";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.35)";
+  ctx.lineWidth = 0.5;
+  ctx.setLineDash([2, 2]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Clause text (very high zoom only)
+  if (zoom > 5.5) {
+    const label = (clause.titleNepali || clause.titleEnglish || clause.clause || "").slice(0, 20);
+    const fs = Math.max(6, 8 / zoom);
+    ctx.font = `400 ${fs}px system-ui, sans-serif`;
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText(label, x, y + nodeR + 1);
   }
 
   ctx.restore();
@@ -441,6 +510,7 @@ function renderTree(
   activeArticleId: string | null,
   bPts: Record<string, { cx: number; cy: number }>,
   aPts: Record<string, { cx: number; cy: number }>,
+  healthMap: Map<number, BranchHealth>,
 ) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -629,19 +699,98 @@ function renderTree(
     const sa = drawMainBranch(ctx, rng, jx, jy, ex, ey, part, branchOp, def.wid * perspMul, def.subD, t, H, isBack);
     bPts[part.id] = { cx: ex, cy: ey };
 
-    // ── Article sub-branches (dhara nodes) — appear at zoom > 2.2 ──────────
+    // ── Branch health glow (environmental, not UI) ─────────────────────────
+    const health = healthMap.get(part.partNumber);
+    if (health && health.state !== "unknown") {
+      const hc = HEALTH_COLORS[health.state];
+      const pulse = 0.70 + Math.sin(t * 0.0009 + part.theta * 2.3) * 0.30;
+      const glowR = (28 + health.healthScore * 0.22) * perspMul;
+
+      ctx.save();
+      ctx.globalAlpha = branchOp * pulse;
+
+      // Soft ambient halo at branch endpoint
+      const hg = ctx.createRadialGradient(ex, ey, 0, ex, ey, glowR);
+      hg.addColorStop(0, hc.glow);
+      hg.addColorStop(1, "transparent");
+      ctx.beginPath();
+      ctx.arc(ex, ey, glowR, 0, Math.PI * 2);
+      ctx.fillStyle = hg;
+      ctx.fill();
+
+      // Tiny health indicator dot at trunk junction
+      if (hc.dot !== "transparent") {
+        ctx.beginPath();
+        ctx.arc(jx, jy, 3.5 * perspMul, 0, Math.PI * 2);
+        ctx.fillStyle = hc.dot;
+        ctx.shadowColor = hc.dot;
+        ctx.shadowBlur  = 6;
+        ctx.globalAlpha = branchOp * Math.max(0.40, pulse);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+      }
+
+      ctx.restore();
+    }
+
+    // ── Article dhara nodes — grouped by article number ─────────────────────
     if (isActive && zoom > 2.2 && branchArticles.length > 0) {
       const nodeOpacity = Math.min(1, (zoom - 2.2) * 0.8);
-      branchArticles.slice(0, 24).forEach((a, ai) => {
-        const aRng   = mkRng(a.article * 31 + 17);
+
+      // Group clauses by article number, sorted ascending
+      const articleGroups = new Map<number, ConstitutionalFrameworkRecord[]>();
+      for (const a of branchArticles) {
+        const grp = articleGroups.get(a.article) ?? [];
+        grp.push(a);
+        articleGroups.set(a.article, grp);
+      }
+      const articleNums = Array.from(articleGroups.keys()).sort((a, b) => a - b);
+
+      articleNums.slice(0, 28).forEach((artNum, ai) => {
+        const group  = articleGroups.get(artNum)!;
+        // Parent node: prefer the record with no clause (article heading), else first
+        const parent = group.find(r => !r.clause) ?? group[0];
+        const aRng   = mkRng(artNum * 31 + 17);
         const spread = Math.PI * 1.6;
-        const angle  = sa + ((ai / Math.max(branchArticles.length, 1)) - 0.5) * spread;
-        const radius = (55 + (ai % 3) * 28 + aRng() * 20);
-        const ax = ex + Math.cos(angle) * radius;
-        const ay = ey + Math.sin(angle) * radius * 0.72;
-        const isActiveNode = activeArticleId === a.articleId;
-        drawArticleNode(ctx, ax, ay, a, part, isActiveNode, t, zoom, nodeOpacity);
-        aPts[a.articleId] = { cx: ax, cy: ay };
+        const angle  = sa + ((ai / Math.max(articleNums.length, 1)) - 0.5) * spread;
+        const radius = 55 + (ai % 3) * 28 + aRng() * 20;
+        const ax     = ex + Math.cos(angle) * radius;
+        const ay     = ey + Math.sin(angle) * radius * 0.72;
+
+        const isActiveParent =
+          activeArticleId === parent.articleId ||
+          group.some(r => r.articleId === activeArticleId);
+
+        drawArticleNode(ctx, ax, ay, parent, part, isActiveParent, t, zoom, nodeOpacity, group.length);
+        // Map all group articleIds to the parent position (click detection)
+        for (const r of group) aPts[r.articleId] = { cx: ax, cy: ay };
+
+        // Sub-clause satellites around active parent — appear at zoom > 4.5
+        if (isActiveParent && zoom > 4.5 && group.length > 1) {
+          const subOpacity = Math.min(1, (zoom - 4.5) * 0.8) * nodeOpacity;
+          const subclauses = group.filter(r => r !== parent);
+          subclauses.forEach((clause, ci) => {
+            const subAngle = angle + ((ci / Math.max(subclauses.length - 1, 1)) - 0.5) * Math.PI * 0.85 + Math.PI * 0.5;
+            const subR = 26 + ci * 10;
+            const sx = ax + Math.cos(subAngle) * subR;
+            const sy = ay + Math.sin(subAngle) * subR * 0.72;
+            const isActiveSub = activeArticleId === clause.articleId;
+
+            // Connector line
+            ctx.save();
+            ctx.globalAlpha = subOpacity * 0.35;
+            ctx.strokeStyle = part.color;
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(ax, ay);
+            ctx.lineTo(sx, sy);
+            ctx.stroke();
+            ctx.restore();
+
+            drawSubClauseNode(ctx, sx, sy, clause, part, isActiveSub, t, zoom, subOpacity);
+            aPts[clause.articleId] = { cx: sx, cy: sy };
+          });
+        }
       });
     }
   });
@@ -835,6 +984,11 @@ export default function ConstitutionTreeClient() {
   const [level,        setLevel]        = useState<Level>(0);
   const [cursor,       setCursor]       = useState<"grab" | "grabbing">("grab");
 
+  // Branch health — fetched once, kept in ref so RAF loop always has latest
+  const { healthMap } = useBranchHealth();
+  const healthMapRef = useRef<Map<number, BranchHealth>>(new Map());
+  useEffect(() => { healthMapRef.current = healthMap; }, [healthMap]);
+
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef    = useRef<number>(0);
   // Start zoomed in (world larger than viewport) facing the front of the tree
@@ -910,6 +1064,7 @@ export default function ConstitutionTreeClient() {
         activeArticle?.articleId ?? null,
         bPts.current,
         aPts.current,
+        healthMapRef.current,
       );
       rafRef.current = requestAnimationFrame(tick);
     };
