@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useVaultAuth }      from "../../../hooks/vault/useVaultAuth";
 import { useFounderVision }  from "../../../hooks/vault/useFounderVision";
 import type {
@@ -410,7 +410,7 @@ function EntryForm({ initial, onSave, onCancel, saving, title }: {
         <button onClick={handleSave}
           disabled={saving || !form.title.trim() || !form.body.trim()}
           className="bg-violet-700 hover:bg-violet-600 disabled:bg-zinc-800 disabled:text-zinc-600 text-white font-bold px-5 py-2.5 rounded-xl text-sm transition-colors">
-          {saving ? "Saving…" : "Save Entry"}
+          {saving ? "Saving vision…" : "Save Entry"}
         </button>
         <button onClick={onCancel} className="text-zinc-500 hover:text-zinc-300 text-sm px-3 py-2.5 transition-colors">
           Cancel
@@ -433,6 +433,7 @@ export default function VisionClient() {
   const [filterVis,  setFilterVis]  = useState<VisionVisibility | "all">("all");
   const [viewMode,   setViewMode]   = useState<"timeline" | "letters">("timeline");
   const [toast,      setToast]      = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const submittingRef = useRef(false);
 
   // Auto-dismiss toast after 4s
   useEffect(() => {
@@ -460,13 +461,29 @@ export default function VisionClient() {
   const revisitCount = entries.filter(e => e.revisitAt && e.revisitAt <= today).length;
 
   async function handleSave(input: FounderVisionInput) {
+    if (submittingRef.current) return;
     if (!user) {
       showToast("Not signed in — please refresh and try again.", "error");
       return;
     }
-    const payload = { ...input, ownerId: user.uid };
-    console.log("[VisionVault] saving:", payload);
+
+    // Duplicate protection: same title + body within 30 seconds
+    if (!editEntry) {
+      const cutoff = new Date(Date.now() - 30_000).toISOString();
+      const isDuplicate = entries.some(e =>
+        e.title.trim() === input.title.trim() &&
+        e.body.trim()  === input.body.trim()  &&
+        e.createdAt    >  cutoff,
+      );
+      if (isDuplicate) {
+        showToast("Duplicate blocked — identical entry was saved within the last 30 seconds.", "error");
+        return;
+      }
+    }
+
+    submittingRef.current = true;
     setSaving(true);
+    console.log("[VisionVault] saving:", { ...input, ownerId: user.uid });
     try {
       if (editEntry) {
         await update(editEntry.id, input);
@@ -475,7 +492,8 @@ export default function VisionClient() {
       } else {
         await add(input, user.uid);
         setShowForm(false);
-        showToast("Vision saved to institutional memory.", "success");
+        showToast("Vision saved successfully.", "success");
+        window.scrollTo({ top: 0, behavior: "smooth" });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -483,6 +501,7 @@ export default function VisionClient() {
       showToast(`Save failed: ${msg}`, "error");
     } finally {
       setSaving(false);
+      submittingRef.current = false;
     }
   }
 
