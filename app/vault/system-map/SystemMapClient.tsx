@@ -4,18 +4,17 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../../firebase";
-import { useLearningMode } from "../../../contexts/LearningModeContext";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-type NodeStatus = "working" | "needs_data" | "broken" | "future" | "testing";
+type NodeStatus = "chalirako" | "data_chahiyo" | "bigriyo" | "pachhi" | "testing";
 
 interface SystemNode {
   id: string;
   icon: string;
-  label: string;
   labelNepali: string;
-  color: string;       // hex
+  labelEnglish: string;
+  color: string;
   borderClass: string;
   bgClass: string;
   textClass: string;
@@ -24,23 +23,21 @@ interface SystemNode {
   writes: string[];
   status: NodeStatus;
   statusNote?: string;
-  what: string;
-  whatNepali: string;
-  feedsFrom: string[];
-  feedsTo: string[];
-  canBreak: string;
-  adminNext: string;
-  nepaliLearn: string;
+  keGarchha: string;       // what it does — simple Nepali
+  kaBaatPaunchha: string;  // receives from
+  kahaaJaanchha: string;   // sends to
+  keBigrinSakchha: string; // what can break
+  adminKoKaam: string;     // admin next step
 }
 
-// ─── Node definitions ──────────────────────────────────────────────────────────
+// ─── Node definitions — Nepali-first ──────────────────────────────────────────
 
 const NODES: SystemNode[] = [
   {
     id: "documents",
     icon: "📄",
-    label: "Documents",
-    labelNepali: "कागजात",
+    labelNepali: "कागजात अपलोड",
+    labelEnglish: "Documents",
     color: "#60a5fa",
     borderClass: "border-blue-700",
     bgClass: "bg-blue-950/40",
@@ -48,83 +45,75 @@ const NODES: SystemNode[] = [
     href: "/vault/documents",
     reads: ["vault_intelligence_docs"],
     writes: ["vault_intelligence_docs"],
-    status: "working",
-    what: "Upload & store government documents. PDFs, policy files, budget papers. Each document gets a Firestore record with metadata, processing status, and source info.",
-    whatNepali: "सरकारी कागजातहरू अपलोड गर्ने ठाउँ। PDF, नीति कागजात, बजेट कागज — सबै यहाँ राखिन्छ।",
-    feedsFrom: [],
-    feedsTo: ["AI Extraction"],
-    canBreak: "Storage quota exceeded, duplicate uploads, or missing required fields (title, source).",
-    adminNext: "Upload new government documents. Ensure source authority and date are filled correctly.",
-    nepaliLearn: "यो प्रणालीको ढोका हो। तपाईंले कागजात हाल्नु भयो भने मात्र AI ले काम गर्न सक्छ। राम्रो कागजात = राम्रो ज्ञान।",
+    status: "chalirako",
+    keGarchha: "सरकारी कागजातहरू (PDF, नीति, बजेट) यहाँ राखिन्छ। हरेक कागजातको नाम, स्रोत, र मिति लेख्नु पर्छ। राम्रो कागजात = राम्रो ज्ञान।",
+    kaBaatPaunchha: "तपाईंले (admin) upload गर्नुहुन्छ",
+    kahaaJaanchha: "AI विश्लेषणतर्फ जान्छ",
+    keBigrinSakchha: "स्रोत authority वा मिति नलेखेमा। Duplicate कागजात हालेमा।",
+    adminKoKaam: "नयाँ सरकारी कागजात upload गर्नुस्। स्रोत र मिति सही लेख्नुस्।",
   },
   {
     id: "ai_extraction",
     icon: "🤖",
-    label: "AI Extraction",
-    labelNepali: "AI विश्लेषण",
+    labelNepali: "AI ले पढ्छ र तथ्य निकाल्छ",
+    labelEnglish: "AI Extraction",
     color: "#fb923c",
     borderClass: "border-orange-700",
     bgClass: "bg-orange-950/40",
     textClass: "text-orange-300",
     href: "/vault/documents",
-    reads: ["vault_intelligence_docs (PDF content)"],
-    writes: ["vault_civic_atoms (atoms)", "vault_intelligence_docs (processingStatus update)"],
-    status: "working",
-    what: "Claude AI reads each document and extracts atomic facts, promises, risks, policies, and financial targets. Each fact becomes one CivicAtom with constitutional part links and confidence score.",
-    whatNepali: "AI ले कागजात पढेर एक-एक तथ्य निकाल्छ। हरेक तथ्यलाई 'Civic Atom' भनिन्छ — संविधानको कुन धारासँग सम्बन्धित छ भनेर पनि जोड्छ।",
-    feedsFrom: ["Documents"],
-    feedsTo: ["Admin Review"],
-    canBreak: "AI API timeout, malformed PDF, or document language not supported. Check processingStatus field.",
-    adminNext: "Monitor documents with status 'ready' or 'ai_paused'. Trigger re-analysis if needed.",
-    nepaliLearn: "AI एउटा विद्वान शिक्षकजस्तै हो — तर उसले कहिलेकाहीँ गल्ती गर्छ। त्यसैले मानव समीक्षा अनिवार्य छ।",
+    reads: ["vault_intelligence_docs (PDF)"],
+    writes: ["vault_civic_atoms", "vault_intelligence_docs (status update)"],
+    status: "chalirako",
+    keGarchha: "Claude AI ले कागजात पढेर एक-एक तथ्य, वाचा, जोखिम, नीति निकाल्छ। हरेक तथ्यलाई 'Civic Atom' भनिन्छ — र त्यो संविधानको कुन भागसँग जोडिन्छ भनेर पनि लेख्छ।",
+    kaBaatPaunchha: "कागजात अपलोडबाट",
+    kahaaJaanchha: "Admin समीक्षातर्फ",
+    keBigrinSakchha: "AI ले गलत बुझ्न सक्छ। PDF राम्ररी scan नभएको भए। कागजात Nepali र English मिश्रित छ भने।",
+    adminKoKaam: "'ready' वा 'ai_paused' status भएका कागजातहरू हेर्नुस्। Re-analyze थिच्नुस् यदि गलत देखियो।",
   },
   {
     id: "admin_review",
     icon: "👁",
-    label: "Admin Review",
-    labelNepali: "प्रशासक समीक्षा",
+    labelNepali: "Admin ले जाँच गर्छ",
+    labelEnglish: "Admin Review",
     color: "#fbbf24",
     borderClass: "border-amber-700",
     bgClass: "bg-amber-950/40",
     textClass: "text-amber-300",
     href: "/vault/admin",
-    reads: ["vault_intelligence_docs (ai_ready docs)", "vault_civic_atoms (pending atoms)"],
-    writes: ["vault_intelligence_docs (adminApprovalStatus)", "vault_civic_atoms (approved flag)", "janta_intelligence (published records)"],
-    status: "working",
-    what: "Human admin reviews AI-extracted atoms. Approve = atoms become live intelligence. Reject = atoms are discarded. Admin can also trigger content queue, hero images, and deep intelligence extraction.",
-    whatNepali: "तपाईं (admin) AI को काम जाँच्नुहुन्छ। स्वीकृत गर्नुभयो भने atom सार्वजनिक हुन्छ। अस्वीकार गर्नुभयो भने हटाइन्छ। तपाईं नै प्रमुख शिक्षक हो।",
-    feedsFrom: ["AI Extraction"],
-    feedsTo: ["Civic Atoms"],
-    canBreak: "Missing admin approval step means atoms stay in limbo — visible to no one. Check 'ai_ready' docs with no adminApprovalStatus.",
-    adminNext: "Review all docs with processingStatus='ai_ready'. Approve or reject each atom cluster.",
-    nepaliLearn: "तपाईंले स्वीकृत नगरेसम्म AI को ज्ञान नागरिकसम्म पुग्दैन। यो जिम्मेवारी ठूलो छ।",
+    reads: ["vault_intelligence_docs (ai_ready)", "vault_civic_atoms (pending)"],
+    writes: ["vault_intelligence_docs (approval)", "vault_civic_atoms (approved)", "janta_intelligence"],
+    status: "chalirako",
+    keGarchha: "तपाईं (admin) AI ले निकालेका तथ्यहरू जाँच्नुहुन्छ। स्वीकृत गर्नुभयो भने ती तथ्य सार्वजनिक हुन्छन्। अस्वीकार गर्नुभयो भने हटाइन्छ। तपाईं नै मुख्य शिक्षक हो — AI कहिलेकाहीँ गल्ती गर्छ।",
+    kaBaatPaunchha: "AI विश्लेषणबाट",
+    kahaaJaanchha: "Civic Atoms मा जान्छ (स्वीकृत भएपछि)",
+    keBigrinSakchha: "Admin ले review नगरेसम्म कुनै पनि तथ्य नागरिकसम्म पुग्दैन। 'ai_ready' status मा अड्किएका कागजात हेर्नुस्।",
+    adminKoKaam: "Admin Vault खोल्नुस्। 'ai_ready' कागजातहरू एक-एक जाँच्नुस्। स्वीकृत वा अस्वीकार गर्नुस्।",
   },
   {
     id: "civic_atoms",
     icon: "⚛",
-    label: "Civic Atoms OS",
-    labelNepali: "नागरिक परमाणु",
+    labelNepali: "नागरिक ज्ञानका कण (Atoms)",
+    labelEnglish: "Civic Atoms OS",
     color: "#67e8f9",
     borderClass: "border-cyan-700",
     bgClass: "bg-cyan-950/40",
     textClass: "text-cyan-300",
     href: "/vault/atoms",
     reads: ["vault_civic_atoms"],
-    writes: ["vault_civic_atoms (relationship links)"],
-    status: "working",
-    what: "The core intelligence layer. Each CivicAtom is one verified fact/promise/risk linked to Nepal's Constitution. Atoms are typed (fact/promise/risk/policy), scored by confidence, and linked to constitutional parts.",
-    whatNepali: "यो प्रणालीको मुटु हो। हरेक atom एउटा ज्ञानको कण हो — संविधान, मन्त्रालय, नागरिक समूह सबैसँग जोडिएको।",
-    feedsFrom: ["Admin Review"],
-    feedsTo: ["Relationships", "Branch Health", "Public Tree"],
-    canBreak: "Atoms without constitutionalParts[] set correctly won't appear in branch health. Confidence < 0.5 atoms are unreliable.",
-    adminNext: "Review atom types and constitutional part links in the Atoms OS. Fix mislinked atoms.",
-    nepaliLearn: "Atom भनेको ज्ञानको सबैभन्दा सानो एकाइ। जति राम्रो atom, त्यति राम्रो संविधान वृक्ष।",
+    writes: ["vault_civic_atoms"],
+    status: "chalirako",
+    keGarchha: "हरेक स्वीकृत तथ्य यहाँ 'Atom' बनेर बस्छ। एउटा Atom = एउटा सत्य। जस्तै: 'सरकारले युवालाई ७% रोजगार दिने वाचा गर्‍यो — संविधान भाग ३ अन्तर्गत।' यी atoms मिलेर संविधान वृक्ष बन्छ।",
+    kaBaatPaunchha: "Admin स्वीकृतिबाट",
+    kahaaJaanchha: "संविधान वृक्ष र शाखा स्वास्थ्यमा जान्छ",
+    keBigrinSakchha: "Atom मा संविधानको भाग नम्बर गलत लेखियो भने गलत शाखामा जान्छ। Confidence score कम (०.५ भन्दा कम) भएका atoms अविश्वसनीय हुन्छन्।",
+    adminKoKaam: "Atoms OS खोलेर atom types र संविधान भाग links सही छन् कि जाँच्नुस्।",
   },
   {
     id: "relationships",
     icon: "🔗",
-    label: "Relationships",
-    labelNepali: "सम्बन्ध जाल",
+    labelNepali: "तथ्यहरूको सम्बन्ध जाल",
+    labelEnglish: "Relationships",
     color: "#a78bfa",
     borderClass: "border-violet-700",
     bgClass: "bg-violet-950/40",
@@ -132,21 +121,19 @@ const NODES: SystemNode[] = [
     href: "/vault/atoms",
     reads: ["vault_civic_atoms", "janta_relationships"],
     writes: ["janta_relationships"],
-    status: "future",
-    statusNote: "AI relationship detection — Phase 2",
-    what: "Detects connections between atoms: promise vs risk tensions, same-branch cross-document patterns, financial-policy links. Creates a knowledge graph of Nepal's governance.",
-    whatNepali: "दुई कागजातका वाचाहरू एकअर्काविरुद्ध छन् कि? यो प्रणालीले त्यो पत्ता लगाउँछ।",
-    feedsFrom: ["Civic Atoms"],
-    feedsTo: ["Branch Health", "Public Content"],
-    canBreak: "No relationship detection running yet — this is a future phase.",
-    adminNext: "No action needed now. Phase 2 will auto-generate relationships.",
-    nepaliLearn: "जुन दिन यो चल्छ, AI ले भन्न सक्नेछ: 'यो वाचा त्यो जोखिमसँग टकराउँछ।'",
+    status: "pachhi",
+    statusNote: "Phase 2 मा आउँछ",
+    keGarchha: "दुई कागजातका वाचाहरू एकअर्काविरुद्ध छन् कि? AI ले यो पत्ता लगाउँछ। जस्तै: 'बजेटमा शिक्षामा ५ अर्ब भनिएको छ तर नीतिमा कटौती गरिएको छ' — यस्तो विरोधाभास देखाउँछ।",
+    kaBaatPaunchha: "Civic Atoms बाट",
+    kahaaJaanchha: "शाखा स्वास्थ्य र सार्वजनिक सूचनामा",
+    keBigrinSakchha: "अहिले यो प्रणाली चालु छैन। Phase 2 मा बन्छ।",
+    adminKoKaam: "अहिले कुनै काम छैन। Phase 2 मा automatically बन्छ।",
   },
   {
     id: "branch_health",
     icon: "🩺",
-    label: "Branch Health",
-    labelNepali: "शाखा स्वास्थ्य",
+    labelNepali: "संविधान शाखाको स्वास्थ्य",
+    labelEnglish: "Branch Health",
     color: "#4ade80",
     borderClass: "border-green-700",
     bgClass: "bg-green-950/40",
@@ -154,20 +141,18 @@ const NODES: SystemNode[] = [
     href: "/vault/constitution/health",
     reads: ["vault_civic_atoms", "janta_intelligence", "constitutional_framework"],
     writes: [],
-    status: "working",
-    what: "Computes a health score (0-100) for each of Nepal's 35 constitutional Parts based on evidence from civic atoms and intelligence records. States: healthy/fruiting/budding/weak/yellow/dry/damaged.",
-    whatNepali: "नेपालको संविधानका ३५ भागमध्ये कुन भाग कति बलियो छ? atoms को आधारमा स्वास्थ्य अंक दिइन्छ।",
-    feedsFrom: ["Civic Atoms", "Relationships"],
-    feedsTo: ["Constitution Tree"],
-    canBreak: "If vault_civic_atoms has no entries with constitutionalParts set, all parts show as 'unknown'. Requires approved atoms.",
-    adminNext: "Approve more documents to fill in weak branches. Check which parts score below 30.",
-    nepaliLearn: "वृक्षको पातजस्तै — atom धेरै भए शाखा हरियो, कम भए सुक्खा।",
+    status: "chalirako",
+    keGarchha: "नेपालको संविधानका ३५ भागमध्ये कुन भाग कति बलियो छ? कति atoms (तथ्य) त्यो भागसँग जोडिएका छन् — त्यसको आधारमा ०-१०० स्वास्थ्य अंक दिइन्छ। हरियो = बलियो, सुक्खा = कमजोर।",
+    kaBaatPaunchha: "Civic Atoms र Janta Intelligence बाट",
+    kahaaJaanchha: "संविधान वृक्षमा देखिन्छ",
+    keBigrinSakchha: "Atoms मा 'constitutionalParts' field खाली छ भने सबै भाग 'unknown' देखिन्छ। Admin ले धेरै कागजात approve गर्नु पर्छ।",
+    adminKoKaam: "कुन संविधान भाग कमजोर छ हेर्नुस्। त्यस भागसम्बन्धी कागजात upload गर्नुस्।",
   },
   {
     id: "constitution_tree",
     icon: "🌳",
-    label: "Constitution Tree",
-    labelNepali: "संविधान वृक्ष",
+    labelNepali: "सार्वजनिक संविधान वृक्ष",
+    labelEnglish: "Constitution Tree",
     color: "#34d399",
     borderClass: "border-emerald-700",
     bgClass: "bg-emerald-950/40",
@@ -175,69 +160,63 @@ const NODES: SystemNode[] = [
     href: "/constitution",
     reads: ["constitutional_framework", "vault_civic_atoms", "janta_intelligence"],
     writes: [],
-    status: "working",
-    what: "Public visual of Nepal's living constitution. Each branch shows health state, atom count, and intelligence evidence. Citizens can explore constitutional parts and their real-world implementation status.",
-    whatNepali: "नागरिकहरूले देख्ने सार्वजनिक संविधान वृक्ष। हरेक शाखाले वास्तविक सरकारी काम देखाउँछ।",
-    feedsFrom: ["Branch Health", "Civic Atoms"],
-    feedsTo: ["Public Intelligence"],
-    canBreak: "If constitutional_framework has no parts loaded, tree shows empty. If atoms have wrong constitutionalParts, branches show incorrect intelligence.",
-    adminNext: "Verify public tree reflects current atom state. Share with citizens.",
-    nepaliLearn: "यो वृक्ष नागरिकको ऐना हो — सरकारले गरेको कामको सत्य यहाँ देखिन्छ।",
+    status: "chalirako",
+    keGarchha: "नागरिकहरूले देख्ने सार्वजनिक संविधान वृक्ष। हरेक शाखाले वास्तविक सरकारी काम देखाउँछ — वाचा पूरा भयो कि भएन। नागरिकले बुझ्ने भाषामा।",
+    kaBaatPaunchha: "शाखा स्वास्थ्य र Civic Atoms बाट",
+    kahaaJaanchha: "नागरिक सूचनातर्फ",
+    keBigrinSakchha: "Constitutional Framework मा Parts load नभएको छ भने वृक्ष खाली देखिन्छ। Atoms मा गलत Part number छ भने गलत शाखामा देखिन्छ।",
+    adminKoKaam: "सार्वजनिक वृक्ष खोलेर हेर्नुस् — नागरिकले के देख्छन्। गलत देखियो भने atoms ठीक गर्नुस्।",
   },
   {
     id: "learning_mode",
     icon: "🎓",
-    label: "Learning Mode",
-    labelNepali: "सिकाइ मोड",
+    labelNepali: "Nepali सिकाइ मोड",
+    labelEnglish: "Learning Mode",
     color: "#f472b6",
     borderClass: "border-pink-700",
     bgClass: "bg-pink-950/40",
     textClass: "text-pink-300",
-    href: "/vault/atoms",
-    reads: ["vault_civic_atoms (for context)", "constitutional_framework (for Dhara names)"],
+    href: null,
+    reads: ["vault_civic_atoms", "constitutional_framework"],
     writes: [],
     status: "testing",
-    statusNote: "Active — expand coverage to all pages",
-    what: "Nepali-first civic education layer. Admin sees explanations in simple Nepali for every AI concept, every button, every flow. Citizens see accessible constitutional explanations. Teaches thinking patterns, not just rules.",
-    whatNepali: "AI ले के गर्यो? किन गर्यो? यसले Nepali मा सजिलो भाषामा बुझाउँछ। Admin र नागरिक दुवैका लागि।",
-    feedsFrom: ["Civic Atoms", "Admin Review"],
-    feedsTo: ["Public Intelligence"],
-    canBreak: "Disabled if LearningModeContext is not wrapped at page level. Check VaultShell provider.",
-    adminNext: "Toggle Learning Mode on (🎓 button in sidebar) to see Nepali explanations on every screen.",
-    nepaliLearn: "ज्ञान बुझेर दिनु भनेको यन्त्रजस्तो थिच्नु भन्दा धेरै राम्रो। यही सोचेर Learning Mode बनाइयो।",
+    statusNote: "थपिँदै छ — सबै pages मा",
+    keGarchha: "AI ले के गर्यो? किन गर्यो? यसले Nepali मा सजिलो भाषामा बुझाउँछ। Admin र नागरिक दुवैका लागि। हरेक button, हरेक flow — Nepali मा।",
+    kaBaatPaunchha: "Civic Atoms र Admin Review बाट context लिन्छ",
+    kahaaJaanchha: "सबै vault pages मा देखिन्छ",
+    keBigrinSakchha: "LearningModeContext wrap नभएको pages मा काम गर्दैन।",
+    adminKoKaam: "Sidebar को 🎓 Civic Learning Mode toggle थिच्नुस् — सबैतिर Nepali explanation देखिन्छ।",
   },
   {
     id: "public_intelligence",
     icon: "📢",
-    label: "Public Content",
-    labelNepali: "सार्वजनिक सूचना",
+    labelNepali: "नागरिकसम्म पुग्ने सूचना",
+    labelEnglish: "Public Content",
     color: "#facc15",
     borderClass: "border-yellow-700",
     bgClass: "bg-yellow-950/40",
     textClass: "text-yellow-300",
     href: "/vault/content/queue",
-    reads: ["vault_content_queue", "janta_intelligence (published)", "vault_civic_atoms (approved)"],
-    writes: ["vault_content_queue", "janta_intelligence (publishToJanta)"],
-    status: "working",
-    what: "Approved atoms and intelligence records flow into the content queue for social media, /janta feed, hero image generation, and policy gaming cards. Citizens receive this intelligence through multiple channels.",
-    whatNepali: "स्वीकृत ज्ञान नागरिकसम्म पुग्ने ढोका। /janta feed, social media, र policy cards यहींबाट सुरु हुन्छ।",
-    feedsFrom: ["Admin Review", "Constitution Tree", "Learning Mode"],
-    feedsTo: [],
-    canBreak: "Content queue stuck if items stay in 'pending' status too long. Check queue processing worker.",
-    adminNext: "Review content queue. Publish approved items. Generate hero images for high-impact atoms.",
-    nepaliLearn: "यो प्रणालीको फूल हो — यहाँ नागरिकले ज्ञानको फल पाउँछन्।",
+    reads: ["vault_content_queue", "janta_intelligence", "vault_civic_atoms"],
+    writes: ["vault_content_queue", "janta_intelligence"],
+    status: "chalirako",
+    keGarchha: "स्वीकृत तथ्य र intelligence records नागरिकसम्म पुग्ने ढोका। /janta feed, social media posts, र policy cards यहींबाट सुरु हुन्छ। Admin ले approve नगरेसम्म केही publish हुँदैन।",
+    kaBaatPaunchha: "Admin Review र संविधान वृक्षबाट",
+    kahaaJaanchha: "नागरिकसम्म (अन्तिम गन्तव्य)",
+    keBigrinSakchha: "Content queue मा items 'pending' मा अड्किए। Queue worker काम नगरेको छ भने।",
+    adminKoKaam: "Content Queue हेर्नुस्। Approved items publish गर्नुस्। High-impact atoms को hero image बनाउनुस्।",
   },
 ];
 
 const STATUS_CONFIG: Record<NodeStatus, { label: string; icon: string; color: string }> = {
-  working:    { label: "Working",     icon: "✅", color: "text-green-400"  },
-  needs_data: { label: "Needs data",  icon: "⚠",  color: "text-amber-400"  },
-  broken:     { label: "Broken",      icon: "❌", color: "text-red-400"    },
-  future:     { label: "Future",      icon: "🔮", color: "text-violet-400" },
-  testing:    { label: "Testing",     icon: "🧪", color: "text-pink-400"   },
+  chalirako:   { label: "चालु छ",       icon: "✅", color: "text-green-400"  },
+  data_chahiyo:{ label: "Data चाहियो",  icon: "⚠",  color: "text-amber-400"  },
+  bigriyo:     { label: "बिग्रेको छ",   icon: "❌", color: "text-red-400"    },
+  pachhi:      { label: "पछि आउँछ",    icon: "🔮", color: "text-violet-400" },
+  testing:     { label: "Testing मा",   icon: "🧪", color: "text-pink-400"   },
 };
 
-// ─── Live counts from Firestore ────────────────────────────────────────────────
+// ─── Live counts ───────────────────────────────────────────────────────────────
 
 interface LiveCounts {
   docs_total: number;
@@ -271,15 +250,15 @@ function useLiveCounts() {
     ])
       .then(([docsAll, docsReady, docsAiReady, docsApproved, atoms, janta, framework, queueAll, queuePending, rels]) => {
         setCounts({
-          docs_total:       docsAll.size,
-          docs_ready:       docsReady.size,
-          docs_ai_ready:    docsAiReady.size,
-          docs_approved:    docsApproved.size,
-          atoms_total:      atoms.size,
-          janta_total:      janta.size,
-          framework_total:  framework.size,
-          queue_total:      queueAll.size,
-          queue_pending:    queuePending.size,
+          docs_total:          docsAll.size,
+          docs_ready:          docsReady.size,
+          docs_ai_ready:       docsAiReady.size,
+          docs_approved:       docsApproved.size,
+          atoms_total:         atoms.size,
+          janta_total:         janta.size,
+          framework_total:     framework.size,
+          queue_total:         queueAll.size,
+          queue_pending:       queuePending.size,
           relationships_total: rels.size,
         });
       })
@@ -290,48 +269,40 @@ function useLiveCounts() {
   return { counts, loading };
 }
 
-// ─── Count badge per node ──────────────────────────────────────────────────────
-
 function nodeCount(nodeId: string, counts: LiveCounts): { primary: string; secondary?: string } | null {
   switch (nodeId) {
-    case "documents":        return { primary: `${counts.docs_total} docs`, secondary: counts.docs_approved > 0 ? `${counts.docs_approved} approved` : undefined };
-    case "ai_extraction":    return { primary: `${counts.docs_ready} queued`, secondary: counts.docs_ai_ready > 0 ? `${counts.docs_ai_ready} ready` : undefined };
-    case "admin_review":     return { primary: `${counts.docs_ai_ready} pending`, secondary: counts.docs_approved > 0 ? `${counts.docs_approved} approved` : undefined };
-    case "civic_atoms":      return { primary: `${counts.atoms_total} atoms` };
-    case "relationships":    return { primary: `${counts.relationships_total} links` };
-    case "branch_health":    return { primary: `${counts.atoms_total + counts.janta_total} signals`, secondary: `${counts.framework_total} parts` };
-    case "constitution_tree":return { primary: `${counts.framework_total} parts` };
-    case "learning_mode":    return null;
-    case "public_intelligence": return { primary: `${counts.queue_total} items`, secondary: counts.queue_pending > 0 ? `${counts.queue_pending} pending` : undefined };
-    default:                 return null;
+    case "documents":          return { primary: `${counts.docs_total} कागजात`, secondary: counts.docs_approved > 0 ? `${counts.docs_approved} स्वीकृत` : undefined };
+    case "ai_extraction":      return { primary: `${counts.docs_ready} पर्खिरहेको`, secondary: counts.docs_ai_ready > 0 ? `${counts.docs_ai_ready} तयार` : undefined };
+    case "admin_review":       return { primary: `${counts.docs_ai_ready} जाँच बाँकी`, secondary: counts.docs_approved > 0 ? `${counts.docs_approved} स्वीकृत` : undefined };
+    case "civic_atoms":        return { primary: `${counts.atoms_total} atoms` };
+    case "relationships":      return { primary: `${counts.relationships_total} सम्बन्ध` };
+    case "branch_health":      return { primary: `${counts.atoms_total + counts.janta_total} signals`, secondary: `${counts.framework_total} भाग` };
+    case "constitution_tree":  return { primary: `${counts.framework_total} संविधान भाग` };
+    case "learning_mode":      return null;
+    case "public_intelligence":return { primary: `${counts.queue_total} items`, secondary: counts.queue_pending > 0 ? `${counts.queue_pending} review बाँकी` : undefined };
+    default:                   return null;
   }
 }
 
-// ─── Pipeline flow strip ───────────────────────────────────────────────────────
+// ─── Pipeline strip ────────────────────────────────────────────────────────────
 
 const PIPELINE_STEPS = [
-  { icon: "📄", label: "Upload",    color: "#60a5fa", nodeId: "documents"          },
-  { icon: "🤖", label: "AI",        color: "#fb923c", nodeId: "ai_extraction"      },
-  { icon: "👁", label: "Review",    color: "#fbbf24", nodeId: "admin_review"       },
-  { icon: "⚛",  label: "Atoms",     color: "#67e8f9", nodeId: "civic_atoms"        },
-  { icon: "🩺", label: "Health",    color: "#4ade80", nodeId: "branch_health"      },
-  { icon: "🌳", label: "Tree",      color: "#34d399", nodeId: "constitution_tree"  },
-  { icon: "🎓", label: "Learn",     color: "#f472b6", nodeId: "learning_mode"      },
-  { icon: "📢", label: "Public",    color: "#facc15", nodeId: "public_intelligence"},
+  { icon: "📄", label: "Upload",       color: "#60a5fa", nodeId: "documents"           },
+  { icon: "🤖", label: "AI पढ्छ",     color: "#fb923c", nodeId: "ai_extraction"       },
+  { icon: "👁",  label: "जाँच",        color: "#fbbf24", nodeId: "admin_review"        },
+  { icon: "⚛",  label: "Atoms",        color: "#67e8f9", nodeId: "civic_atoms"         },
+  { icon: "🩺", label: "स्वास्थ्य",   color: "#4ade80", nodeId: "branch_health"       },
+  { icon: "🌳", label: "वृक्ष",        color: "#34d399", nodeId: "constitution_tree"   },
+  { icon: "🎓", label: "सिकाइ",        color: "#f472b6", nodeId: "learning_mode"       },
+  { icon: "📢", label: "नागरिक",       color: "#facc15", nodeId: "public_intelligence" },
 ];
 
 // ─── Node card ─────────────────────────────────────────────────────────────────
 
 function NodeCard({
-  node,
-  selected,
-  counts,
-  onSelect,
+  node, selected, counts, onSelect,
 }: {
-  node: SystemNode;
-  selected: boolean;
-  counts: LiveCounts | null;
-  onSelect: () => void;
+  node: SystemNode; selected: boolean; counts: LiveCounts | null; onSelect: () => void;
 }) {
   const status = STATUS_CONFIG[node.status];
   const liveCount = counts ? nodeCount(node.id, counts) : null;
@@ -343,7 +314,7 @@ function NodeCard({
         "w-full text-left rounded-xl border p-4 transition-all duration-150 " +
         node.borderClass + " " +
         (selected
-          ? node.bgClass + " ring-2 ring-offset-2 ring-offset-black " + node.borderClass
+          ? node.bgClass + " ring-2 ring-offset-1 ring-offset-black " + node.borderClass
           : "bg-zinc-900/50 hover:" + node.bgClass)
       }
     >
@@ -351,13 +322,13 @@ function NodeCard({
         <span className="text-2xl shrink-0 mt-0.5">{node.icon}</span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={"font-bold text-sm " + node.textClass}>{node.label}</span>
-            <span className={"text-xs " + status.color} title={node.statusNote}>
+            <span className={"font-bold text-sm " + node.textClass}>{node.labelNepali}</span>
+            <span className={"text-xs " + status.color}>
               {status.icon} {status.label}
               {node.statusNote && <span className="text-zinc-600 ml-1">({node.statusNote})</span>}
             </span>
           </div>
-          <p className="text-xs text-zinc-600 mt-0.5">{node.labelNepali}</p>
+          <p className="text-xs text-zinc-600 mt-0.5">{node.labelEnglish}</p>
           {liveCount && (
             <div className="flex gap-2 mt-1.5 flex-wrap">
               <span className={"text-xs font-mono font-bold px-1.5 py-0.5 rounded " + node.bgClass + " " + node.textClass}>
@@ -379,24 +350,24 @@ function NodeCard({
 // ─── Detail panel ──────────────────────────────────────────────────────────────
 
 function DetailPanel({ node, counts }: { node: SystemNode; counts: LiveCounts | null }) {
-  const { on: learningOn } = useLearningMode();
   const liveCount = counts ? nodeCount(node.id, counts) : null;
 
   return (
     <div className={"rounded-2xl border p-6 space-y-5 " + node.borderClass + " " + node.bgClass}>
+
       {/* Header */}
       <div className="flex items-center gap-3">
         <span className="text-4xl">{node.icon}</span>
         <div>
-          <h2 className={"text-xl font-bold " + node.textClass}>{node.label}</h2>
-          <p className="text-zinc-500 text-sm">{node.labelNepali}</p>
+          <h2 className={"text-xl font-bold " + node.textClass}>{node.labelNepali}</h2>
+          <p className="text-zinc-500 text-xs">{node.labelEnglish}</p>
         </div>
         {node.href && (
           <Link
             href={node.href}
             className={"ml-auto px-4 py-2 rounded-lg text-sm font-bold border transition-colors hover:brightness-110 " + node.borderClass + " " + node.textClass + " " + node.bgClass}
           >
-            Open →
+            खोल्नुस् →
           </Link>
         )}
       </div>
@@ -404,92 +375,69 @@ function DetailPanel({ node, counts }: { node: SystemNode; counts: LiveCounts | 
       {/* Live counts */}
       {liveCount && (
         <div className="flex gap-3 flex-wrap">
-          <div className={"rounded-lg px-4 py-2 " + node.bgClass + " border " + node.borderClass}>
+          <div className={"rounded-lg px-4 py-2 border " + node.bgClass + " " + node.borderClass}>
             <p className={"text-lg font-bold font-mono " + node.textClass}>{liveCount.primary}</p>
-            <p className="text-xs text-zinc-600">live count</p>
+            <p className="text-xs text-zinc-600">अहिले</p>
           </div>
           {liveCount.secondary && (
             <div className="rounded-lg px-4 py-2 bg-zinc-900 border border-zinc-800">
               <p className="text-lg font-bold font-mono text-zinc-300">{liveCount.secondary}</p>
-              <p className="text-xs text-zinc-600">secondary</p>
+              <p className="text-xs text-zinc-600">अहिले</p>
             </div>
           )}
         </div>
       )}
 
-      {/* What it does */}
+      {/* Ke garchha */}
       <div>
-        <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-1.5">What it does</p>
-        <p className="text-sm text-zinc-300 leading-relaxed">{node.what}</p>
+        <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">🎯 यसले के गर्छ?</p>
+        <p className="text-sm text-zinc-200 leading-relaxed">{node.keGarchha}</p>
       </div>
 
       {/* Reads / Writes */}
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-1.5">📖 Reads from</p>
+          <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">📖 कहाँबाट पढ्छ?</p>
           <ul className="space-y-1">
             {node.reads.map(r => (
-              <li key={r} className="text-xs font-mono text-zinc-400 bg-zinc-900 rounded px-2 py-1">{r}</li>
+              <li key={r} className="text-xs font-mono text-zinc-400 bg-zinc-900/80 rounded px-2 py-1 break-all">{r}</li>
             ))}
           </ul>
         </div>
         <div>
-          <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-1.5">✍ Writes to</p>
+          <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-2">✍ कहाँ लेख्छ?</p>
           {node.writes.length > 0 ? (
             <ul className="space-y-1">
               {node.writes.map(w => (
-                <li key={w} className="text-xs font-mono text-zinc-400 bg-zinc-900 rounded px-2 py-1">{w}</li>
+                <li key={w} className="text-xs font-mono text-zinc-400 bg-zinc-900/80 rounded px-2 py-1 break-all">{w}</li>
               ))}
             </ul>
           ) : (
-            <p className="text-xs text-zinc-600 italic">Read-only system</p>
+            <p className="text-xs text-zinc-600 italic">केवल पढ्छ, लेख्दैन</p>
           )}
         </div>
       </div>
 
       {/* Flow */}
-      <div className="grid grid-cols-2 gap-4">
-        {node.feedsFrom.length > 0 && (
-          <div>
-            <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-1.5">⬅ Receives from</p>
-            <div className="flex gap-1 flex-wrap">
-              {node.feedsFrom.map(f => (
-                <span key={f} className="text-xs bg-zinc-900 border border-zinc-800 rounded-full px-2 py-0.5 text-zinc-400">{f}</span>
-              ))}
-            </div>
-          </div>
-        )}
-        {node.feedsTo.length > 0 && (
-          <div>
-            <p className="text-xs font-bold text-zinc-500 uppercase tracking-widest mb-1.5">➡ Sends to</p>
-            <div className="flex gap-1 flex-wrap">
-              {node.feedsTo.map(f => (
-                <span key={f} className="text-xs bg-zinc-900 border border-zinc-800 rounded-full px-2 py-0.5 text-zinc-400">{f}</span>
-              ))}
-            </div>
-          </div>
-        )}
+      <div className="flex gap-2 items-center flex-wrap text-sm">
+        <span className="text-zinc-600 text-xs font-bold">⬅ आउँछ:</span>
+        <span className="text-zinc-300 text-xs">{node.kaBaatPaunchha}</span>
+        <span className="text-zinc-700 mx-2">|</span>
+        <span className="text-zinc-600 text-xs font-bold">➡ जान्छ:</span>
+        <span className="text-zinc-300 text-xs">{node.kahaaJaanchha}</span>
       </div>
 
       {/* Can break + admin next */}
-      <div className="grid grid-cols-1 gap-3">
-        <div className="rounded-lg border border-red-900/60 bg-red-950/20 p-3">
-          <p className="text-xs font-bold text-red-500 uppercase tracking-widest mb-1">⚠ What can break</p>
-          <p className="text-xs text-red-300/80 leading-relaxed">{node.canBreak}</p>
+      <div className="space-y-3">
+        <div className="rounded-xl border border-red-900/50 bg-red-950/20 p-4">
+          <p className="text-xs font-bold text-red-400 mb-1.5">⚠ के बिग्रन सक्छ?</p>
+          <p className="text-sm text-red-200/80 leading-relaxed">{node.keBigrinSakchha}</p>
         </div>
-        <div className="rounded-lg border border-amber-900/60 bg-amber-950/20 p-3">
-          <p className="text-xs font-bold text-amber-500 uppercase tracking-widest mb-1">✅ Admin next step</p>
-          <p className="text-xs text-amber-300/80 leading-relaxed">{node.adminNext}</p>
+        <div className="rounded-xl border border-amber-900/50 bg-amber-950/20 p-4">
+          <p className="text-xs font-bold text-amber-400 mb-1.5">✅ अब के गर्ने?</p>
+          <p className="text-sm text-amber-200/80 leading-relaxed">{node.adminKoKaam}</p>
         </div>
       </div>
-
-      {/* Nepali Learning */}
-      {learningOn && (
-        <div className="rounded-xl border border-cyan-900/60 bg-cyan-950/20 p-4">
-          <p className="text-xs font-bold text-cyan-500 uppercase tracking-widest mb-1.5">🎓 Nepali मा बुझौं</p>
-          <p className="text-sm text-cyan-200 leading-relaxed">{node.nepaliLearn}</p>
-        </div>
-      )}
     </div>
   );
 }
@@ -499,29 +447,34 @@ function DetailPanel({ node, counts }: { node: SystemNode; counts: LiveCounts | 
 export function SystemMapClient() {
   const [selectedId, setSelectedId] = useState<string>(NODES[0].id);
   const { counts, loading } = useLiveCounts();
-  const { on: learningOn } = useLearningMode();
 
   const selected = NODES.find(n => n.id === selectedId) ?? NODES[0];
 
   return (
     <div className="min-h-screen bg-black text-white">
 
-      {/* ── Header ────────────────────────────────────────────────────────── */}
+      {/* Header */}
       <div className="border-b border-zinc-900 bg-zinc-950 px-6 py-4">
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center gap-3 flex-wrap">
             <span className="text-2xl">🗺</span>
             <div>
-              <h1 className="text-lg font-bold text-white">Tree Intelligence OS — System Map</h1>
-              <p className="text-xs text-zinc-500">Founder Control Room · सबै प्रणाली एकै ठाउँमा</p>
+              <h1 className="text-lg font-bold text-white">Tree Intelligence OS — प्रणाली नक्सा</h1>
+              <p className="text-xs text-zinc-500">Founder Control Room · कागजातदेखि नागरिकसम्मको पूरा यात्रा</p>
             </div>
             {loading && (
-              <span className="ml-auto text-xs text-zinc-600 animate-pulse">Loading live counts…</span>
+              <span className="ml-auto text-xs text-zinc-600 animate-pulse">गणना हुँदैछ…</span>
             )}
           </div>
 
+          {/* Nepali intro */}
+          <div className="mt-3 rounded-xl border border-zinc-800 bg-zinc-900/60 px-4 py-3 text-xs text-zinc-400 leading-relaxed">
+            <span className="font-bold text-zinc-300">यो के हो?</span> ZZC को सम्पूर्ण AI प्रणाली एकै ठाउँमा। कागजात → AI → Admin → Atom → संविधान वृक्ष → नागरिक।
+            बायाँतर्फ जुनसुकै प्रणाली थिच्नुस् — त्यसको विवरण दायाँतर्फ देखिन्छ।
+          </div>
+
           {/* Pipeline strip */}
-          <div className="flex items-center gap-1 mt-4 overflow-x-auto pb-1">
+          <div className="flex items-center gap-1 mt-3 overflow-x-auto pb-1">
             {PIPELINE_STEPS.map((step, i) => (
               <div key={step.nodeId} className="flex items-center gap-1 shrink-0">
                 <button
@@ -546,23 +499,13 @@ export function SystemMapClient() {
         </div>
       </div>
 
-      {/* ── Nepali OS intro (learning mode) ───────────────────────────────── */}
-      {learningOn && (
-        <div className="max-w-7xl mx-auto px-6 py-3">
-          <div className="rounded-xl border border-cyan-900/50 bg-cyan-950/20 px-4 py-3 text-xs text-cyan-300 leading-relaxed">
-            <span className="font-bold">🎓 यो के हो?</span> ZZC को सम्पूर्ण AI प्रणाली एकै ठाउँमा देख्ने ठाउँ।
-            कागजात → AI → Admin → Atom → संविधान वृक्ष → नागरिक। बायाँतर्फको सूचीमा जुनसुकै प्रणाली क्लिक गर्नुस् — त्यसको विवरण दायाँतर्फ देखिन्छ।
-          </div>
-        </div>
-      )}
-
-      {/* ── Main layout ───────────────────────────────────────────────────── */}
+      {/* Main layout */}
       <div className="max-w-7xl mx-auto px-6 py-6 grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-6">
 
         {/* Left: node list */}
         <div className="space-y-2">
           <p className="text-xs font-bold text-zinc-600 uppercase tracking-widest px-1 mb-3">
-            9 Systems · {NODES.filter(n => n.status === "working").length} working
+            ९ प्रणाली · {NODES.filter(n => n.status === "chalirako").length} चालु छन्
           </p>
           {NODES.map(node => (
             <NodeCard
@@ -575,32 +518,29 @@ export function SystemMapClient() {
           ))}
         </div>
 
-        {/* Right: detail panel */}
-        <div className="lg:sticky lg:top-6 lg:self-start">
+        {/* Right: detail + shortcuts */}
+        <div className="lg:sticky lg:top-6 lg:self-start space-y-6">
           <DetailPanel node={selected} counts={counts} />
 
-          {/* Quick nav shortcuts */}
-          <div className="mt-6">
-            <p className="text-xs font-bold text-zinc-600 uppercase tracking-widest mb-3">Quick access</p>
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+          {/* Quick nav */}
+          <div>
+            <p className="text-xs font-bold text-zinc-600 uppercase tracking-widest mb-3">छिटो जानुस्</p>
+            <div className="grid grid-cols-4 gap-2">
               {NODES.filter(n => n.href).map(n => (
                 <Link
                   key={n.id}
                   href={n.href!}
-                  className={
-                    "flex flex-col items-center gap-1 px-2 py-3 rounded-xl border text-center transition-all hover:brightness-110 " +
-                    n.borderClass + " " + n.bgClass
-                  }
+                  className={"flex flex-col items-center gap-1 px-2 py-3 rounded-xl border text-center transition-all hover:brightness-110 " + n.borderClass + " " + n.bgClass}
                 >
                   <span className="text-xl">{n.icon}</span>
-                  <span className={"text-xs font-bold leading-tight " + n.textClass}>{n.label}</span>
+                  <span className={"text-[10px] font-bold leading-tight " + n.textClass}>{n.labelNepali.split(" ")[0]}</span>
                 </Link>
               ))}
             </div>
           </div>
 
           {/* Status legend */}
-          <div className="mt-4 flex flex-wrap gap-3 px-1">
+          <div className="flex flex-wrap gap-3 px-1">
             {(Object.entries(STATUS_CONFIG) as [NodeStatus, typeof STATUS_CONFIG[NodeStatus]][]).map(([, cfg]) => (
               <span key={cfg.label} className={"text-xs " + cfg.color}>
                 {cfg.icon} {cfg.label}
