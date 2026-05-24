@@ -20,6 +20,7 @@ import type { CalculatorFormula }   from "../../../lib/data/calculator-registry"
 import { TrustBadge }               from "../../../components/vault/TrustBadge";
 import { trustFromSignal, trustFromDoc, trustFromQueueItem } from "../../../lib/intelligence/trust-score";
 import { LearnTip, LearnBlock }    from "../../../components/vault/LearnTip";
+import { CivicIntelligencePipeline } from "../../../components/vault/CivicIntelligencePipeline";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -628,11 +629,15 @@ export default function AdminVaultClient() {
       <div className="border-b border-zinc-900 px-4 pt-6 pb-4 space-y-4">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-lg font-bold text-white tracking-tight">
-              Admin Intelligence Vault
-            </h1>
-            <p className="text-xs text-zinc-600 mt-0.5 max-w-sm">
-              Central validation hub — all AI-generated content requires admin approval before entering the production pipeline.
+            <div className="flex items-center gap-2 mb-0.5">
+              <span>👁</span>
+              <h1 className="text-lg font-bold text-white tracking-tight">
+                Civic Review Center
+              </h1>
+            </div>
+            <p className="text-xs text-zinc-600 mt-0.5 max-w-sm leading-relaxed">
+              AI ले निकालेको civic intelligence publish गर्नु अघि यहाँ review गरिन्छ।
+              हरेक document जनतालाई सही जानकारी दिन्छ भन्ने confirm गर्नुहोस्।
             </p>
           </div>
 
@@ -650,15 +655,15 @@ export default function AdminVaultClient() {
           )}
         </div>
 
-        {/* Quick stats */}
+        {/* Quick stats — civic framing */}
         <div className="flex gap-4 flex-wrap">
           {[
-            { label: "Raw Signals",       count: counts.signals,     color: "text-cyan-400"   },
-            { label: "Docs for Review",   count: counts.documents,   color: "text-amber-400"  },
-            { label: "Queue Pending",     count: counts.queue,       color: "text-orange-400" },
-            { label: "Draft Formulas",    count: counts.calculators, color: "text-zinc-500"   },
+            { label: "नयाँ signals",              count: counts.signals,     color: "text-cyan-400",   tip: "Raw signals — validate/reject गर्नुपर्छ" },
+            { label: "Documents समीक्षा पर्खिरहेका", count: counts.documents,   color: "text-amber-400",  tip: "AI ले analyze गरेको — approve/flag गर्नुहोस्" },
+            { label: "Content approve गर्नुपर्छ",  count: counts.queue,       color: "text-orange-400", tip: "AI Studio मा जान तयार छ — confirm गर्नुहोस्" },
+            { label: "Formulas verify गर्नुपर्छ",  count: counts.calculators, color: "text-zinc-500",   tip: "Calculator formulas — mathematician ले verify गर्नुपर्छ" },
           ].map(s => (
-            <div key={s.label} className="flex items-center gap-1.5 text-xs">
+            <div key={s.label} className="flex items-center gap-1.5 text-xs" title={s.tip}>
               <span className={`font-black text-sm ${s.color}`}>{s.count}</span>
               <span className="text-zinc-600">{s.label}</span>
             </div>
@@ -671,6 +676,13 @@ export default function AdminVaultClient() {
 
       {/* ── Content ────────────────────────────────────────────────────────── */}
       <div className="p-4 max-w-2xl">
+        {/* Civic pipeline — show where admin review fits */}
+        <CivicIntelligencePipeline
+          activeDocs={counts.documents}
+          approvedDocs={0}
+          currentPage="admin"
+        />
+
         {loading && (
           <div className="flex items-center justify-center py-16 text-zinc-600 text-sm">
             Loading…
@@ -705,17 +717,17 @@ export default function AdminVaultClient() {
         {!loading && tab === "documents" && (
           <div className="space-y-3">
             <LearnBlock
-              title="Document Review — के गर्ने?"
-              nepali="AI ले document analyze गरिसक्यो। अब तपाईंले review गर्नुपर्छ — सहि लाग्यो भने Approve, गलत लाग्यो भने Flag गर्नुहोस्।"
+              title="Document समीक्षा — के गर्ने?"
+              nepali="AI ले document पढेर civic intelligence निकालिसक्यो — topics, rights, institutions, promises, risks। अब तपाईंले एकपटक जाँच्नुपर्छ: AI ले सही बुझ्यो? जनतालाई उपयोगी छ? Approve गर्नुहोस्।"
               steps={[
-                "AI Summary र Key Insights पढ्नुहोस् — AI ले document बाट के बुझ्यो?",
-                "Content Ideas हेर्नुहोस् — यी ideas YouTube/Instagram मा publish गर्न मिल्छ?",
-                "सहि लागे: 'Approve for Queue' थिच्नुहोस् — ideas Content Queue मा जान्छन्",
-                "नमिले: 'Flag for Revision' थिच्नुहोस् — reason लेख्नुहोस्",
+                "🤖 'AI ले बुझेको कुरा' पढ्नुहोस् — document बाट AI ले के निकाल्यो?",
+                "📜 Constitution connection हेर्नुहोस् — कुन धाराले govern गर्छ?",
+                "✅ सहि लागे: 'Civic Intelligence Approve गर्नुहोस्' थिच्नुहोस्",
+                "⚠ नमिले: 'Revision आवश्यक' थिच्नुहोस् — कारण लेख्नुहोस्",
               ]}
             />
             <p className="text-xs text-zinc-600 pb-1">
-              These documents have been processed by AI. Review the AI output, then approve to unlock queue item generation — or flag for revision.
+              AI ले analyze गरेका documents — review गरेर approve गर्नुहोस् ताकि जनताले सहि information पाउन्।
             </p>
             {pendingDocs.length === 0 ? (
               <EmptyState

@@ -79,17 +79,24 @@ function LearningModeToggle() {
       onClick={toggle}
       title={on
         ? "Learning Mode बन्द गर्नुहोस्"
-        : "Nepali Learning Mode — हरेक term को Nepali explanation देख्नुहोस्, beginner-friendly workflow guidance"}
+        : "Nepali Learning Mode — हरेक term को Nepali explanation, civic document guidance, pipeline journey"}
       className={
-        "w-full flex items-center gap-2.5 px-3 py-1.5 text-xs transition-colors rounded-lg " +
+        "w-full flex items-center gap-2 px-3 py-2 text-xs transition-all rounded-xl border " +
         (on
-          ? "text-cyan-400 bg-cyan-950/40 hover:bg-cyan-950/60"
-          : "text-zinc-600 hover:text-zinc-400 hover:bg-zinc-900")
+          ? "text-cyan-300 bg-cyan-950/60 border-cyan-800 hover:bg-cyan-950/80"
+          : "text-zinc-500 bg-zinc-900/50 border-zinc-800 hover:text-cyan-400 hover:border-cyan-900/50 hover:bg-cyan-950/20")
       }
     >
-      <span className="w-4 text-center">◎</span>
-      <span>{on ? "Nepali Mode ON" : "Nepali सिक्ने Mode"}</span>
-      {on && <span className="ml-auto text-[9px] bg-cyan-900 text-cyan-400 px-1.5 py-0.5 rounded-full font-bold">सक्रिय</span>}
+      <span className="text-sm shrink-0">🎓</span>
+      <div className="flex-1 text-left min-w-0">
+        <span className="font-bold block leading-none">{on ? "Civic Learning Mode" : "Civic Learning Mode"}</span>
+        <span className={`text-[9px] leading-none mt-0.5 block ${on ? "text-cyan-500" : "text-zinc-700"}`}>
+          {on ? "सक्रिय — Nepali explanations चालु छन्" : "Nepali मा सिक्नुहोस्"}
+        </span>
+      </div>
+      {on && (
+        <span className="shrink-0 w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+      )}
     </button>
   );
 }

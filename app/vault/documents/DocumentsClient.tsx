@@ -16,6 +16,7 @@ import { DocumentCard } from "../../../components/vault/documents/DocumentCard";
 import { DocumentUploadModal } from "../../../components/vault/documents/DocumentUploadModal";
 import { DocumentViewer } from "../../../components/vault/documents/DocumentViewer";
 import { LearnBlock } from "../../../components/vault/LearnTip";
+import { CivicIntelligencePipeline } from "../../../components/vault/CivicIntelligencePipeline";
 import { useLearningMode } from "../../../contexts/LearningModeContext";
 import type { IntelligenceDocument } from "../../../lib/types/documents";
 import type { QueueContentType, QueuePlatform } from "../../../lib/types/queue";
@@ -41,15 +42,23 @@ function inferPlatform(idea: string): QueuePlatform {
 const ALL_CATEGORIES = ["all", "research", "strategy", "legal", "finance", "content", "intelligence", "other"] as const;
 type FilterCategory = typeof ALL_CATEGORIES[number];
 
-const CAT_LABEL: Record<FilterCategory, string> = {
-  all:          "All",
-  research:     "Research",
-  strategy:     "Strategy",
-  legal:        "Legal",
-  finance:      "Finance",
-  content:      "Content",
-  intelligence: "Intelligence",
-  other:        "Other",
+const CAT_LABEL: Record<FilterCategory, { en: string; np: string }> = {
+  all:          { en: "All",           np: "सबै"            },
+  research:     { en: "Research",      np: "अनुसन्धान"      },
+  strategy:     { en: "Strategy",      np: "रणनीति"         },
+  legal:        { en: "Legal / Court", np: "कानूनी / अदालत" },
+  finance:      { en: "Finance",       np: "आर्थिक / बजेट"  },
+  content:      { en: "Content",       np: "सामग्री"        },
+  intelligence: { en: "Intelligence",  np: "सूचना"          },
+  other:        { en: "Other",         np: "अन्य"           },
+};
+
+// What to upload — civic document examples per category
+const CAT_EXAMPLES: Partial<Record<FilterCategory, string[]>> = {
+  finance:   ["बजेट", "NRB circular", "EPF/SSF report", "राजस्व नीति"],
+  legal:     ["अदालत फैसला", "ऐन", "नियमावली", "संवैधानिक आदेश"],
+  research:  ["आयोग प्रतिवेदन", "नीति अनुसन्धान", "सर्वेक्षण"],
+  strategy:  ["राष्ट्रिय योजना", "विकास नीति", "सरकारी कार्यक्रम"],
 };
 
 export default function DocumentsClient() {
@@ -846,20 +855,31 @@ export default function DocumentsClient() {
 
       <div className="p-4 sm:p-6 lg:p-8">
         {/* Header */}
-        <div className="flex items-center justify-between gap-3 mb-5">
+        <div className="flex items-start justify-between gap-3 mb-4">
           <div>
-            <h1 className="text-2xl font-black text-white">Documents</h1>
-            <p className="text-zinc-500 text-xs mt-0.5">
-              Nepal government र finance documents — AI ले analyze गर्छ
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className="text-lg">📚</span>
+              <h1 className="text-xl font-black text-white">Civic Intelligence Library</h1>
+            </div>
+            <p className="text-zinc-500 text-xs leading-relaxed max-w-lg">
+              यहाँ सरकारी, आर्थिक, नीतिगत वा अनुसन्धान documents upload गरिन्छ।
+              AI ले पढेर Constitution Tree मा जोड्छ — जनताले सिक्न पाउँछन्।
             </p>
           </div>
           <button
             onClick={() => setShowUpload(true)}
             className="inline-flex items-center gap-2 bg-green-500 hover:bg-green-400 text-black font-black px-4 py-2 rounded-xl text-sm transition-colors shrink-0"
           >
-            + Upload
+            + Upload Document
           </button>
         </div>
+
+        {/* Civic intelligence pipeline explainer */}
+        <CivicIntelligencePipeline
+          activeDocs={aiReadyCount}
+          approvedDocs={approvedDocs}
+          currentPage="documents"
+        />
 
         {/* Upload toast */}
         {uploadToast && (
@@ -929,39 +949,87 @@ export default function DocumentsClient() {
         {/* Learning mode guide */}
         {learn && docs.length > 0 && (
           <LearnBlock
-            title="Intelligence Library — कसरी काम गर्छ?"
-            nepali="Nepal को government र financial documents यहाँ upload गर्नुहोस् — AI ले automatically analyze गरेर content ideas बनाउँछ।"
+            title="Civic Intelligence Library — कसरी काम गर्छ?"
+            nepali="यहाँ सरकारी, आर्थिक, नीतिगत वा अनुसन्धान documents upload गर्नुहोस्। AI ले पढेर: topics, institutions, laws, constitutional references, citizen impact, promises, risks र opportunities निकाल्छ। त्यसपछि ती सबै Constitution Tree मा जोडिन्छन् — जनताले सिक्न पाउँछन्।"
             steps={[
-              "Document upload गर्नुहोस् (NRB, EPF, SSF, research papers)",
-              "'AI ले Analyze' थिच्नुहोस् — AI ले summary र content ideas बनाउँछ",
-              "Admin Vault मा गएर review गरेर approve गर्नुहोस्",
-              "Approved document का ideas Content Queue मा automatically जान्छन्",
+              "📄 Document upload गर्नुहोस् — बजेट, NRB report, नीति, आयोग प्रतिवेदन, अदालत फैसला",
+              "🤖 'AI ले Analyze' थिच्नुहोस् — AI ले topics, rights, institutions, promises निकाल्छ",
+              "📜 AI ले document लाई संविधानका भाग र धारासँग जोड्छ",
+              "👁 Admin Vault मा review गरेर approve गर्नुहोस्",
+              "🌳 Approved document Constitution Tree मा जान्छ — जनताले explore गर्न पाउँछन्",
             ]}
           />
         )}
 
-        {/* Pipeline status flow */}
+        {/* Civic pipeline status — where are your documents? */}
         {docs.length > 0 && (
           <div className="mb-5">
-            {/* Mini pipeline flow bar */}
-            <div className="flex items-center gap-1 overflow-x-auto pb-1">
+            <p className="text-[10px] text-zinc-600 uppercase tracking-wider font-bold mb-2">तपाईंका documents अहिले कहाँ छन्?</p>
+            <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none">
               {[
-                { label: "Uploaded",   nepali: "Upload",   value: docs.length,    color: "text-zinc-300",   dot: "bg-zinc-500",   href: null },
-                { label: "Analyzed",   nepali: "AI done",  value: aiReadyCount,   color: "text-blue-400",   dot: "bg-blue-500",   href: null },
-                { label: "Review",     nepali: "Review",   value: awaitingReview, color: "text-amber-400",  dot: "bg-amber-500",  href: "/vault/admin?tab=documents" },
-                { label: "Approved",   nepali: "Approved", value: approvedDocs,   color: "text-green-400",  dot: "bg-green-500",  href: null },
+                {
+                  icon:   "📄",
+                  label:  "Uploaded",
+                  np:     "Upload भयो",
+                  value:  docs.length,
+                  color:  "text-zinc-300",
+                  dot:    "bg-zinc-500",
+                  border: "border-zinc-800",
+                  bg:     "bg-zinc-900/60",
+                  href:   null,
+                  tip:    "System मा आइसक्यो",
+                },
+                {
+                  icon:   "🤖",
+                  label:  "AI Analyzed",
+                  np:     "AI ले पढ्यो",
+                  value:  aiReadyCount,
+                  color:  "text-blue-400",
+                  dot:    "bg-blue-500",
+                  border: "border-blue-900",
+                  bg:     "bg-blue-950/20",
+                  href:   null,
+                  tip:    "Intelligence निकालिसक्यो",
+                },
+                {
+                  icon:   "👁",
+                  label:  "Awaiting Review",
+                  np:     "समीक्षा पर्खिरहेको",
+                  value:  awaitingReview,
+                  color:  "text-amber-400",
+                  dot:    "bg-amber-500",
+                  border: "border-amber-800",
+                  bg:     "bg-amber-950/20",
+                  href:   "/vault/admin?tab=documents",
+                  tip:    "Admin review आवश्यक",
+                },
+                {
+                  icon:   "✅",
+                  label:  "Public",
+                  np:     "जनतालाई उपलब्ध",
+                  value:  approvedDocs,
+                  color:  "text-green-400",
+                  dot:    "bg-green-500",
+                  border: "border-green-900",
+                  bg:     "bg-green-950/20",
+                  href:   null,
+                  tip:    "Constitution Tree मा गइसक्यो",
+                },
               ].map((step, i, arr) => (
                 <div key={step.label} className="flex items-center gap-1 shrink-0">
                   <div
+                    title={step.tip}
                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-medium ${
-                      step.value > 0 && step.href ? "border-amber-800 bg-amber-950/30" : "border-zinc-800 bg-zinc-900/60"
+                      step.value > 0 && step.href
+                        ? "border-amber-800 bg-amber-950/30"
+                        : `${step.border} ${step.bg}`
                     }`}
                   >
-                    <span className={`w-1.5 h-1.5 rounded-full ${step.dot} shrink-0`} />
-                    <span className="text-zinc-500">{step.nepali}</span>
+                    <span className="shrink-0">{step.icon}</span>
+                    <span className="text-zinc-500 hidden sm:inline">{step.np}</span>
                     <span className={`font-black ${step.color}`}>{step.value}</span>
                     {step.href && step.value > 0 && (
-                      <Link href={step.href} className="text-amber-400 hover:text-amber-300 ml-0.5">→</Link>
+                      <Link href={step.href} className="text-amber-400 hover:text-amber-300 ml-0.5 font-black">→</Link>
                     )}
                   </div>
                   {i < arr.length - 1 && <span className="text-zinc-700 text-xs">›</span>}
@@ -1018,12 +1086,12 @@ export default function DocumentsClient() {
         <div className="flex flex-col gap-2 mb-5">
           <input
             type="text"
-            placeholder="Search documents…"
+            placeholder="Document खोज्नुहोस् — title, topic, वा tag…"
             value={search}
             onChange={e => setSearch(e.target.value)}
             className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-600"
           />
-          {/* Horizontal-scroll filter chips — mobile friendly */}
+          {/* Horizontal-scroll filter chips */}
           <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
             {ALL_CATEGORIES.map(cat => (
               <button
@@ -1035,10 +1103,23 @@ export default function DocumentsClient() {
                     : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
                 }`}
               >
-                {CAT_LABEL[cat]}
+                {learn ? CAT_LABEL[cat].np : CAT_LABEL[cat].en}
               </button>
             ))}
           </div>
+          {/* Learning mode: what to upload per category */}
+          {learn && filter !== "all" && CAT_EXAMPLES[filter] && (
+            <div className="flex items-center gap-2 flex-wrap pt-1">
+              <span className="text-[10px] text-zinc-600 font-bold uppercase tracking-wider">
+                {CAT_LABEL[filter].np} examples:
+              </span>
+              {CAT_EXAMPLES[filter]!.map(ex => (
+                <span key={ex} className="text-xs px-2 py-0.5 bg-cyan-950/40 border border-cyan-900/40 text-cyan-400 rounded-full">
+                  {ex}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Document grid */}
@@ -1049,29 +1130,58 @@ export default function DocumentsClient() {
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 gap-4">
             {docs.length === 0 ? (
-              /* First-use onboarding */
-              <div className="w-full max-w-md mx-auto space-y-4">
+              /* First-use onboarding — civic framing */
+              <div className="w-full max-w-lg mx-auto space-y-4">
                 <div className="text-center">
-                  <p className="text-4xl mb-3">📄</p>
-                  <p className="text-white font-bold text-lg">पहिलो document upload गर्नुहोस्</p>
-                  <p className="text-zinc-500 text-sm mt-1">AI ले automatically analyze गर्नेछ</p>
+                  <p className="text-5xl mb-3">🌱</p>
+                  <p className="text-white font-bold text-lg">पहिलो civic document upload गर्नुहोस्</p>
+                  <p className="text-zinc-500 text-sm mt-1 leading-relaxed max-w-sm mx-auto">
+                    हरेक document Constitution Tree मा intelligence थप्छ।
+                    जनताले आफ्ना अधिकार र government को काम बुझ्न पाउँछन्।
+                  </p>
                 </div>
-                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 space-y-3">
+
+                {/* What to upload */}
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+                  <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-3">कस्ता documents upload गर्ने?</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { icon: "💰", type: "आर्थिक / बजेट",   examples: "बजेट, NRB report, EPF/SSF" },
+                      { icon: "⚖️", type: "कानूनी / अदालत",  examples: "ऐन, नियमावली, फैसला" },
+                      { icon: "📋", type: "नीतिगत",           examples: "नीति, कार्यक्रम, योजना" },
+                      { icon: "🔬", type: "अनुसन्धान",        examples: "आयोग प्रतिवेदन, सर्वेक्षण" },
+                      { icon: "📣", type: "जनगुनासा",         examples: "RTI, नागरिक निवेदन" },
+                      { icon: "🏛️", type: "संसद् कार्यवाही",  examples: "सांसद प्रश्न, संसदीय बहस" },
+                    ].map(d => (
+                      <div key={d.type} className="flex items-start gap-2 p-2 rounded-xl bg-zinc-800/60">
+                        <span className="text-base shrink-0">{d.icon}</span>
+                        <div>
+                          <p className="text-white text-xs font-semibold">{d.type}</p>
+                          <p className="text-zinc-600 text-[10px] mt-0.5">{d.examples}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Journey steps */}
+                <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 space-y-2.5">
                   {[
-                    { step: "1", icon: "📤", title: "Document Upload गर्नुहोस्", detail: "NRB circular, EPF/SSF policy, research PDF — जुनसुकै" },
-                    { step: "2", icon: "🤖", title: "AI ले Analyze गर्छ", detail: "Summary, insights, र content ideas automatically निकाल्छ" },
-                    { step: "3", icon: "📋", title: "Review गरेर Approve गर्नुहोस्", detail: "Admin Vault मा AI output check गरेर approve गर्नुहोस्" },
-                    { step: "4", icon: "🚀", title: "Content Queue मा जान्छ", detail: "YouTube, Instagram, Facebook को लागि content ready हुन्छ" },
-                  ].map(s => (
-                    <div key={s.step} className="flex items-start gap-3">
-                      <span className="w-6 h-6 rounded-full bg-zinc-800 text-zinc-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">{s.step}</span>
+                    { icon: "📤", title: "Document Upload गर्नुहोस्",         detail: "PDF, DOCX, image — जुनसुकै format" },
+                    { icon: "🤖", title: "AI ले पढेर intelligence निकाल्छ",   detail: "Topics, rights, institutions, promises, risks" },
+                    { icon: "📜", title: "संविधानका धारासँग जोडिन्छ",         detail: "हरेक policy पछाडि कुन अधिकार छ — AI ले map गर्छ" },
+                    { icon: "🌳", title: "Constitution Tree मा जान्छ",         detail: "जनताले explore गर्न, अधिकार बुझ्न पाउँछन्" },
+                  ].map((s, i) => (
+                    <div key={i} className="flex items-start gap-3">
+                      <span className="w-6 h-6 rounded-full bg-zinc-800 text-sm flex items-center justify-center shrink-0 mt-0.5">{s.icon}</span>
                       <div>
-                        <p className="text-white text-sm font-medium">{s.icon} {s.title}</p>
-                        <p className="text-zinc-500 text-xs mt-0.5">{s.detail}</p>
+                        <p className="text-white text-xs font-semibold">{s.title}</p>
+                        <p className="text-zinc-600 text-[10px] mt-0.5">{s.detail}</p>
                       </div>
                     </div>
                   ))}
                 </div>
+
                 <button
                   onClick={() => setShowUpload(true)}
                   className="w-full bg-green-500 hover:bg-green-400 text-black font-black py-3 rounded-xl text-sm transition-colors"

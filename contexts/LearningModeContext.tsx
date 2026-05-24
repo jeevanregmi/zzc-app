@@ -111,6 +111,63 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
     nepali:  "सिकाउने video",
     explain: "कुनै जटिल topic सजिलो भाषामा explain गर्ने video।",
   },
+
+  // ── Civic intelligence terms ─────────────────────────────────────────────
+  "approved": {
+    plain:   "Published",
+    nepali:  "AI द्वारा बुझिएको र समीक्षा गरिएको",
+    explain: "AI ले document पढिसक्यो र admin ले review गरेर confirm गरिसक्यो — जनताले हेर्न पाउँछन्।",
+  },
+  "Human Review": {
+    plain:   "Waiting for Human Review",
+    nepali:  "मानवीय समीक्षाको पर्खाइमा",
+    explain: "AI ले analysis गरिसक्यो — तर publish हुनु अघि admin ले एकपटक जाँच गर्नुपर्छ। Civic accuracy को लागि।",
+  },
+  "Constitution Tree": {
+    plain:   "Nepal's Civic Knowledge Map",
+    nepali:  "संविधान वृक्ष",
+    explain: "नेपालको संविधानलाई एउटा जीवित वृक्षको रूपमा देखाइन्छ — हरेक भाग एउटा हाँगा, हरेक धारा एउटा पात।",
+  },
+  "Branch Health": {
+    plain:   "How well a constitutional part is being implemented",
+    nepali:  "शाखाको स्वास्थ्य",
+    explain: "संविधानको हरेक भाग कति राम्ररी लागू भइरहेको छ — हरियो = राम्रो, पहेँलो = सावधानी, रातो = गम्भीर समस्या।",
+  },
+  "Civic Gap": {
+    plain:   "Where government promise meets reality failure",
+    nepali:  "नागरिक खाडल",
+    explain: "संविधानले दिएको अधिकार र वास्तवमा नागरिकले पाएको सुविधाबीचको फरक — यही खाडल नै ZZC ले देखाउँछ।",
+  },
+  "Intelligence": {
+    plain:   "Extracted civic knowledge",
+    nepali:  "नागरिक intelligence",
+    explain: "Document बाट AI ले निकालेको महत्वपूर्ण जानकारी — policy changes, rights, institutions, promises — सबै structured रूपमा।",
+  },
+  "Constitutional Reference": {
+    plain:   "Which article of the Constitution applies",
+    nepali:  "संवैधानिक सन्दर्भ",
+    explain: "यो document वा policy कुन संवैधानिक धाराले govern गर्छ — AI ले automatically detect गर्छ।",
+  },
+  "Source Authority": {
+    plain:   "Who issued this document",
+    nepali:  "Document को स्रोत",
+    explain: "यो document कसले जारी गर्यो — Nepal Rastra Bank, सरकार, संसद्, वा अदालत। स्रोत जति official, trust score जति उच्च।",
+  },
+  "Citizen Impact": {
+    plain:   "How this affects ordinary people",
+    nepali:  "नागरिक असर",
+    explain: "यो document वा policy ले साधारण नेपाली नागरिकको दैनिक जीवनमा के फरक पार्छ — AI ले सरल भाषामा बताउँछ।",
+  },
+  "Upload Document": {
+    plain:   "Add a document to the system",
+    nepali:  "Document थप्नुहोस्",
+    explain: "Government वा civic document system मा हाल्नुहोस् — AI ले automatically पढेर civic intelligence निकाल्छ।",
+  },
+  "Living Civic Intelligence": {
+    plain:   "A knowledge system that grows with new documents",
+    nepali:  "जीवित नागरिक intelligence",
+    explain: "हरेक नयाँ document ले Constitution Tree लाई थप समृद्ध बनाउँछ — यो system continuous सिकिरहन्छ।",
+  },
 };
 
 // ─── Context ──────────────────────────────────────────────────────────────────
