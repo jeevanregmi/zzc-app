@@ -13,49 +13,137 @@ import type { ConstitutionalFrameworkRecord } from "../../lib/types/constitution
 interface ConstitutionPart {
   id:          string;
   partNumber:  number;
-  partLabel:   string;   // "भाग ३"
-  title:       string;   // "मौलिक हक"
+  partLabel:   string;
+  title:       string;
   color:       string;
-  lx:          number;   // branch endpoint % of canvas width
-  ly:          number;   // branch endpoint % of canvas height
-  trunkT:      number;   // 0-1 junction height on trunk (0=base, 1=top)
-  depth:       "back" | "mid" | "front";
+  theta:       number;   // angle around trunk: 0=front, ±π=back
+  radius:      number;   // branch reach in world-px at zoom=1
+  ly:          number;   // branch endpoint Y as % of canvas H
+  trunkT:      number;   // junction height (0=base, 1=crown)
   atmosphere:  { tintR: number; tintG: number; tintB: number };
 }
 
-interface Cam { x: number; y: number; zoom: number }
+// theta: orbital angle (0=facing viewer, ±π=behind trunk)
+interface Cam { theta: number; x: number; y: number; zoom: number }
 type Level = 0 | 1 | 2 | 3;
 
-// ─── Constitutional parts (भागहरू) — real Nepal Constitution hierarchy ─────────
+// ─── Constitutional parts (भागहरू) — all 35 parts, Nepal Constitution 2072 ─────
+// theta: 0=front, +right, -left, ±π=directly behind trunk
+// radius: branch reach in canvas-px (world space, before zoom)
+// Discovery arcs: |theta|<1.4 visible from front, >2.2 need orbiting
 
 const PARTS: ConstitutionPart[] = [
+  // ── Crown — fully visible from front ──────────────────────────────────────
   { id: "bhaag-5",  partNumber: 5,  partLabel: "भाग ५",  title: "राज्यको संरचना",
-    color: "#fb923c", lx: 50, ly: 14, trunkT: 0.92, depth: "front",
+    color: "#fb923c", theta:  0.00, radius: 290, ly:  8, trunkT: 0.96,
     atmosphere: { tintR: 80, tintG: 40, tintB: 10 } },
   { id: "bhaag-3",  partNumber: 3,  partLabel: "भाग ३",  title: "मौलिक हक",
-    color: "#4ade80", lx: 20, ly: 24, trunkT: 0.82, depth: "front",
+    color: "#4ade80", theta: -0.45, radius: 280, ly: 12, trunkT: 0.94,
     atmosphere: { tintR: 15, tintG: 60, tintB: 20 } },
   { id: "bhaag-11", partNumber: 11, partLabel: "भाग ११", title: "न्यायपालिका",
-    color: "#60a5fa", lx: 74, ly: 19, trunkT: 0.86, depth: "mid",
+    color: "#60a5fa", theta:  0.45, radius: 280, ly: 12, trunkT: 0.92,
     atmosphere: { tintR: 10, tintG: 30, tintB: 80 } },
-  { id: "bhaag-8",  partNumber: 8,  partLabel: "भाग ८",  title: "व्यवस्थापिका",
-    color: "#818cf8", lx: 80, ly: 34, trunkT: 0.68, depth: "mid",
-    atmosphere: { tintR: 30, tintG: 20, tintB: 80 } },
-  { id: "bhaag-33", partNumber: 33, partLabel: "भाग ३३", title: "संवैधानिक निकाय",
-    color: "#f472b6", lx: 17, ly: 40, trunkT: 0.56, depth: "back",
-    atmosphere: { tintR: 70, tintG: 10, tintB: 50 } },
-  { id: "bhaag-7",  partNumber: 7,  partLabel: "भाग ७",  title: "कार्यपालिका",
-    color: "#fbbf24", lx: 84, ly: 47, trunkT: 0.52, depth: "mid",
+  { id: "bhaag-7",  partNumber: 7,  partLabel: "भाग ७",  title: "संघीय कार्यपालिका",
+    color: "#fbbf24", theta:  0.85, radius: 265, ly: 19, trunkT: 0.90,
     atmosphere: { tintR: 80, tintG: 60, tintB: 5 } },
+  { id: "bhaag-1",  partNumber: 1,  partLabel: "भाग १",  title: "प्रारम्भिक",
+    color: "#fde68a", theta: -0.85, radius: 265, ly: 17, trunkT: 0.88,
+    atmosphere: { tintR: 70, tintG: 65, tintB: 5 } },
+  // ── Near-front (|theta| 1.1–1.5, mostly visible) ──────────────────────────
+  { id: "bhaag-8",  partNumber: 8,  partLabel: "भाग ८",  title: "संघीय संसद",
+    color: "#818cf8", theta:  1.20, radius: 255, ly: 24, trunkT: 0.86,
+    atmosphere: { tintR: 30, tintG: 20, tintB: 80 } },
   { id: "bhaag-4",  partNumber: 4,  partLabel: "भाग ४",  title: "निर्देशक सिद्धान्त",
-    color: "#c084fc", lx: 13, ly: 52, trunkT: 0.44, depth: "back",
+    color: "#c084fc", theta: -1.20, radius: 255, ly: 24, trunkT: 0.84,
     atmosphere: { tintR: 50, tintG: 10, tintB: 70 } },
+  { id: "bhaag-6",  partNumber: 6,  partLabel: "भाग ६",  title: "राष्ट्रपति",
+    color: "#38bdf8", theta:  1.55, radius: 240, ly: 30, trunkT: 0.82,
+    atmosphere: { tintR: 10, tintG: 40, tintB: 70 } },
+  { id: "bhaag-9",  partNumber: 9,  partLabel: "भाग ९",  title: "संघीय कानून",
+    color: "#a78bfa", theta: -1.55, radius: 240, ly: 30, trunkT: 0.80,
+    atmosphere: { tintR: 40, tintG: 15, tintB: 65 } },
+  // ── Side branches (|theta| 1.8–2.2, orbit slightly to reveal) ─────────────
   { id: "bhaag-2",  partNumber: 2,  partLabel: "भाग २",  title: "नागरिकता",
-    color: "#f87171", lx: 73, ly: 63, trunkT: 0.28, depth: "front",
+    color: "#f87171", theta:  1.90, radius: 225, ly: 36, trunkT: 0.78,
     atmosphere: { tintR: 80, tintG: 20, tintB: 20 } },
+  { id: "bhaag-10", partNumber: 10, partLabel: "भाग १०", title: "आर्थिक कार्यविधि",
+    color: "#34d399", theta: -1.90, radius: 225, ly: 36, trunkT: 0.76,
+    atmosphere: { tintR: 10, tintG: 60, tintB: 30 } },
+  { id: "bhaag-12", partNumber: 12, partLabel: "भाग १२", title: "महान्यायाधिवक्ता",
+    color: "#f472b6", theta:  2.20, radius: 205, ly: 42, trunkT: 0.74,
+    atmosphere: { tintR: 70, tintG: 10, tintB: 50 } },
+  { id: "bhaag-13", partNumber: 13, partLabel: "भाग १३", title: "प्रदेश",
+    color: "#86efac", theta: -2.20, radius: 205, ly: 42, trunkT: 0.72,
+    atmosphere: { tintR: 20, tintG: 65, tintB: 25 } },
+  // ── Far-side (|theta| 2.4–2.7, need ~90° orbit to discover) ───────────────
+  { id: "bhaag-14", partNumber: 14, partLabel: "भाग १४", title: "प्रदेश कार्यपालिका",
+    color: "#fdba74", theta:  2.45, radius: 190, ly: 47, trunkT: 0.70,
+    atmosphere: { tintR: 75, tintG: 50, tintB: 10 } },
+  { id: "bhaag-15", partNumber: 15, partLabel: "भाग १५", title: "प्रदेश व्यवस्थापिका",
+    color: "#93c5fd", theta: -2.45, radius: 190, ly: 47, trunkT: 0.68,
+    atmosphere: { tintR: 15, tintG: 35, tintB: 75 } },
+  { id: "bhaag-16", partNumber: 16, partLabel: "भाग १६", title: "प्रदेश कानून",
+    color: "#d8b4fe", theta:  2.62, radius: 175, ly: 52, trunkT: 0.66,
+    atmosphere: { tintR: 55, tintG: 15, tintB: 75 } },
+  { id: "bhaag-17", partNumber: 17, partLabel: "भाग १७", title: "प्रदेश न्यायपालिका",
+    color: "#6ee7b7", theta: -2.62, radius: 175, ly: 52, trunkT: 0.64,
+    atmosphere: { tintR: 15, tintG: 60, tintB: 40 } },
+  { id: "bhaag-18", partNumber: 18, partLabel: "भाग १८", title: "स्थानीय कार्यपालिका",
+    color: "#fca5a5", theta:  2.76, radius: 162, ly: 57, trunkT: 0.62,
+    atmosphere: { tintR: 75, tintG: 25, tintB: 25 } },
+  { id: "bhaag-19", partNumber: 19, partLabel: "भाग १९", title: "स्थानीय सभा",
+    color: "#5eead4", theta: -2.76, radius: 162, ly: 57, trunkT: 0.60,
+    atmosphere: { tintR: 10, tintG: 65, tintB: 55 } },
+  // ── Back-approaching (need ~120° orbit) ────────────────────────────────────
   { id: "bhaag-20", partNumber: 20, partLabel: "भाग २०", title: "स्थानीय शासन",
-    color: "#34d399", lx: 13, ly: 68, trunkT: 0.20, depth: "mid",
+    color: "#34d399", theta:  2.88, radius: 150, ly: 61, trunkT: 0.58,
     atmosphere: { tintR: 15, tintG: 65, tintB: 35 } },
+  { id: "bhaag-21", partNumber: 21, partLabel: "भाग २१", title: "स्थानीय वित्त",
+    color: "#7dd3fc", theta: -2.88, radius: 150, ly: 61, trunkT: 0.56,
+    atmosphere: { tintR: 10, tintG: 35, tintB: 72 } },
+  { id: "bhaag-22", partNumber: 22, partLabel: "भाग २२", title: "अन्तर सरकारी",
+    color: "#f9a8d4", theta:  2.96, radius: 142, ly: 65, trunkT: 0.54,
+    atmosphere: { tintR: 70, tintG: 20, tintB: 55 } },
+  { id: "bhaag-23", partNumber: 23, partLabel: "भाग २३", title: "वित्त व्यवस्था",
+    color: "#fde047", theta: -2.96, radius: 142, ly: 65, trunkT: 0.52,
+    atmosphere: { tintR: 80, tintG: 70, tintB: 5 } },
+  { id: "bhaag-24", partNumber: 24, partLabel: "भाग २४", title: "अख्तियार",
+    color: "#fb7185", theta:  3.02, radius: 135, ly: 69, trunkT: 0.50,
+    atmosphere: { tintR: 80, tintG: 15, tintB: 30 } },
+  { id: "bhaag-25", partNumber: 25, partLabel: "भाग २५", title: "महालेखापरीक्षक",
+    color: "#a3e635", theta: -3.02, radius: 135, ly: 69, trunkT: 0.48,
+    atmosphere: { tintR: 40, tintG: 65, tintB: 10 } },
+  // ── Behind trunk (need ~150–180° orbit to discover) ────────────────────────
+  { id: "bhaag-26", partNumber: 26, partLabel: "भाग २६", title: "लोक सेवा आयोग",
+    color: "#fb923c", theta:  3.07, radius: 128, ly: 72, trunkT: 0.46,
+    atmosphere: { tintR: 70, tintG: 45, tintB: 10 } },
+  { id: "bhaag-27", partNumber: 27, partLabel: "भाग २७", title: "निर्वाचन आयोग",
+    color: "#818cf8", theta: -3.07, radius: 128, ly: 72, trunkT: 0.44,
+    atmosphere: { tintR: 30, tintG: 20, tintB: 75 } },
+  { id: "bhaag-33", partNumber: 33, partLabel: "भाग ३३", title: "संवैधानिक निकाय",
+    color: "#f472b6", theta:  3.11, radius: 140, ly: 75, trunkT: 0.42,
+    atmosphere: { tintR: 70, tintG: 10, tintB: 50 } },
+  { id: "bhaag-28", partNumber: 28, partLabel: "भाग २८", title: "मानव अधिकार",
+    color: "#4ade80", theta: -3.11, radius: 122, ly: 75, trunkT: 0.40,
+    atmosphere: { tintR: 15, tintG: 60, tintB: 20 } },
+  { id: "bhaag-29", partNumber: 29, partLabel: "भाग २९", title: "महिला आयोग",
+    color: "#e879f9", theta:  3.00, radius: 115, ly: 78, trunkT: 0.36,
+    atmosphere: { tintR: 65, tintG: 10, tintB: 65 } },
+  { id: "bhaag-30", partNumber: 30, partLabel: "भाग ३०", title: "दलित आयोग",
+    color: "#60a5fa", theta: -3.00, radius: 115, ly: 78, trunkT: 0.33,
+    atmosphere: { tintR: 10, tintG: 30, tintB: 75 } },
+  { id: "bhaag-31", partNumber: 31, partLabel: "भाग ३१", title: "समावेशी आयोग",
+    color: "#fbbf24", theta:  2.93, radius: 108, ly: 80, trunkT: 0.30,
+    atmosphere: { tintR: 75, tintG: 60, tintB: 5 } },
+  { id: "bhaag-32", partNumber: 32, partLabel: "भाग ३२", title: "आदिवासी आयोग",
+    color: "#34d399", theta: -2.93, radius: 108, ly: 80, trunkT: 0.27,
+    atmosphere: { tintR: 15, tintG: 65, tintB: 35 } },
+  { id: "bhaag-34", partNumber: 34, partLabel: "भाग ३४", title: "मधेसी आयोग",
+    color: "#f97316", theta:  2.86, radius: 102, ly: 82, trunkT: 0.22,
+    atmosphere: { tintR: 75, tintG: 40, tintB: 8 } },
+  { id: "bhaag-35", partNumber: 35, partLabel: "भाग ३५", title: "विविध",
+    color: "#94a3b8", theta: -2.86, radius: 102, ly: 82, trunkT: 0.14,
+    atmosphere: { tintR: 35, tintG: 35, tintB: 45 } },
 ];
 
 function articlesForPart(arts: ConstitutionalFrameworkRecord[], p: ConstitutionPart) {
@@ -179,6 +267,7 @@ function drawMainBranch(
   subDepth: number,
   t: number,
   H: number,
+  isBack = false,
 ) {
   const isActive = opacity > 0.9;
   const sway = Math.sin(t * 0.0005 + jx * 0.002) * 3;
@@ -214,9 +303,9 @@ function drawMainBranch(
   }
 
   const spreadAngle = Math.atan2(ey - jy, ex - jx);
-  drawSubBranches(ctx, rng, ex, ey, spreadAngle - 0.35, 42 + rng() * 20, wid * 0.52, subDepth, t, part.depth === "back");
-  drawSubBranches(ctx, rng, ex, ey, spreadAngle + 0.28, 38 + rng() * 20, wid * 0.50, subDepth, t, part.depth === "back");
-  drawSubBranches(ctx, rng, ex, ey, spreadAngle,        36 + rng() * 16, wid * 0.45, subDepth - 1, t, part.depth === "back");
+  drawSubBranches(ctx, rng, ex, ey, spreadAngle - 0.35, 42 + rng() * 20, wid * 0.52, subDepth, t, isBack);
+  drawSubBranches(ctx, rng, ex, ey, spreadAngle + 0.28, 38 + rng() * 20, wid * 0.50, subDepth, t, isBack);
+  drawSubBranches(ctx, rng, ex, ey, spreadAngle,        36 + rng() * 16, wid * 0.45, subDepth - 1, t, isBack);
 
   ctx.restore();
   return spreadAngle;
@@ -474,36 +563,68 @@ function renderTree(
 
   // ── Draw main branches (constitutional parts) ───────────────────────────────
   const BDEFS: Record<string, { wid: number; subD: number }> = {
-    "bhaag-5":  { wid: 18, subD: 4 },
-    "bhaag-3":  { wid: 16, subD: 4 },
-    "bhaag-11": { wid: 14, subD: 3 },
-    "bhaag-8":  { wid: 16, subD: 4 },
-    "bhaag-33": { wid: 12, subD: 3 },
-    "bhaag-7":  { wid: 14, subD: 3 },
-    "bhaag-4":  { wid: 12, subD: 3 },
-    "bhaag-2":  { wid: 12, subD: 3 },
-    "bhaag-20": { wid: 12, subD: 3 },
+    "bhaag-1":  { wid: 14, subD: 3 }, "bhaag-2":  { wid: 13, subD: 3 },
+    "bhaag-3":  { wid: 18, subD: 4 }, "bhaag-4":  { wid: 14, subD: 3 },
+    "bhaag-5":  { wid: 20, subD: 4 }, "bhaag-6":  { wid: 12, subD: 3 },
+    "bhaag-7":  { wid: 16, subD: 3 }, "bhaag-8":  { wid: 16, subD: 4 },
+    "bhaag-9":  { wid: 12, subD: 3 }, "bhaag-10": { wid: 11, subD: 3 },
+    "bhaag-11": { wid: 16, subD: 4 }, "bhaag-12": { wid: 10, subD: 2 },
+    "bhaag-13": { wid: 12, subD: 3 }, "bhaag-14": { wid: 10, subD: 2 },
+    "bhaag-15": { wid: 10, subD: 2 }, "bhaag-16": { wid:  9, subD: 2 },
+    "bhaag-17": { wid:  9, subD: 2 }, "bhaag-18": { wid:  9, subD: 2 },
+    "bhaag-19": { wid:  9, subD: 2 }, "bhaag-20": { wid:  9, subD: 2 },
+    "bhaag-21": { wid:  8, subD: 2 }, "bhaag-22": { wid:  8, subD: 2 },
+    "bhaag-23": { wid:  8, subD: 2 }, "bhaag-24": { wid:  7, subD: 2 },
+    "bhaag-25": { wid:  7, subD: 2 }, "bhaag-26": { wid:  7, subD: 2 },
+    "bhaag-27": { wid:  7, subD: 2 }, "bhaag-28": { wid:  7, subD: 2 },
+    "bhaag-29": { wid:  6, subD: 1 }, "bhaag-30": { wid:  6, subD: 1 },
+    "bhaag-31": { wid:  6, subD: 1 }, "bhaag-32": { wid:  6, subD: 1 },
+    "bhaag-33": { wid: 10, subD: 2 }, "bhaag-34": { wid:  6, subD: 1 },
+    "bhaag-35": { wid:  6, subD: 1 },
   };
 
-  // Fog: branches fade out when another branch is selected + zoomed
+  // Fog: inactive branches dim when one is focused
   const fogDepth = activePartId
     ? Math.min(0.88, (zoom - 1.4) * 0.35)
     : 0;
 
-  PARTS.forEach((part, pi) => {
+  // Sort back-to-front by orbital depth so front branches paint over back ones
+  const sorted = [...PARTS].sort((a, b) => {
+    const da = Math.cos(a.theta - cam.theta);
+    const db = Math.cos(b.theta - cam.theta);
+    return da - db;  // back first
+  });
+
+  sorted.forEach((part, pi) => {
+    // ── Orbital projection ──────────────────────────────────────────────────
+    const relTheta = part.theta - cam.theta;
+    const cosR = Math.cos(relTheta);
+    const sinR = Math.sin(relTheta);
+
+    // Back-face cull: hide branches facing > 120° away from camera
+    if (cosR < -0.50) return;
+
+    // Perspective scale: front=1.0, side=0.75, near-back=0.50
+    const perspMul = 0.50 + 0.50 * Math.max(0, cosR);
+    // Depth opacity: front=1.0, side=0.55, near-back=0.10
+    const depthOp  = Math.max(0.10, 0.20 + 0.80 * Math.max(0, cosR));
+    const isBack   = cosR < 0.25;
+
+    const origPi = PARTS.indexOf(part);
     const jy = trunkBot - (trunkBot - trunkTop) * part.trunkT + trunkSway * part.trunkT;
-    const jx = cx + trunkSway * part.trunkT * 0.4;
-    const ex = W * (part.lx / 100);
+    // Slight lateral shift at trunk junction for wrap-around feel
+    const jx = cx + sinR * 18 * part.trunkT + trunkSway * part.trunkT * 0.4;
+    const ex = cx + sinR * part.radius * perspMul;
     const ey = H * (part.ly / 100);
-    const rng = mkRng(pi * 137 + 42);
-    const def = BDEFS[part.id] ?? { wid: 12, subD: 3 };
+    const rng = mkRng(origPi * 137 + 42);
+    const def = BDEFS[part.id] ?? { wid: 8, subD: 2 };
 
     const isActive = part.id === activePartId;
     const branchOp = isActive
       ? 1.0
-      : Math.max(0.08, 1.0 - fogDepth);
+      : Math.max(0.05, depthOp * (1.0 - fogDepth));
 
-    const sa = drawMainBranch(ctx, rng, jx, jy, ex, ey, part, branchOp, def.wid, def.subD, t, H);
+    const sa = drawMainBranch(ctx, rng, jx, jy, ex, ey, part, branchOp, def.wid * perspMul, def.subD, t, H, isBack);
     bPts[part.id] = { cx: ex, cy: ey };
 
     // ── Article sub-branches (dhara nodes) — appear at zoom > 2.2 ──────────
@@ -539,12 +660,20 @@ function renderTree(
     ctx.fill();
   }
 
-  // Part labels (drawn in canvas, camera-transformed, fade out with fog)
+  // Part labels — depth-faded by orbital angle, fog-faded when a part is active
   PARTS.forEach(part => {
-    const ex = W * (part.lx / 100);
+    const relTheta = part.theta - cam.theta;
+    const cosR = Math.cos(relTheta);
+    const sinR = Math.sin(relTheta);
+    if (cosR < -0.50) return;
+    const perspMul = 0.50 + 0.50 * Math.max(0, cosR);
+    const depthOp  = Math.max(0.10, 0.20 + 0.80 * Math.max(0, cosR));
+    const ex = cx + sinR * part.radius * perspMul;
     const ey = H * (part.ly / 100);
     const isActive = part.id === activePartId;
-    const labelOp  = isActive ? 1.0 : Math.max(0, 1.0 - fogDepth * 1.1);
+    const labelOp  = isActive
+      ? 1.0
+      : Math.max(0, depthOp * (1.0 - fogDepth * 1.1));
     drawPartLabel(ctx, ex, ey, part, labelOp, zoom);
   });
 
@@ -706,11 +835,12 @@ export default function ConstitutionTreeClient() {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef    = useRef<number>(0);
-  const camRef    = useRef<Cam>({ x: 0, y: 0, zoom: 1 });
-  const camTgt    = useRef<Cam>({ x: 0, y: 0, zoom: 1 });
+  // Start zoomed in (world larger than viewport) facing the front of the tree
+  const camRef    = useRef<Cam>({ theta: 0, x: 0, y: 0, zoom: 1.8 });
+  const camTgt    = useRef<Cam>({ theta: 0, x: 0, y: 0, zoom: 1.8 });
   const bPts      = useRef<Record<string, { cx: number; cy: number }>>({});
   const aPts      = useRef<Record<string, { cx: number; cy: number }>>({});
-  const drag      = useRef({ active: false, startX: 0, startY: 0, camX: 0, camY: 0, moved: false });
+  const drag      = useRef({ active: false, startX: 0, startY: 0, camY: 0, camTheta: 0, moved: false });
 
   const branchArticles = useMemo(
     () => activePart ? articlesForPart(articles, activePart) : [],
@@ -719,20 +849,21 @@ export default function ConstitutionTreeClient() {
 
   // ── Camera helpers ──────────────────────────────────────────────────────────
 
-  const zoomToPart = useCallback((part: ConstitutionPart, W: number, H: number) => {
-    const ex = W * (part.lx / 100);
+  const zoomToPart = useCallback((part: ConstitutionPart, H: number) => {
     const ey = H * (part.ly / 100);
-    const tz = 3.2;
-    camTgt.current = { x: (W / 2 - ex) * tz, y: (H / 2 - ey) * tz, zoom: tz };
+    const tz = 3.5;
+    // Orbit so this part faces the camera (theta → part.theta), center on its height
+    camTgt.current = { theta: part.theta, x: 0, y: (H / 2 - ey) * tz, zoom: tz };
   }, []);
 
   const zoomToArticle = useCallback((ax: number, ay: number, W: number, H: number) => {
-    const tz = 6.5;
-    camTgt.current = { x: (W / 2 - ax) * tz, y: (H / 2 - ay) * tz, zoom: tz };
+    const tz = 7.0;
+    camTgt.current = { ...camTgt.current, x: (W / 2 - ax) * tz, y: (H / 2 - ay) * tz, zoom: tz };
   }, []);
 
   const zoomOut = useCallback(() => {
-    camTgt.current = { x: 0, y: 0, zoom: 1 };
+    // Return to entrance view: facing front, zoomed in but tree fills + overflows viewport
+    camTgt.current = { theta: 0, x: 0, y: 0, zoom: 1.8 };
   }, []);
 
   // ── RAF loop ────────────────────────────────────────────────────────────────
@@ -752,16 +883,22 @@ export default function ConstitutionTreeClient() {
 
     let t = 0;
     const LERK = 0.090;
-    const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
+    const lerp  = (a: number, b: number, k: number) => a + (b - a) * k;
+    // Lerp angles correctly across the ±π wrap
+    const lerpTheta = (a: number, b: number, k: number) => {
+      let d = ((b - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      return a + d * k;
+    };
     const tick = () => {
       t += 16;
       const c  = camRef.current;
       const ct = camTgt.current;
+      c.theta = lerpTheta(c.theta, ct.theta, LERK);
       c.x    = lerp(c.x, ct.x, LERK);
       c.y    = lerp(c.y, ct.y, LERK);
       c.zoom = lerp(c.zoom, ct.zoom, LERK);
 
-      const newLevel: Level = c.zoom < 1.8 ? 0 : c.zoom < 4.0 ? 1 : c.zoom < 9.0 ? 2 : 3;
+      const newLevel: Level = c.zoom < 2.2 ? 0 : c.zoom < 4.0 ? 1 : c.zoom < 9.0 ? 2 : 3;
       setLevel(prev => prev === newLevel ? prev : newLevel);
 
       renderTree(
@@ -791,10 +928,10 @@ export default function ConstitutionTreeClient() {
       const W      = canvas.width;
       const H      = canvas.height;
       const factor = e.deltaY < 0 ? 1.13 : 0.88;
-      const nz     = Math.max(0.5, Math.min(14, camTgt.current.zoom * factor));
+      const nz     = Math.max(1.0, Math.min(14, camTgt.current.zoom * factor));
       const wx     = (mx - W / 2 - camTgt.current.x) / camTgt.current.zoom;
       const wy     = (my - H / 2 - camTgt.current.y) / camTgt.current.zoom;
-      camTgt.current = { x: mx - W / 2 - wx * nz, y: my - H / 2 - wy * nz, zoom: nz };
+      camTgt.current = { ...camTgt.current, x: mx - W / 2 - wx * nz, y: my - H / 2 - wy * nz, zoom: nz };
     };
     canvas.addEventListener("wheel", onWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", onWheel);
@@ -809,7 +946,7 @@ export default function ConstitutionTreeClient() {
     const onDown = (e: MouseEvent) => {
       drag.current = {
         active: true, startX: e.clientX, startY: e.clientY,
-        camX: camTgt.current.x, camY: camTgt.current.y, moved: false,
+        camY: camTgt.current.y, camTheta: camTgt.current.theta, moved: false,
       };
       setCursor("grabbing");
     };
@@ -819,7 +956,12 @@ export default function ConstitutionTreeClient() {
       const dy = e.clientY - drag.current.startY;
       if (Math.abs(dx) > 3 || Math.abs(dy) > 3) drag.current.moved = true;
       if (drag.current.moved) {
-        camTgt.current = { ...camTgt.current, x: drag.current.camX + dx, y: drag.current.camY + dy };
+        // Horizontal drag = orbit around trunk (theta), vertical = pan Y
+        camTgt.current = {
+          ...camTgt.current,
+          theta: drag.current.camTheta - dx * 0.0045,
+          y:     drag.current.camY     + dy,
+        };
       }
     };
     const onUp = (e: MouseEvent) => {
@@ -865,7 +1007,7 @@ export default function ConstitutionTreeClient() {
         if (activePart?.id === bestPart.id) {
           setActivePart(null); setActiveArticle(null); zoomOut();
         } else {
-          setActivePart(bestPart); setActiveArticle(null); zoomToPart(bestPart, W, H);
+          setActivePart(bestPart); setActiveArticle(null); zoomToPart(bestPart, H);
         }
         return;
       }
@@ -971,10 +1113,10 @@ export default function ConstitutionTreeClient() {
             <p style={{ fontSize: "clamp(7px,0.8vw,9px)", fontWeight: 400, color: "rgba(253,230,138,0.26)", marginTop: "7px", letterSpacing: "0.04em" }}>हामी जनता, नेपालको सार्वभौमसत्ता…</p>
           </div>
 
-          {/* Discovery hint — level 0 only */}
+          {/* Discovery hint — entrance level only */}
           {!activePart && !loading && level === 0 && (
             <div style={{ position: "absolute", bottom: "8%", left: "50%", transform: "translateX(-50%)", color: "rgba(253,230,138,0.18)", fontSize: "10.5px", textAlign: "center", pointerEvents: "none", zIndex: 15, whiteSpace: "nowrap", letterSpacing: "0.05em" }}>
-              scroll to zoom · drag to pan · click a branch to explore
+              drag left/right to orbit · scroll to zoom · click a branch to explore
             </div>
           )}
 
