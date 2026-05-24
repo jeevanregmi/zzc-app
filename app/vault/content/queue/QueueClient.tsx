@@ -13,12 +13,12 @@ import { trustFromQueueItem } from "../../../../lib/intelligence/trust-score";
 // ─── Display helpers ──────────────────────────────────────────────────────────
 
 const STATUS_TABS: { key: QueueItemStatus | "all"; label: string }[] = [
-  { key: "all",          label: "All"          },
-  { key: "pending",      label: "Pending"      },
-  { key: "approved",     label: "Approved"     },
-  { key: "in_production",label: "In Production"},
-  { key: "rejected",     label: "Rejected"     },
-  { key: "archived",     label: "Archived"     },
+  { key: "all",          label: "सबै"               },
+  { key: "pending",      label: "Review पर्खिरहेको" },
+  { key: "approved",     label: "स्वीकृत"           },
+  { key: "in_production",label: "निर्माण हुँदैछ"    },
+  { key: "rejected",     label: "अस्वीकृत"          },
+  { key: "archived",     label: "संग्रहित"           },
 ];
 
 const PLATFORM_ICONS: Record<string, string> = {
@@ -114,13 +114,18 @@ function QueueCard({
             </span>
             <TrustBadge trust={trust} />
             {expiring && !expired && (
-              <span className="text-xs text-amber-400">Expires soon</span>
+              <span className="text-xs text-amber-400">⏰ म्याद सकिँदैछ</span>
             )}
             {expired && (
-              <span className="text-xs text-red-400">Expired</span>
+              <span className="text-xs text-red-400">म्याद सकियो</span>
             )}
             {item.status !== "pending" && (
-              <span className="text-xs text-zinc-600 capitalize">{item.status.replace("_", " ")}</span>
+              <span className="text-xs text-zinc-600">
+                {item.status === "approved"      ? "स्वीकृत" :
+                 item.status === "in_production" ? "निर्माण हुँदैछ" :
+                 item.status === "rejected"      ? "अस्वीकृत" :
+                 item.status === "archived"      ? "संग्रहित" : item.status}
+              </span>
             )}
           </div>
         </div>
@@ -144,7 +149,7 @@ function QueueCard({
                 rel="noreferrer"
                 className="text-xs text-green-400 hover:text-green-300 font-semibold shrink-0 transition-colors"
               >
-                View Source →
+                स्रोत हेर्नुहोस् →
               </a>
             )}
           </div>
@@ -170,7 +175,7 @@ function QueueCard({
         <div className="bg-zinc-800/50 rounded-xl p-3 border border-zinc-700 flex flex-col gap-1">
           <div className="flex items-center gap-2">
             <span className="text-zinc-500 text-xs shrink-0">🧠</span>
-            <p className="text-zinc-400 text-xs font-semibold">Generated from intelligence signal</p>
+            <p className="text-zinc-400 text-xs font-semibold">Intelligence signal बाट बनाइएको idea</p>
           </div>
           {item.brief && (
             <p className="text-zinc-500 text-xs leading-relaxed pl-4">{item.brief}</p>
@@ -185,7 +190,7 @@ function QueueCard({
             type="text"
             value={notes}
             onChange={e => setNotes(e.target.value)}
-            placeholder="Add admin note…"
+            placeholder="Note थप्नुहोस्…"
             className="flex-1 bg-zinc-800 border border-zinc-700 rounded-xl px-3 py-1.5 text-xs text-white placeholder-zinc-600 focus:outline-none"
           />
           <button onClick={saveNotes} className="text-xs text-green-400 hover:text-green-300 font-semibold px-2">Save</button>
@@ -203,17 +208,17 @@ function QueueCard({
           <>
             <button
               onClick={() => onApprove(item.id)}
-              title="Approve: marks this idea as approved so it can be sent to AI Studio for script/thumbnail generation"
-              className="text-xs bg-green-600 hover:bg-green-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+              title="स्वीकृत गर्नुहोस् — AI Studio मा script बन्न जान्छ"
+              className="text-xs bg-green-600 hover:bg-green-500 text-white font-bold px-3 py-1.5 rounded-lg transition-colors"
             >
-              Approve
+              ✅ स्वीकृत
             </button>
             <button
               onClick={() => onReject(item.id)}
-              title="Reject: removes from pending — does not delete, you can see it in the Rejected tab"
+              title="अस्वीकार गर्नुहोस् — Rejected tab मा जान्छ, delete हुँदैन"
               className="text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-semibold px-3 py-1.5 rounded-lg transition-colors"
             >
-              Reject
+              ❌ अस्वीकार
             </button>
           </>
         )}
@@ -223,11 +228,11 @@ function QueueCard({
               href={`/vault/content/preview?id=${item.id}`}
               className="text-xs bg-green-700 hover:bg-green-600 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
             >
-              Preview →
+              हेर्नुहोस् →
             </Link>
             <Link
               href={studioUrl}
-              title="Open in AI Studio — generates a full video script or thumbnail prompt using AWS Bedrock (Claude Sonnet 4.6). Expensive — uses daily token quota."
+              title="AI Studio — AWS Bedrock (Claude Sonnet 4.6) ले full script र thumbnail prompt बनाउँछ। Token खर्च हुन्छ।"
               className="text-xs bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300 font-semibold px-3 py-1.5 rounded-lg transition-colors"
             >
               AI Studio 🔴
@@ -255,7 +260,7 @@ function QueueCard({
             onClick={() => onArchive(item.id)}
             className="text-xs text-zinc-700 hover:text-zinc-500 ml-auto"
           >
-            Archive
+            संग्रह
           </button>
         )}
         {(item.status === "archived" || item.status === "rejected") && (
@@ -263,7 +268,7 @@ function QueueCard({
             onClick={() => onDelete(item.id)}
             className="text-xs text-zinc-700 hover:text-red-500 ml-auto"
           >
-            Delete
+            मेटाउनुहोस्
           </button>
         )}
       </div>
@@ -310,25 +315,29 @@ export default function QueueClient() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Permanently delete this queue item?")) return;
+    if (!confirm("यो queue item permanently मेटाउने? यो action undo हुँदैन।")) return;
     await deleteQueueItem(id);
   };
 
   return (
     <div className="p-6 lg:p-8">
       {/* Header */}
-      <div className="mb-8">
+      <div className="mb-6">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
-            <h1 className="text-3xl font-black text-white">Content Queue</h1>
-            <p className="text-zinc-500 text-sm mt-1">
-              AI-generated ideas awaiting review — every item traces back to its source document
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className="text-lg">📋</span>
+              <h1 className="text-2xl font-black text-white">सामग्री Queue</h1>
+            </div>
+            <p className="text-zinc-500 text-sm mt-1 leading-relaxed max-w-lg">
+              AI ले document बाट बनाएका ideas — तपाईंले review गरेर approve गर्नुहोस्,
+              तब मात्र AI Studio मा script बन्छ।
             </p>
           </div>
           {counts.pending > 0 && (
-            <div className="bg-amber-900 border border-amber-800 rounded-2xl px-4 py-2 text-center">
+            <div className="bg-amber-900 border border-amber-800 rounded-2xl px-4 py-2 text-center shrink-0">
               <p className="text-2xl font-black text-amber-300">{counts.pending}</p>
-              <p className="text-amber-500 text-xs">Pending review</p>
+              <p className="text-amber-500 text-xs">review पर्खिरहेको</p>
             </div>
           )}
         </div>
@@ -342,54 +351,87 @@ export default function QueueClient() {
         </div>
       )}
 
-      {/* Learning mode — workflow explainer */}
-      {learn && !loading && (
-        <div className="mb-6 bg-cyan-950/30 border border-cyan-900/50 rounded-2xl p-5">
-          <p className="text-xs font-semibold text-cyan-400 uppercase tracking-widest mb-3">How Content Queue Works</p>
-          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 text-[10px] text-zinc-400">
+      {/* Workflow explainer — always visible, Nepali */}
+      {!loading && (
+        <div className="mb-6 bg-zinc-900 border border-zinc-800 rounded-2xl p-4">
+          <p className="text-xs font-bold text-zinc-400 uppercase tracking-wider mb-3">यो Queue कसरी काम गर्छ?</p>
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
             {[
-              { step: "Signal Feed", desc: "Raw intelligence from ingest-url", cost: "🟢 Free (already paid)" },
-              { step: "Validate →\nGenerate Idea", desc: "Claude Haiku writes content brief + hooks", cost: "🟢 Cheap (~2k tokens)" },
-              { step: "Pending Queue", desc: "You review: Approve or Reject", cost: "Free — no AI" },
-              { step: "AI Studio", desc: "Claude Sonnet writes full script / thumbnail prompts", cost: "🔴 Expensive (Bedrock)" },
-              { step: "In Production", desc: "You film + edit + publish", cost: "Free" },
-            ].map((s, i) => (
-              <div key={i} className="bg-zinc-900 rounded-lg p-2.5 space-y-1">
-                <p className="font-semibold text-zinc-300 whitespace-pre-line">{s.step}</p>
-                <p>{s.desc}</p>
-                <p className="text-[9px]">{s.cost}</p>
+              {
+                icon:  "🔍",
+                step:  "Signal / Document",
+                np:    "Intelligence आउँछ",
+                cost:  "🟢 Free",
+              },
+              {
+                icon:  "🤖",
+                step:  "AI ले Idea बनाउँछ",
+                np:    "Claude ले brief र hooks लेख्छ",
+                cost:  "🟢 सस्तो (~2k tokens)",
+              },
+              {
+                icon:  "👁",
+                step:  "तपाईंले Review",
+                np:    "स्वीकृत वा अस्वीकार गर्नुहोस्",
+                cost:  "Free — AI छैन",
+              },
+              {
+                icon:  "⚡",
+                step:  "AI Studio",
+                np:    "Full script र thumbnail prompt",
+                cost:  "🔴 Token खर्च हुन्छ",
+              },
+              {
+                icon:  "🎬",
+                step:  "प्रकाशन",
+                np:    "तपाईंले film र edit गर्नुहोस्",
+                cost:  "Free",
+              },
+            ].map((s, i, arr) => (
+              <div key={i} className="flex sm:flex-col items-start gap-2 sm:gap-1 relative">
+                <div className="bg-zinc-800 rounded-xl p-2.5 flex-1 w-full">
+                  <p className="text-base mb-1">{s.icon}</p>
+                  <p className="text-xs font-bold text-zinc-200 leading-snug">{s.step}</p>
+                  <p className="text-[10px] text-zinc-500 mt-0.5 leading-relaxed">{s.np}</p>
+                  <p className="text-[9px] text-zinc-600 mt-1">{s.cost}</p>
+                </div>
+                {i < arr.length - 1 && (
+                  <span className="text-zinc-700 text-xs sm:hidden">›</span>
+                )}
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* How this works — only show when empty */}
+      {/* Empty state — Nepali guidance */}
       {!loading && items.length === 0 && (
-        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8">
-          <h3 className="text-white font-semibold text-sm mb-3">How the Content Queue works</h3>
-          <ol className="space-y-2">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 mb-8 text-center">
+          <p className="text-3xl mb-3">📭</p>
+          <p className="text-white font-bold text-base mb-1">Queue खाली छ</p>
+          <p className="text-zinc-500 text-sm mb-5 leading-relaxed max-w-sm mx-auto">
+            पहिले document upload गरेर AI ले analyze गर्नुहोस् —
+            content ideas automatically यहाँ आउँछन्।
+          </p>
+          <ol className="text-left space-y-2 max-w-sm mx-auto mb-5">
             {[
-              "Upload a source document (NRB circular, EPF policy, research PDF) in the Intelligence Library",
-              "Click \"Analyze with AI\" — Claude extracts insights and proposes content ideas",
-              "Content ideas automatically appear here as pending queue items",
-              "Review each idea — verify the source, check the insights, then Approve or Reject",
-              "Approved items flow to AI Studio for script generation",
+              "📄 Documents मा जानुहोस् र document upload गर्नुहोस्",
+              "🤖 'AI ले Analyze' थिच्नुहोस् — ideas automatically बन्छन्",
+              "👁 यहाँ आएर review गर्नुहोस् — स्वीकृत वा अस्वीकार",
+              "⚡ Approved ideas AI Studio मा script बन्न जान्छन्",
             ].map((step, i) => (
               <li key={i} className="flex items-start gap-3 text-sm">
-                <span className="bg-zinc-800 text-zinc-400 text-xs rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-bold">{i + 1}</span>
+                <span className="bg-zinc-800 text-zinc-500 text-xs rounded-full w-5 h-5 flex items-center justify-center shrink-0 mt-0.5 font-bold">{i + 1}</span>
                 <span className="text-zinc-400">{step}</span>
               </li>
             ))}
           </ol>
-          <div className="mt-4">
-            <Link
-              href="/vault/documents"
-              className="text-green-400 hover:text-green-300 text-sm font-semibold"
-            >
-              Go to Intelligence Library →
-            </Link>
-          </div>
+          <Link
+            href="/vault/documents"
+            className="inline-flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white font-bold px-5 py-2.5 rounded-xl text-sm transition-colors"
+          >
+            📄 Documents मा जानुहोस् →
+          </Link>
         </div>
       )}
 
@@ -420,11 +462,11 @@ export default function QueueClient() {
       {/* Content */}
       {loading ? (
         <div className="flex items-center justify-center py-24">
-          <p className="text-zinc-600 text-sm">Loading queue…</p>
+          <p className="text-zinc-600 text-sm">Queue लोड हुँदैछ…</p>
         </div>
       ) : filtered.length === 0 && items.length > 0 ? (
         <div className="text-center py-16 text-zinc-600 text-sm">
-          No {activeTab === "all" ? "" : activeTab} items.
+          यस category मा कुनै item छैन।
         </div>
       ) : filtered.length > 0 ? (
         <div className="grid sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -444,10 +486,12 @@ export default function QueueClient() {
       {/* Traceability principle footer */}
       {items.length > 0 && (
         <div className="mt-8 bg-zinc-900 border border-zinc-800 rounded-2xl p-5">
-          <p className="text-zinc-600 text-xs">
-            <span className="text-zinc-400 font-semibold">Source traceability: </span>
-            Every item above links to its originating document. Use "View Source →" to verify claims before approving.
-            Pending items auto-archive after 7 days. Nothing published without explicit approval.
+          <p className="text-zinc-600 text-xs leading-relaxed">
+            <span className="text-zinc-400 font-semibold">स्रोत जवाफदेहिता: </span>
+            माथिका हरेक item आफ्नो मूल document सँग जोडिएको छ।
+            Approve गर्नु अघि "स्रोत हेर्नुहोस् →" थिचेर verify गर्नुहोस्।
+            Review नगरेका items ७ दिनपछि automatically संग्रहित हुन्छन्।
+            Approve नगरेसम्म कुनै पनि item publish हुँदैन।
           </p>
         </div>
       )}

@@ -859,7 +859,7 @@ export default function DocumentsClient() {
           <div>
             <div className="flex items-center gap-2 mb-0.5">
               <span className="text-lg">📚</span>
-              <h1 className="text-xl font-black text-white">Civic Intelligence Library</h1>
+              <h1 className="text-xl font-black text-white">नागरिक Intelligence Library</h1>
             </div>
             <p className="text-zinc-500 text-xs leading-relaxed max-w-lg">
               यहाँ सरकारी, आर्थिक, नीतिगत वा अनुसन्धान documents upload गरिन्छ।

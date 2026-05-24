@@ -632,7 +632,7 @@ export default function AdminVaultClient() {
             <div className="flex items-center gap-2 mb-0.5">
               <span>👁</span>
               <h1 className="text-lg font-bold text-white tracking-tight">
-                Civic Review Center
+                समीक्षा केन्द्र
               </h1>
             </div>
             <p className="text-xs text-zinc-600 mt-0.5 max-w-sm leading-relaxed">
