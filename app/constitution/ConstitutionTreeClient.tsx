@@ -8,7 +8,7 @@ import { collection, query, where, getDocs, addDoc } from "firebase/firestore";
 import { db } from "../firebase";
 import type { ConstitutionalFrameworkRecord } from "../../lib/types/constitutional-framework";
 
-const TREE_BG_IMAGE = "/banyan-tree.jpg";
+const TREE_BG_IMAGE = "/banyan-tree.png";
 const HAS_IMAGE     = !!TREE_BG_IMAGE;
 const T             = HAS_IMAGE ? 0.13 : 0.88;
 const M             = HAS_IMAGE ? 0.00 : 0.76;
