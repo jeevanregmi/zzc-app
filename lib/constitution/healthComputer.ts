@@ -4,10 +4,11 @@ import type { IntelligenceRecord } from "../types/intelligence-record";
 
 export type BranchHealthState =
   | "healthy"   // strong positive implementation signal
-  | "fruiting"  // good progress, some active outputs
-  | "budding"   // early/announced, movement but weak
-  | "weak"      // mixed signals — some progress, some delays
-  | "dry"       // mostly stalled or unstarted
+  | "fruiting"  // good progress, active outputs
+  | "budding"   // early / newly sprouted movement
+  | "weak"      // mixed — some progress, many gaps
+  | "yellow"    // warning-heavy: slow progress, mostly delays
+  | "dry"       // stalled, mostly unstarted
   | "damaged"   // failures and contradictions dominate
   | "unknown";  // no linked records
 
@@ -178,8 +179,9 @@ function stateFromScore(score: number, total: number): BranchHealthState {
   if (score >= 78)    return "healthy";
   if (score >= 63)    return "fruiting";
   if (score >= 50)    return "budding";
-  if (score >= 35)    return "weak";
-  if (score >= 20)    return "dry";
+  if (score >= 38)    return "weak";
+  if (score >= 25)    return "yellow";
+  if (score >= 14)    return "dry";
   return "damaged";
 }
 
@@ -298,10 +300,11 @@ export function computeAllPartsHealth(
 
 export const HEALTH_COLORS: Record<BranchHealthState, { glow: string; dot: string; label: string }> = {
   healthy:  { glow: "rgba(74,222,128,0.18)",  dot: "#4ade80", label: "स्वस्थ" },
-  fruiting: { glow: "rgba(251,191,36,0.16)",  dot: "#fbbf24", label: "फलिएको" },
-  budding:  { glow: "rgba(134,239,172,0.13)", dot: "#86efac", label: "पलाउँदो" },
-  weak:     { glow: "rgba(253,224,71,0.12)",  dot: "#fde047", label: "कमजोर" },
-  dry:      { glow: "rgba(120,53,15,0.14)",   dot: "#92400e", label: "सुकेको" },
+  fruiting: { glow: "rgba(251,191,36,0.16)",  dot: "#fbbf24", label: "फल्दै/फुल्दै" },
+  budding:  { glow: "rgba(134,239,172,0.13)", dot: "#86efac", label: "नयाँ पालुवा" },
+  weak:     { glow: "rgba(148,163,184,0.12)", dot: "#94a3b8", label: "कमजोर" },
+  yellow:   { glow: "rgba(253,224,71,0.12)",  dot: "#fde047", label: "पहेँलो/ढिलो" },
+  dry:      { glow: "rgba(120,53,15,0.14)",   dot: "#92400e", label: "सुक्खा" },
   damaged:  { glow: "rgba(239,68,68,0.22)",   dot: "#ef4444", label: "क्षतिग्रस्त" },
-  unknown:  { glow: "transparent",             dot: "transparent", label: "अज्ञात" },
+  unknown:  { glow: "transparent",             dot: "#475569", label: "अज्ञात/डेटा नभएको" },
 };
