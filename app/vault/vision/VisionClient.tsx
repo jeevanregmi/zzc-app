@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useVaultAuth }      from "../../../hooks/vault/useVaultAuth";
 import { useFounderVision }  from "../../../hooks/vault/useFounderVision";
 import type {
@@ -112,6 +112,21 @@ function EmptyState({ onNew }: { onNew: () => void }) {
       >
         + Record First Vision
       </button>
+    </div>
+  );
+}
+
+// ─── Toast ───────────────────────────────────────────────────────────────────
+
+function Toast({ msg, type }: { msg: string; type: "success" | "error" }) {
+  return (
+    <div className={`fixed bottom-6 right-6 z-50 max-w-sm px-4 py-3 rounded-xl text-sm font-semibold shadow-2xl flex items-start gap-2 ${
+      type === "success"
+        ? "bg-green-950 border border-green-800 text-green-300"
+        : "bg-red-950 border border-red-800 text-red-300"
+    }`}>
+      <span className="shrink-0 mt-0.5">{type === "success" ? "✓" : "✗"}</span>
+      <span className="leading-relaxed">{msg}</span>
     </div>
   );
 }
@@ -248,12 +263,12 @@ function EntryForm({ initial, onSave, onCancel, saving, title }: {
     setForm(p => ({ ...p, [k]: v }));
   }
 
-  function handleSave() {
+  async function handleSave() {
     const tags = tagInput
       .split(",")
       .map(t => t.trim().toLowerCase().replace(/\s+/g, "-"))
       .filter(Boolean);
-    onSave({ ...form, tags });
+    await onSave({ ...form, tags });
   }
 
   const isLetter = form.type === "letter";
@@ -417,6 +432,18 @@ export default function VisionClient() {
   const [filterType, setFilterType] = useState<VisionEntryType | "all">("all");
   const [filterVis,  setFilterVis]  = useState<VisionVisibility | "all">("all");
   const [viewMode,   setViewMode]   = useState<"timeline" | "letters">("timeline");
+  const [toast,      setToast]      = useState<{ msg: string; type: "success" | "error" } | null>(null);
+
+  // Auto-dismiss toast after 4s
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  function showToast(msg: string, type: "success" | "error") {
+    setToast({ msg, type });
+  }
 
   const filtered = useMemo(() => {
     let list = entries;
@@ -433,16 +460,27 @@ export default function VisionClient() {
   const revisitCount = entries.filter(e => e.revisitAt && e.revisitAt <= today).length;
 
   async function handleSave(input: FounderVisionInput) {
-    if (!user) return;
+    if (!user) {
+      showToast("Not signed in — please refresh and try again.", "error");
+      return;
+    }
+    const payload = { ...input, ownerId: user.uid };
+    console.log("[VisionVault] saving:", payload);
     setSaving(true);
     try {
       if (editEntry) {
         await update(editEntry.id, input);
         setEditEntry(null);
+        showToast("Entry updated successfully.", "success");
       } else {
         await add(input, user.uid);
         setShowForm(false);
+        showToast("Vision saved to institutional memory.", "success");
       }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[VisionVault] save error:", err);
+      showToast(`Save failed: ${msg}`, "error");
     } finally {
       setSaving(false);
     }
@@ -464,6 +502,9 @@ export default function VisionClient() {
 
   return (
     <div className="p-4 sm:p-6 max-w-4xl mx-auto">
+
+      {/* Toast */}
+      {toast && <Toast msg={toast.msg} type={toast.type} />}
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-6">
