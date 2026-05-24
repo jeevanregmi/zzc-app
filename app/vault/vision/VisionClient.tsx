@@ -423,8 +423,8 @@ function EntryForm({ initial, onSave, onCancel, saving, title }: {
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function VisionClient() {
-  const { user }                        = useVaultAuth();
-  const { entries, loading, add, update, remove } = useFounderVision(user?.uid ?? null);
+  const { user }                                        = useVaultAuth();
+  const { entries, loading, queryError, add, update, remove } = useFounderVision(user?.uid ?? null);
 
   const [showForm,   setShowForm]   = useState(false);
   const [editEntry,  setEditEntry]  = useState<FounderVisionEntry | null>(null);
@@ -506,6 +506,15 @@ export default function VisionClient() {
       {/* Toast */}
       {toast && <Toast msg={toast.msg} type={toast.type} />}
 
+      {/* Auth + query debug strip */}
+      <div className="mb-4 text-xs text-zinc-700 flex items-center gap-3 flex-wrap">
+        <span>uid: <span className="font-mono text-zinc-500">{user?.uid ?? "—"}</span></span>
+        <span>collection: <span className="font-mono text-zinc-500">founder_vision</span></span>
+        {queryError && (
+          <span className="text-red-400 font-semibold">⚠ Query error: {queryError}</span>
+        )}
+      </div>
+
       {/* Header */}
       <div className="flex items-start justify-between gap-4 mb-6">
         <div>
@@ -561,6 +570,7 @@ export default function VisionClient() {
       {/* Loading */}
       {loading && (
         <div className="text-center py-16">
+          <div className="w-5 h-5 border-2 border-violet-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
           <p className="text-zinc-600 text-sm">Loading vision vault…</p>
         </div>
       )}

@@ -9,32 +9,46 @@ import { db } from "../../app/firebase";
 import type { FounderVisionEntry, FounderVisionInput } from "../../lib/types/founder-vision";
 
 export function useFounderVision(uid: string | null) {
-  const [entries, setEntries] = useState<FounderVisionEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [entries,    setEntries]    = useState<FounderVisionEntry[]>([]);
+  const [loading,    setLoading]    = useState(true);
+  const [queryError, setQueryError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!uid) { setLoading(false); return; }
-    // No orderBy here — avoids composite index requirement on founder_vision.
-    // Single where("ownerId") works without index. Sort client-side instead.
+
+    setLoading(true);
+    setQueryError(null);
+
+    // Single where("ownerId") equality filter — no composite index required.
+    // Sort descending client-side to avoid the missing-index error that a
+    // combined where+orderBy on different fields would trigger.
     const q = query(
       collection(db, "founder_vision"),
       where("ownerId", "==", uid),
     );
-    const unsub = onSnapshot(q, snap => {
-      const sorted = snap.docs
-        .map(d => ({ id: d.id, ...d.data() } as FounderVisionEntry))
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      setEntries(sorted);
-      setLoading(false);
-    }, err => {
-      console.error("[useFounderVision] query failed:", err);
-      setLoading(false);
-    });
+
+    const unsub = onSnapshot(
+      q,
+      snap => {
+        const sorted = snap.docs
+          .map(d => ({ id: d.id, ...d.data() } as FounderVisionEntry))
+          .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+        setEntries(sorted);
+        setQueryError(null);
+        setLoading(false);
+      },
+      err => {
+        console.error("[useFounderVision] Firestore query error:", err.code, err.message);
+        setQueryError(`${err.code}: ${err.message}`);
+        setLoading(false);
+      },
+    );
     return unsub;
   }, [uid]);
 
   async function add(input: FounderVisionInput, ownerId: string): Promise<void> {
     const now = new Date().toISOString();
+    console.log("[useFounderVision] add — ownerId:", ownerId, "collection: founder_vision");
     await addDoc(collection(db, "founder_vision"), {
       ...input,
       ownerId,
@@ -54,5 +68,5 @@ export function useFounderVision(uid: string | null) {
     await deleteDoc(doc(db, "founder_vision", id));
   }
 
-  return { entries, loading, add, update, remove };
+  return { entries, loading, queryError, add, update, remove };
 }
