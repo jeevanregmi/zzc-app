@@ -5,8 +5,7 @@ const BASE_URL = "https://zzc.jeevanregmi.com.np";
 const FIRESTORE =
   "https://firestore.googleapis.com/v1/projects/zeneration-z-chautari/databases/(default)/documents/structuredSchemes";
 
-// dynamicParams = true so requests still work when SSG skips due to rate limits
-export const dynamicParams = true;
+export const dynamicParams = false;
 
 // One fetch per build worker — no cache option (force-cache breaks webpack builds)
 let schemesPromise: Promise<Map<string, Record<string, any>>> | null = null;
@@ -16,21 +15,23 @@ function getAllSchemeFields(): Promise<Map<string, Record<string, any>>> {
     schemesPromise = fetch(`${FIRESTORE}?pageSize=200`)
       .then((r) => {
         if (!r.ok) {
-          console.warn(`[scheme/page] Firestore returned ${r.status} — skipping SSG`);
-          return { documents: [] };
+          // 429 rate-limit or other transient error — return empty so build doesn't crash.
+          // Scheme pages will be absent from this deploy; next build will re-render them.
+          console.warn(`[scheme/page] Firestore returned ${r.status} — SSG skipped`);
+          return { documents: [] } as { documents: any[] };
         }
-        return r.json();
+        return r.json() as Promise<{ documents?: any[] }>;
       })
       .then((data) => {
         const map = new Map<string, Record<string, any>>();
-        for (const doc of (data as { documents?: any[] }).documents ?? []) {
+        for (const doc of data.documents ?? []) {
           const id: string = doc.name.split("/").pop();
           map.set(id, doc.fields ?? {});
         }
         return map;
       })
       .catch((err) => {
-        console.warn(`[scheme/page] Firestore fetch failed — skipping SSG: ${err}`);
+        console.warn(`[scheme/page] Firestore fetch error — SSG skipped: ${err}`);
         return new Map<string, Record<string, any>>();
       });
   }
