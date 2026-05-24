@@ -82,6 +82,14 @@ export default function DocumentsClient() {
   const [search,       setSearch]      = useState("");
   const [filter,       setFilter]      = useState<FilterCategory>("all");
   const [showUpload,    setShowUpload]   = useState(false);
+
+  // Auto-open upload modal when navigated from health page with ?upload=1
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.location.search.includes("upload=1")) {
+      setShowUpload(true);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
   const [viewing,       setViewing]      = useState<IntelligenceDocument | null>(null);
   const [processingId,  setProcessingId] = useState<string | null>(null);
   const [generatingImageId, setGeneratingImageId] = useState<string | null>(null);

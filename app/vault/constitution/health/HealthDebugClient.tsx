@@ -390,16 +390,17 @@ function UploadGuidanceSection({ partNumber }: { partNumber: number }) {
                     {copied === copyKey ? "✓ copied" : "copy"}
                   </button>
                 </div>
+
+                {/* Direct upload button per recommendation */}
+                <a
+                  href="/vault/documents?upload=1"
+                  style={{ marginTop: "8px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "8px 12px", background: "rgba(34,197,94,0.10)", border: "1px solid rgba(34,197,94,0.25)", borderRadius: "7px", fontSize: "11px", fontWeight: 700, color: "#4ade80", textDecoration: "none" }}
+                >
+                  📤 यो document अहिले upload गर्नुहोस्
+                </a>
               </div>
             );
           })}
-
-          <a
-            href="/vault/documents"
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "9px 14px", background: "rgba(96,165,250,0.07)", border: "1px solid rgba(96,165,250,0.20)", borderRadius: "8px", fontSize: "11px", fontWeight: 700, color: "#60a5fa", textDecoration: "none" }}
-          >
-            Vault मा upload गर्नुहोस् →
-          </a>
         </div>
       )}
     </div>
