@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { collection, deleteDoc, doc as firestoreDoc, getDocs, query, where } from "firebase/firestore";
 import { db } from "../../../firebase";
 import { useVaultAuth } from "../../../../hooks/vault/useVaultAuth";
 import { useLearningMode } from "../../../../contexts/LearningModeContext";
@@ -830,6 +830,39 @@ export default function HealthDebugClient() {
       .finally(() => setLoading(false));
   }, [user]);
 
+  // ── Dedup constitutional_framework by articleId ──────────────────────────
+  const [deduping, setDeduping] = useState(false);
+
+  const handleDedup = async () => {
+    if (!user || deduping) return;
+    setDeduping(true);
+    try {
+      const snap = await getDocs(collection(db, "constitutional_framework"));
+      const byKey = new Map<string, { id: string; createdAt: string }[]>();
+      for (const d of snap.docs) {
+        const data = d.data() as Record<string, unknown>;
+        const key = `${String(data.articleId ?? "unknown")}_${String(data.sourceDocId ?? "")}`;
+        if (!byKey.has(key)) byKey.set(key, []);
+        byKey.get(key)!.push({ id: d.id, createdAt: String(data.createdAt ?? "") });
+      }
+      let deleted = 0;
+      for (const [, recs] of byKey) {
+        if (recs.length <= 1) continue;
+        recs.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        for (const r of recs.slice(1)) {
+          await deleteDoc(firestoreDoc(db, "constitutional_framework", r.id));
+          deleted++;
+        }
+      }
+      alert(`✅ Dedup सम्पन्न! ${deleted} duplicate records हटाइए।\n\nPage reload गर्दैछ…`);
+      window.location.reload();
+    } catch (err) {
+      alert(`Dedup error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setDeduping(false);
+    }
+  };
+
   // Group by state
   const grouped = new Map<BranchHealthState, BranchHealth[]>();
   for (const state of SECTION_ORDER) grouped.set(state, []);
@@ -891,6 +924,18 @@ export default function HealthDebugClient() {
         {loading && (
           <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.22)", margin: "12px 0 0", fontStyle: "italic" }}>सबै तह लोड गर्दै…</p>
         )}
+        <div style={{ marginTop: "12px" }}>
+          <button
+            onClick={handleDedup}
+            disabled={deduping}
+            style={{ fontSize: "11px", fontWeight: 700, padding: "6px 14px", borderRadius: "20px", border: "1px solid rgba(251,191,36,0.50)", color: deduping ? "rgba(251,191,36,0.40)" : "#fbbf24", background: "rgba(251,191,36,0.08)", cursor: deduping ? "default" : "pointer" }}
+          >
+            {deduping ? "🧹 Duplicate हटाउँदैछ…" : "🧹 Duplicate Records हटाउनुस्"}
+          </button>
+          <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)", marginLeft: "10px" }}>
+            Extraction दोहोरियो भने यहाँ click गर्नुस् — पुरानो records राखेर नयाँ हटाउँछ
+          </span>
+        </div>
       </div>
 
       {learnOn && <LearnBanner />}
