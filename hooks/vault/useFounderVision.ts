@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import {
-  collection, query, where, orderBy, onSnapshot,
+  collection, query, where, onSnapshot,
   addDoc, updateDoc, deleteDoc, doc,
 } from "firebase/firestore";
 import { db } from "../../app/firebase";
@@ -14,15 +14,22 @@ export function useFounderVision(uid: string | null) {
 
   useEffect(() => {
     if (!uid) { setLoading(false); return; }
+    // No orderBy here — avoids composite index requirement on founder_vision.
+    // Single where("ownerId") works without index. Sort client-side instead.
     const q = query(
       collection(db, "founder_vision"),
       where("ownerId", "==", uid),
-      orderBy("createdAt", "desc"),
     );
     const unsub = onSnapshot(q, snap => {
-      setEntries(snap.docs.map(d => ({ id: d.id, ...d.data() } as FounderVisionEntry)));
+      const sorted = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as FounderVisionEntry))
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+      setEntries(sorted);
       setLoading(false);
-    }, () => setLoading(false));
+    }, err => {
+      console.error("[useFounderVision] query failed:", err);
+      setLoading(false);
+    });
     return unsub;
   }, [uid]);
 
