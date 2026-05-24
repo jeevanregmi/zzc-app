@@ -59,12 +59,7 @@ const PARTS: ConstitutionPart[] = [
 ];
 
 function articlesForPart(arts: ConstitutionalFrameworkRecord[], p: ConstitutionPart) {
-  return arts.filter(a => {
-    const partStr = a.part ?? "";
-    return partStr === p.partLabel
-      || partStr.includes(`भाग ${p.partNumber}`)
-      || partStr.includes(`Part ${p.partNumber}`);
-  });
+  return arts.filter(a => a.partNumber === p.partNumber);
 }
 
 // ─── Seeded RNG ───────────────────────────────────────────────────────────────
@@ -240,7 +235,7 @@ function drawPartLabel(
   ctx.save();
   ctx.globalAlpha = opacity;
 
-  const scale = Math.max(0.72, 1 / Math.max(1, zoom * 0.75));
+  const scale = 1 / zoom;
   ctx.translate(x, y);
 
   const label = part.partLabel;
@@ -929,7 +924,7 @@ export default function ConstitutionTreeClient() {
     3: "विवरण",
   };
 
-  const trunkTextOp = Math.max(0, 1.4 - (camRef.current.zoom - 1) * 0.9);
+  const trunkTextOp = level === 0 ? 1.0 : level === 1 ? 0.30 : 0.0;
 
   return (
     <>
