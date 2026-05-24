@@ -14,6 +14,7 @@ import { LearningModeProvider, useLearningMode } from "../../contexts/LearningMo
 // ─── Primary nav — always visible ─────────────────────────────────────────────
 const PRIMARY_NAV = [
   { href: "/vault",                   icon: "◈", label: "Overview"      },
+  { href: "/vault/vision",            icon: "🌱", label: "Vision Vault"  },
   { href: "/vault/documents",         icon: "◻", label: "Documents"     },
   { href: "/vault/admin",             icon: "⬡", label: "Admin Vault"   },
   { href: "/vault/content/queue",     icon: "◆", label: "Content Queue" },
