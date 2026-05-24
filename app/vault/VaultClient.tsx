@@ -403,6 +403,73 @@ function QuickActions({
   );
 }
 
+// ─── Tree Intelligence OS Navigation ─────────────────────────────────────────
+
+const TREE_OS_NAV = [
+  { href: "/vault/documents",           icon: "📄", label: "Documents",       sub: "vault_intelligence_docs",  color: "border-blue-800   bg-blue-950/30   text-blue-300   hover:bg-blue-950/60"    },
+  { href: "/vault/admin",               icon: "👁",  label: "Review / Approve", sub: "vault_intelligence_docs",  color: "border-orange-800 bg-orange-950/30 text-orange-300 hover:bg-orange-950/60"  },
+  { href: "/vault/atoms",               icon: "⚛",  label: "Civic Atoms OS",  sub: "vault_civic_atoms",         color: "border-cyan-800   bg-cyan-950/30   text-cyan-300   hover:bg-cyan-950/60"    },
+  { href: "/vault/constitution/health", icon: "🩺", label: "Branch Health",   sub: "vault_civic_atoms + janta", color: "border-green-800  bg-green-950/30  text-green-300  hover:bg-green-950/60"   },
+  { href: "/vault/constitution",        icon: "📜", label: "Constitution",     sub: "constitutional_framework",  color: "border-violet-800 bg-violet-950/30 text-violet-300 hover:bg-violet-950/60"  },
+  { href: "/constitution",              icon: "🌳", label: "Public Tree",      sub: "vault_civic_atoms",         color: "border-amber-800  bg-amber-950/30  text-amber-300  hover:bg-amber-950/60"   },
+  { href: "/vault/vision",              icon: "🧠", label: "Vision Vault",    sub: "founder_vision",            color: "border-pink-800   bg-pink-950/30   text-pink-300   hover:bg-pink-950/60"    },
+  { href: "/vault/products",            icon: "📦", label: "Products",         sub: "zzc_products",              color: "border-emerald-800 bg-emerald-950/30 text-emerald-300 hover:bg-emerald-950/60" },
+];
+
+const SYSTEM_MAP_STEPS = [
+  { href: "/vault/documents",           icon: "📄", label: "Upload",   nepali: "Document", color: "#60a5fa" },
+  { href: "/vault/admin",               icon: "🤖", label: "AI + Review", nepali: "Analyse", color: "#fb923c" },
+  { href: "/vault/atoms",               icon: "⚛",  label: "Atoms",    nepali: "Atoms", color: "#67e8f9" },
+  { href: "/vault/constitution/health", icon: "🌿", label: "Tree",     nepali: "Health", color: "#4ade80" },
+  { href: "/vault/constitution/health", icon: "🎓", label: "Learning", nepali: "Nepali", color: "#a78bfa" },
+  { href: "/constitution",              icon: "👁",  label: "Public",   nepali: "Citizens", color: "#fbbf24" },
+];
+
+function TreeOSNav() {
+  return (
+    <section className="mb-5">
+      {/* System Map */}
+      <div className="mb-3 p-3 bg-zinc-900/80 border border-zinc-700 rounded-2xl overflow-x-auto">
+        <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-2">
+          🌳 Tree Intelligence OS — System Map
+        </p>
+        <div className="flex items-center gap-1 min-w-max">
+          {SYSTEM_MAP_STEPS.map((step, i) => (
+            <div key={i} className="flex items-center gap-1">
+              <Link
+                href={step.href}
+                className="flex flex-col items-center gap-0.5 px-3 py-2 rounded-xl hover:bg-zinc-800/60 transition-colors text-center"
+                style={{ minWidth: "56px" }}
+              >
+                <span className="text-base leading-none">{step.icon}</span>
+                <span className="text-[10px] font-bold leading-none mt-1" style={{ color: step.color }}>{step.label}</span>
+                <span className="text-[9px] text-zinc-600 leading-none mt-0.5">{step.nepali}</span>
+              </Link>
+              {i < SYSTEM_MAP_STEPS.length - 1 && (
+                <span className="text-zinc-700 text-xs shrink-0">→</span>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 8 Nav Buttons */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {TREE_OS_NAV.map(n => (
+          <Link
+            key={n.href}
+            href={n.href}
+            className={`flex flex-col gap-0.5 px-3 py-2.5 border rounded-xl text-xs font-bold transition-colors ${n.color}`}
+          >
+            <span className="text-base leading-none">{n.icon} {n.label}</span>
+            <span className="text-[9px] font-mono opacity-50 truncate">{n.sub}</span>
+          </Link>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 // ─── Section grid ─────────────────────────────────────────────────────────────
 
 function SectionGrid({
@@ -667,6 +734,9 @@ export default function VaultClient() {
         pendingReview={pendingReview}
         queuePending={queuePending}
       />
+
+      {/* Tree Intelligence OS — system map + 8 nav buttons */}
+      <TreeOSNav />
 
       {/* Section grid — all pages with Nepali explanations */}
       <SectionGrid

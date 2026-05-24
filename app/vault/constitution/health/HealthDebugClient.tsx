@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "../../../firebase";
 import { useVaultAuth } from "../../../../hooks/vault/useVaultAuth";
@@ -16,7 +17,9 @@ import {
   type PartStructuralProfile,
 } from "../../../../lib/constitution/structuralComputer";
 import type { IntelligenceRecord } from "../../../../lib/types/intelligence-record";
+import type { CivicAtom } from "../../../../lib/types/atoms";
 import type { ConstitutionalFrameworkRecord } from "../../../../lib/types/constitutional-framework";
+import { atomsToIntelRecords } from "../../../../lib/vault/atomToIntelBridge";
 import { PARTS_META } from "./partsMeta";
 import { UPLOAD_GUIDANCE, type VaultCategory } from "../../../../lib/constitution/uploadGuidance";
 import {
@@ -489,7 +492,7 @@ function PartCard({
 
       {/* ── Layer 2: Live Intelligence ───────────────────────────────────────── */}
       <div style={{ background: "rgba(74,222,128,0.03)", border: "1px solid rgba(74,222,128,0.10)", borderRadius: "8px", padding: "10px 12px" }}>
-        <LayerLabel label="तह २ · जीवित बुद्धि" sub="intelligence records" color={col.dot} />
+        <LayerLabel label="तह २ · जीवित बुद्धि" sub="vault_civic_atoms + janta" color={col.dot} />
         <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
           {LIVE_METRICS.map(m => (
             <LivePill key={m.id} m={m} health={health} activeId={activeLive} onToggle={toggleLive} learnOn={learnOn} />
@@ -604,27 +607,39 @@ function LearnBanner() {
 export default function HealthDebugClient() {
   const { user }          = useVaultAuth();
   const { on: learnOn }   = useLearningMode();
-  const [healthMap,     setHealthMap]     = useState<Map<number, BranchHealth>>(new Map());
-  const [structMap,     setStructMap]     = useState<Map<number, PartStructuralProfile>>(new Map());
-  const [deepLearnMap,  setDeepLearnMap]  = useState<Map<number, PartDeepLearnProfile>>(new Map());
-  const [loading,       setLoading]       = useState(true);
-  const [totalIntel,    setTotalIntel]    = useState(0);
-  const [totalAtoms,    setTotalAtoms]    = useState(0);
+  const [healthMap,      setHealthMap]      = useState<Map<number, BranchHealth>>(new Map());
+  const [structMap,      setStructMap]      = useState<Map<number, PartStructuralProfile>>(new Map());
+  const [deepLearnMap,   setDeepLearnMap]   = useState<Map<number, PartDeepLearnProfile>>(new Map());
+  const [loading,        setLoading]        = useState(true);
+  const [totalIntel,     setTotalIntel]     = useState(0);
+  const [totalAtoms,     setTotalAtoms]     = useState(0);
+  const [totalCivicAtoms, setTotalCivicAtoms] = useState(0);
 
   useEffect(() => {
     if (!user) return;
     Promise.all([
+      // New system: vault_civic_atoms
+      getDocs(collection(db, "vault_civic_atoms")),
+      // Old system: janta_intelligence
       getDocs(query(collection(db, "janta_intelligence"), where("publishToJanta", "==", true))),
+      // Static skeleton: constitutional_framework
       getDocs(query(collection(db, "constitutional_framework"), where("publishToJanta", "==", true))),
     ])
-      .then(([intelSnap, atomSnap]) => {
-        const records = intelSnap.docs.map(d => ({ id: d.id, ...d.data() } as IntelligenceRecord));
-        const atoms   = atomSnap.docs.map(d => ({ id: d.id, ...d.data() } as ConstitutionalFrameworkRecord));
-        setTotalIntel(records.length);
-        setTotalAtoms(atoms.length);
-        setHealthMap(computeAllPartsHealth(PART_NUMBERS, records));
-        setStructMap(computeAllStructuralProfiles(PART_NUMBERS, atoms));
-        setDeepLearnMap(computeAllDeepLearnProfiles(PART_NUMBERS, atoms));
+      .then(([civicSnap, intelSnap, constitSnap]) => {
+        const civicAtoms = civicSnap.docs.map(d => ({ id: d.id, ...d.data() } as CivicAtom));
+        const jantaRecs  = intelSnap.docs.map(d => ({ id: d.id, ...d.data() } as IntelligenceRecord));
+        const constAtoms = constitSnap.docs.map(d => ({ id: d.id, ...d.data() } as ConstitutionalFrameworkRecord));
+
+        // Bridge civic atoms into intel record shape, then merge with janta records
+        const bridged  = atomsToIntelRecords(civicAtoms);
+        const allIntel = [...bridged, ...jantaRecs];
+
+        setTotalCivicAtoms(civicAtoms.length);
+        setTotalIntel(jantaRecs.length);
+        setTotalAtoms(constAtoms.length);
+        setHealthMap(computeAllPartsHealth(PART_NUMBERS, allIntel));
+        setStructMap(computeAllStructuralProfiles(PART_NUMBERS, constAtoms));
+        setDeepLearnMap(computeAllDeepLearnProfiles(PART_NUMBERS, constAtoms));
       })
       .catch(err => console.error("[HealthDebug]", err))
       .finally(() => setLoading(false));
@@ -645,6 +660,46 @@ export default function HealthDebugClient() {
   return (
     <div style={{ minHeight: "100vh", background: "#020805", color: "#fde68a", fontFamily: "system-ui, sans-serif" }}>
 
+      {/* ── OS Navigation Bar ───────────────────────────────────────────────── */}
+      <div style={{ background: "rgba(0,0,0,0.60)", borderBottom: "1px solid rgba(255,255,255,0.06)", padding: "10px 24px", display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+        <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.20)", fontWeight: 700, letterSpacing: "0.12em", marginRight: "6px" }}>TREE OS</span>
+        {[
+          { href: "/vault/documents",          label: "📄 Documents",       color: "#60a5fa" },
+          { href: "/vault/admin",              label: "👁 Review",          color: "#fb923c" },
+          { href: "/vault/atoms",              label: "⚛ Atoms OS",        color: "#67e8f9" },
+          { href: "/vault/constitution/health",label: "🩺 Branch Health",   color: "#4ade80", active: true },
+          { href: "/vault/constitution",       label: "📜 Framework",       color: "#a78bfa" },
+          { href: "/constitution",             label: "🌳 Public Tree",     color: "#fbbf24" },
+          { href: "/vault/vision",             label: "🧠 Vision",          color: "#f472b6" },
+          { href: "/vault/products",           label: "📦 Products",        color: "#34d399" },
+        ].map(n => (
+          <Link key={n.href} href={n.href} style={{
+            fontSize: "11px", fontWeight: 700, padding: "4px 10px",
+            borderRadius: "20px", border: `1px solid ${n.color}${n.active ? "90" : "35"}`,
+            color: n.active ? "#fff" : n.color,
+            background: n.active ? `${n.color}22` : "transparent",
+            textDecoration: "none", whiteSpace: "nowrap",
+          }}>
+            {n.label}
+          </Link>
+        ))}
+      </div>
+
+      {/* ── OS Page Info Bar ────────────────────────────────────────────────── */}
+      <div style={{ background: "rgba(74,222,128,0.05)", borderBottom: "1px solid rgba(74,222,128,0.12)", padding: "10px 24px", display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+          <span style={{ fontSize: "9px", fontWeight: 800, color: "#4ade80", letterSpacing: "0.10em", textTransform: "uppercase", marginRight: "4px" }}>reads from</span>
+          {["vault_civic_atoms", "janta_intelligence", "constitutional_framework"].map(col => (
+            <span key={col} style={{ fontSize: "9px", fontFamily: "monospace", color: "rgba(74,222,128,0.70)", background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.20)", borderRadius: "4px", padding: "1px 6px" }}>
+              {col}
+            </span>
+          ))}
+        </div>
+        <Link href="/constitution" style={{ marginLeft: "auto", fontSize: "11px", fontWeight: 700, color: "#fbbf24", background: "rgba(251,191,36,0.10)", border: "1px solid rgba(251,191,36,0.30)", borderRadius: "20px", padding: "4px 12px", textDecoration: "none", whiteSpace: "nowrap" }}>
+          🌳 Public Tree हेर्नुहोस् →
+        </Link>
+      </div>
+
       {/* Header */}
       <div style={{ padding: "28px 24px 20px", borderBottom: "1px solid rgba(255,255,255,0.07)", background: "rgba(0,0,0,0.28)" }}>
         <p style={{ fontSize: "10px", color: "rgba(253,230,138,0.35)", letterSpacing: "0.14em", fontWeight: 700, margin: "0 0 5px" }}>
@@ -652,16 +707,17 @@ export default function HealthDebugClient() {
         </p>
         <h1 style={{ fontSize: "24px", fontWeight: 900, margin: "0 0 5px" }}>शाखा स्वास्थ्य नियन्त्रण कक्ष</h1>
         <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.30)", margin: 0 }}>
-          दुई तहको संवैधानिक बुद्धि — संरचना र जीवित डेटा
+          तीन तहको बुद्धि — Civic Atoms · Janta Intelligence · Constitutional Skeleton
         </p>
 
         {!loading && (
           <div style={{ display: "flex", gap: "20px", marginTop: "16px", flexWrap: "wrap" }}>
             {[
-              { label: "संवैधानिक अंश",   value: totalAtoms,  color: "#c084fc" },
-              { label: "जीवित अभिलेख",    value: totalIntel,  color: "#4ade80" },
-              { label: "डेटा भएका भागहरू", value: withData,    color: "#fbbf24" },
-              { label: "औसत स्वास्थ्य",   value: `${avgScore}/100`, color: "#60a5fa" },
+              { label: "⚛ Civic Atoms",       value: totalCivicAtoms, color: "#67e8f9" },
+              { label: "📋 Janta Records",     value: totalIntel,      color: "#4ade80" },
+              { label: "📜 Constitution Atoms", value: totalAtoms,      color: "#c084fc" },
+              { label: "डेटा भएका भागहरू",    value: withData,        color: "#fbbf24" },
+              { label: "औसत स्वास्थ्य",       value: `${avgScore}/100`, color: "#60a5fa" },
             ].map(s => (
               <div key={s.label}>
                 <p style={{ fontSize: "20px", fontWeight: 900, color: s.color, margin: 0, lineHeight: 1 }}>{s.value}</p>

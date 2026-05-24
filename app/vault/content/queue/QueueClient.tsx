@@ -142,16 +142,24 @@ function QueueCard({
                 <p className="text-zinc-600 text-xs">{item.sourceDocFileName} · {item.sourceUploadedAt ? formatRelative(item.sourceUploadedAt) : ""}</p>
               </div>
             </div>
-            {item.sourceDocUrl && (
-              <a
-                href={item.sourceDocUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-xs text-green-400 hover:text-green-300 font-semibold shrink-0 transition-colors"
+            <div className="flex items-center gap-2 shrink-0">
+              <Link
+                href={`/vault/documents?doc=${item.sourceDocId}`}
+                className="text-xs text-blue-400 hover:text-blue-300 font-semibold transition-colors border border-blue-900/60 bg-blue-950/30 px-2 py-1 rounded-lg"
               >
-                स्रोत हेर्नुहोस् →
-              </a>
-            )}
+                📄 Document हेर्नुहोस्
+              </Link>
+              {item.sourceDocUrl && (
+                <a
+                  href={item.sourceDocUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-green-400 hover:text-green-300 font-semibold transition-colors"
+                >
+                  स्रोत हेर्नुहोस् →
+                </a>
+              )}
+            </div>
           </div>
 
           {(item.sourceInsights ?? []).length > 0 && (
@@ -206,6 +214,12 @@ function QueueCard({
       <div className="flex items-center gap-2 flex-wrap border-t border-zinc-800 pt-3">
         {item.status === "pending" && (
           <>
+            <Link
+              href={`/vault/content/preview?id=${item.id}`}
+              className="text-xs bg-zinc-700 hover:bg-zinc-600 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+            >
+              👁 हेर्नुहोस्
+            </Link>
             <button
               onClick={() => onApprove(item.id)}
               title="स्वीकृत गर्नुहोस् — AI Studio मा script बन्न जान्छ"
@@ -228,7 +242,7 @@ function QueueCard({
               href={`/vault/content/preview?id=${item.id}`}
               className="text-xs bg-green-700 hover:bg-green-600 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
             >
-              हेर्नुहोस् →
+              👁 हेर्नुहोस्
             </Link>
             <Link
               href={studioUrl}
@@ -240,12 +254,20 @@ function QueueCard({
           </>
         )}
         {item.status === "in_production" && (
-          <Link
-            href={studioUrl}
-            className="text-xs bg-amber-600 hover:bg-amber-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
-          >
-            → AI Studio 🔴
-          </Link>
+          <>
+            <Link
+              href={`/vault/content/preview?id=${item.id}`}
+              className="text-xs bg-zinc-700 hover:bg-zinc-600 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+            >
+              👁 हेर्नुहोस्
+            </Link>
+            <Link
+              href={studioUrl}
+              className="text-xs bg-amber-600 hover:bg-amber-500 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+            >
+              → AI Studio 🔴
+            </Link>
+          </>
         )}
         {item.status !== "archived" && item.status !== "rejected" && (
           <button

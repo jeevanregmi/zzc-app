@@ -25,6 +25,17 @@ const PRIMARY_NAV = [
 // ─── Advanced nav — behind toggle ─────────────────────────────────────────────
 const ADVANCED_GROUPS = [
   {
+    label: "Tree Intelligence OS",
+    items: [
+      { href: "/vault/system-map",           icon: "🗺", label: "System Map"      },
+      { href: "/vault/atoms",               icon: "⚛", label: "Civic Atoms OS"  },
+      { href: "/vault/constitution/health", icon: "🩺", label: "Branch Health"   },
+      { href: "/vault/constitution",        icon: "📜", label: "Constitution"     },
+      { href: "/constitution",              icon: "🌳", label: "Public Tree"      },
+      { href: "/vault/products",            icon: "📦", label: "Products"         },
+    ],
+  },
+  {
     label: "Intelligence",
     items: [
       { href: "/vault/content/intelligence", icon: "◉", label: "Signal Feed"  },

@@ -7,6 +7,297 @@ import type { IntelligenceDocument, AdminApprovalStatus, SourceType } from "../.
 import { TrustBadge }  from "../TrustBadge";
 import { trustFromDoc } from "../../../lib/intelligence/trust-score";
 
+// ── Admin Teacher Panel ───────────────────────────────────────────────────────
+// Teaches the admin (as a teacher/curator) what every action button does at the
+// backend level: AI thinking pattern → data created → how it reaches citizens.
+
+interface DocActionDef {
+  id:         string;
+  icon:       string;
+  label:      string;
+  color:      string;        // tailwind border+text classes
+  bgColor:    string;        // tailwind bg class
+  // 4 teaching dimensions
+  aiSees:     string;        // what input AI receives
+  aiThinks:   string;        // what reasoning AI applies (the pattern)
+  creates:    string[];      // exact Firestore writes that happen
+  reaches:    string[];      // how knowledge flows to citizens
+  adminRole:  string;        // what the admin-as-teacher should decide
+}
+
+const DOC_ACTIONS: DocActionDef[] = [
+  {
+    id:       "reanalyze",
+    icon:     "🔄",
+    label:    "नेपालीमा Re-analyze",
+    color:    "border-orange-700 text-orange-300",
+    bgColor:  "bg-orange-950/30",
+    aiSees:   "R2 bucket बाट पुरै document content download गरेर OCR/text extract गर्छ — original PDF/DOCX को हरेक page।",
+    aiThinks: "THINKING PATTERN: Document लाई 'नागरिक-पठनीय' बनाउने। AI ले सोच्छ: 'यो NRB circular मा EPF interest rate change छ — नेपाली कर्मचारीले यो कसरी बुझ्छन्? सरल भाषामा explain गर्नुपर्छ।' Nepali explainer = citizen translation, not literal translation।",
+    creates:  [
+      "vault_intelligence_docs → nepaliExplainer (updated): सरल नेपाली explanation",
+      "vault_intelligence_docs → translationNe (updated): Nepali language content",
+      "vault_intelligence_docs → aiKeyInsights[] (refreshed): better extracted insights",
+      "vault_intelligence_docs → updatedAt: timestamp update",
+    ],
+    reaches:  [
+      "vault_atoms OS → Nepali text improve हुन्छ — Learning Mode cards better",
+      "/janta public page → document ko Nepali card content improve",
+      "Branch Health: affectedSectors refresh → tree health recalculate",
+      "Learning Mode: नागरिकले document बारे Nepali मा बुझ्न पाउँछन्",
+    ],
+    adminRole: "Admin teacher को निर्णय: 'Nepali content poor quality छ कि Nepali-first audience लाई थप explanation चाहिन्छ?' Re-analyze गर्नु भनेको AI लाई एकपटक फेरि 'नागरिकको भाषामा explain गर्' भन्नु हो।",
+  },
+  {
+    id:       "queue",
+    icon:     "➕",
+    label:    "Content Queue मा Add",
+    color:    "border-cyan-700 text-cyan-300",
+    bgColor:  "bg-cyan-950/30",
+    aiSees:   "❌ No new AI call — AI ले already document analyse गर्दा contentIdeas[] generate गरेको छ। ती existing ideas नै queue मा transform हुन्छन्।",
+    aiThinks: "THINKING PATTERN: Document intelligence → Content production flywheel। AI ले पहिले नै सोचेको: 'यो EPF circular बाट 3 YouTube videos बन्न सक्छन्: (1) EPF withdrawal rules, (2) Interest rate comparison, (3) SSF vs EPF difference।' तपाईं ती ideas लाई production मा move गर्दैहुनुहुन्छ।",
+    creates:  [
+      "vault_content_queue → contentIdeas.length नयाँ QueueItem records",
+      "QueueItem fields: sourceDocId, aiTitle, aiHook, status: 'pending', createdAt",
+      "vault_content_queue → links back to this vault_intelligence_docs ID",
+      "❌ vault_intelligence_docs unchanged — ideas just copied to queue",
+    ],
+    reaches:  [
+      "/vault/content/queue → Admin queue मा items appear — approve/reject गर्नुपर्छ",
+      "Queue approved → /vault/content/ai-studio → YouTube script generate हुन्छ",
+      "Script → Thumbnail → YouTube publish → नागरिकसम्म civic intelligence पुग्छ",
+      "Analytics: recommendation_clicks → कुन content idea ले बढी engagement पायो track",
+    ],
+    adminRole: "Admin teacher को निर्णय: 'यो document मा AI ले generate गरेका ideas civic value राख्छन् कि clickbait छन्?' Queue मा add गर्नु भनेको content production pipeline unlock गर्नु हो — त्यसपछि प्रत्येक idea फेरि approve/reject गर्न मिल्छ।",
+  },
+  {
+    id:       "heroimage",
+    icon:     "🖼",
+    label:    "Janta Hero Image",
+    color:    "border-purple-700 text-purple-300",
+    bgColor:  "bg-purple-950/30",
+    aiSees:   "doc.title + doc.aiSummary + doc.category + doc.affectedSectors — document को core message र visual context।",
+    aiThinks: "THINKING PATTERN: Document को core message → Visual metaphor। AI ले सोच्छ: 'साधन सुशासन document = accountability, transparency — visual: scale of justice + digital Nepal + mountain backdrop।' Prompt engineering: civic emotion + Nepal context + professional infographic style।",
+    creates:  [
+      "API call: Gemini Imagen → 1024×1024 PNG generate",
+      "R2 bucket upload → unique path: /hero-images/{docId}.png",
+      "vault_intelligence_docs → heroImageUrl: R2 public URL (updated)",
+      "vault_intelligence_docs → updatedAt: timestamp update",
+    ],
+    reaches:  [
+      "/janta public page → document card मा hero image देखिन्छ",
+      "नागरिकको first impression = visual ले civic content को seriousness convey गर्छ",
+      "Social sharing: image = shareable civic intelligence card",
+      "YouTube thumbnail base: hero image बाट thumbnail derive गर्न सकिन्छ",
+    ],
+    adminRole: "Admin teacher को निर्णय: 'यो document जनतासम्म पुग्नु पर्छ — visual identity दिएर attention capture गर्ने।' Hero image = document को public face। नभएमा /janta मा document bland text-only card हुन्छ।",
+  },
+  {
+    id:       "policypoints",
+    icon:     "🎯",
+    label:    "Policy Points (Gaming Cards)",
+    color:    "border-amber-700 text-amber-300",
+    bgColor:  "bg-amber-950/30",
+    aiSees:   "doc.ocrText वा doc.aiSummary — document को full content, particularly numbered commitments, targets, goals, visions।",
+    aiThinks: "THINKING PATTERN: Long policy doc → Atomic swipeable facts। AI ले सोच्छ: 'यो 100-point governance agenda document छ — प्रत्येक point एउटा specific commitment हो। Gaming card format: Title (5 words) + Detail (2 sentences) + Who Benefits + Civic Impact Score (1-10)।' Youth-first design: Tinder-swipe format for civic education।",
+    creates:  [
+      "policy_points collection → structured PolicyPoint records",
+      "Fields: title, detail, beneficiaries, impactScore, constitutionalRef, docId",
+      "Typically 20-100 points per complex policy document",
+      "vault_intelligence_docs → pointCount updated",
+    ],
+    reaches:  [
+      "/janta → Gaming Cards section → youth swipe civic engagement",
+      "Each card = one government commitment → trackable over time",
+      "High-impact cards → featured in /janta trending section",
+      "Future: Quiz mode — 'के यो commitment fulfilled भयो?'",
+    ],
+    adminRole: "Admin teacher को निर्णय: 'यो document युवाहरूले swipe गरेर सिक्न मिल्ने छ कि?' Policy Points = complex governance → gamified civic education। 100 pages → 50 swipeable cards।",
+  },
+  {
+    id:       "deepintel",
+    icon:     "🏛️",
+    label:    "Deep Intelligence Extract",
+    color:    "border-indigo-700 text-indigo-300",
+    bgColor:  "bg-indigo-950/30",
+    aiSees:   "doc.ocrText — paragraph by paragraph scan। AI ले document लाई chunks मा divide गर्छ र प्रत्येक chunk मा trackable commitments खोज्छ।",
+    aiThinks: "THINKING PATTERN (सबभन्दा sophisticated): Document = government accountability source। AI ले सोच्छ: 'यो budget speech मा 'शिक्षामा ५ अर्ब' भनेको छ → यो एउटा budget_target record हो। Constitutional ref: धारा ३१ (शिक्षाको हक)। Implementation status: announced। Measurable: yes। Timeline: fiscal year 2081/82।' प्रत्येक record future मा track हुन्छ — fulfilled वा unfulfilled।",
+    creates:  [
+      "janta_intelligence → multiple IntelligenceRecord documents",
+      "Types: promise, budget_target, project, institution, reform, social_program",
+      "Fields: constitutionalRefs[], implementationStatus, traceability {sourceQuote}",
+      "janta_relationships → cross-document relationship edges (same commitment found elsewhere?)",
+      "⚡ Bridge: vault_civic_atoms health → Branch Health recalculate automatically",
+    ],
+    reaches:  [
+      "🌳 Constitution Tree: Branch Health score change — branches 'grow' वा 'decay'",
+      "/vault/constitution/health: नयाँ intel records → branch scores update",
+      "Civic Gap detection: promise vs implementation मा gap calculate",
+      "Public: Constitution Tree मा real government commitments visible हुन्छन्",
+      "Future: Promise Tracker — 2 years later fulfilled भयो कि भएन?",
+    ],
+    adminRole: "Admin teacher को सबभन्दा महत्वपूर्ण निर्णय: 'AI ले निकालेको intel records accurate छन् कि छैनन्? कुन commitments real हुन्, कुन vague aspirations हुन्?' AI ले extract गर्छ तर तपाईंले curate गर्नुपर्छ — wrong commitment track गर्नु = civic misinformation।",
+  },
+];
+
+// ── Knowledge Flow Map ────────────────────────────────────────────────────────
+
+const KNOWLEDGE_FLOW = [
+  { step: "📄", label: "Document",  sub: "vault_intelligence_docs",  color: "#60a5fa" },
+  { step: "🤖", label: "AI Extract", sub: "Gemini / Bedrock",          color: "#fb923c" },
+  { step: "⚛",  label: "Atoms",     sub: "vault_civic_atoms",         color: "#67e8f9" },
+  { step: "🏛️", label: "Intel",     sub: "janta_intelligence",        color: "#a78bfa" },
+  { step: "🌳", label: "Tree",      sub: "Branch Health",             color: "#4ade80" },
+  { step: "👁",  label: "Public",   sub: "/janta + /constitution",    color: "#fbbf24" },
+];
+
+type ActionId = DocActionDef["id"];
+
+function DocActionTeachPanel({ doc }: { doc: IntelligenceDocument }) {
+  const [open,   setOpen]   = useState(false);
+  const [active, setActive] = useState<ActionId | null>(null);
+
+  if (doc.adminApprovalStatus !== "approved") return null;
+
+  // Only show actions that are relevant for this doc
+  const relevant = DOC_ACTIONS.filter(a => {
+    if (a.id === "heroimage" && doc.heroImageUrl) return false;   // already has image
+    if (a.id === "queue"     && (doc.contentIdeas?.length ?? 0) === 0) return false;
+    if (a.id === "deepintel" && isConstitutionDoc(doc)) return false; // constitution has its own extract
+    return true;
+  });
+
+  return (
+    <div className="border border-zinc-800 rounded-xl overflow-hidden">
+      {/* Toggle row */}
+      <button
+        onClick={() => setOpen(p => !p)}
+        className="w-full flex items-center gap-2 px-3 py-2.5 bg-zinc-900/40 hover:bg-zinc-900/70 transition-colors text-left"
+      >
+        <span className="text-sm">🧠</span>
+        <div className="flex-1 min-w-0">
+          <span className="text-xs font-bold text-white">Admin Teacher Mode</span>
+          <span className="text-zinc-600 text-xs ml-2">— यी buttons ले backend मा के हुन्छ?</span>
+        </div>
+        <span className="text-zinc-600 text-xs shrink-0">{relevant.length} actions</span>
+        <span className="text-zinc-600 text-xs">{open ? "↑" : "↓"}</span>
+      </button>
+
+      {open && (
+        <div className="border-t border-zinc-900 divide-y divide-zinc-900">
+
+          {/* Knowledge Flow Strip */}
+          <div className="px-3 py-2.5 bg-zinc-950/50">
+            <p className="text-[9px] font-bold text-zinc-600 uppercase tracking-widest mb-2">
+              📡 Knowledge Graph — Document बाट जनतासम्म
+            </p>
+            <div className="flex items-center gap-0 overflow-x-auto">
+              {KNOWLEDGE_FLOW.map((f, i) => (
+                <div key={f.step} className="flex items-center shrink-0">
+                  <div className="flex flex-col items-center gap-0.5 px-2 py-1">
+                    <span className="text-sm leading-none">{f.step}</span>
+                    <span className="text-[9px] font-bold leading-none" style={{ color: f.color }}>{f.label}</span>
+                    <span className="text-[8px] text-zinc-700 leading-none font-mono">{f.sub}</span>
+                  </div>
+                  {i < KNOWLEDGE_FLOW.length - 1 && (
+                    <span className="text-zinc-800 text-xs shrink-0">→</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Action list */}
+          {relevant.map(action => (
+            <div key={action.id}>
+              {/* Action header */}
+              <button
+                onClick={() => setActive(p => p === action.id ? null : action.id)}
+                className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-zinc-900/40 ${active === action.id ? action.bgColor : ""}`}
+              >
+                <span className="text-base shrink-0">{action.icon}</span>
+                <span className={`text-xs font-bold flex-1 ${action.color.split(" ")[1]}`}>{action.label}</span>
+                <span className="text-zinc-700 text-[10px] shrink-0">{active === action.id ? "↑ बन्द" : "↓ सिक्नुहोस्"}</span>
+              </button>
+
+              {/* Action detail — 4 teaching dimensions */}
+              {active === action.id && (
+                <div className={`px-3 pb-3 space-y-2 ${action.bgColor}`}>
+
+                  {/* AI Sees */}
+                  <div className="rounded-lg bg-zinc-900/60 border border-zinc-800 px-2.5 py-2 space-y-1">
+                    <p className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">👁 AI ले के INPUT पाउँछ</p>
+                    <p className="text-xs text-zinc-300 leading-relaxed">{action.aiSees}</p>
+                  </div>
+
+                  {/* AI Thinks — the key teaching */}
+                  <div className="rounded-lg bg-zinc-900/80 border border-zinc-700 px-2.5 py-2.5 space-y-1">
+                    <p className="text-[9px] font-bold text-amber-500 uppercase tracking-wider">🧠 AI को THINKING PATTERN</p>
+                    <p className="text-xs text-amber-200/80 leading-relaxed">{action.aiThinks}</p>
+                  </div>
+
+                  {/* Creates */}
+                  <div className="rounded-lg bg-zinc-900/60 border border-zinc-800 px-2.5 py-2 space-y-1">
+                    <p className="text-[9px] font-bold text-cyan-500 uppercase tracking-wider">📦 के DATA बन्छ (Firestore writes)</p>
+                    <ul className="space-y-0.5">
+                      {action.creates.map((line, i) => (
+                        <li key={i} className="flex gap-1.5 text-xs text-cyan-200/70">
+                          <span className="text-cyan-800 shrink-0 mt-0.5">→</span>
+                          <span className="font-mono text-[10px] leading-relaxed">{line}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Reaches citizens */}
+                  <div className="rounded-lg bg-zinc-900/60 border border-zinc-800 px-2.5 py-2 space-y-1">
+                    <p className="text-[9px] font-bold text-green-500 uppercase tracking-wider">🌐 जनतासम्म कसरी पुग्छ</p>
+                    <ul className="space-y-0.5">
+                      {action.reaches.map((line, i) => (
+                        <li key={i} className="flex gap-1.5 text-xs text-green-200/70">
+                          <span className="text-green-800 shrink-0 mt-0.5">{i + 1}.</span>
+                          <span className="leading-relaxed">{line}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Admin Role — the teacher's decision */}
+                  <div className="rounded-lg bg-amber-950/40 border border-amber-800/60 px-2.5 py-2.5 space-y-1">
+                    <p className="text-[9px] font-bold text-amber-400 uppercase tracking-wider">🎓 Admin Teacher को भूमिका</p>
+                    <p className="text-xs text-amber-200/80 leading-relaxed">{action.adminRole}</p>
+                  </div>
+
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* Bottom: navigation to downstream pages */}
+          <div className="px-3 py-2.5 flex gap-2 flex-wrap">
+            <p className="text-[9px] text-zinc-600 w-full font-bold uppercase tracking-wider mb-1">यो document approve भएपछि यहाँ हेर्नुहोस्:</p>
+            {[
+              { href: "/vault/atoms",               label: "⚛ Atoms OS",    color: "text-cyan-400 border-cyan-900" },
+              { href: "/vault/constitution/health", label: "🩺 Branch Health", color: "text-green-400 border-green-900" },
+              { href: "/constitution",              label: "🌳 Public Tree",  color: "text-amber-400 border-amber-900" },
+              { href: "/janta",                     label: "👁 /janta",      color: "text-violet-400 border-violet-900" },
+            ].map(n => (
+              <Link
+                key={n.href}
+                href={n.href}
+                className={`text-[10px] font-bold px-2 py-1 rounded-lg border ${n.color} bg-zinc-900/50 hover:bg-zinc-800 transition-colors`}
+              >
+                {n.label}
+              </Link>
+            ))}
+          </div>
+
+        </div>
+      )}
+    </div>
+  );
+}
+
 const FILE_ICONS: Record<string, string> = {
   pdf:   "📄",
   docx:  "📝",
@@ -521,6 +812,9 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
           )}
         </div>
       )}
+
+      {/* Admin Teacher Panel — shown for approved docs */}
+      <DocActionTeachPanel doc={doc} />
 
       <div className="flex items-center justify-between pt-1 border-t border-zinc-800">
         <span className="text-zinc-600 text-xs">{new Date(doc.uploadedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
