@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import SchemeDetail from "./SchemeDetail";
+import { SCHEMES } from "../../../lib/schemes-data";
 
 const BASE_URL = "https://zzc.jeevanregmi.com.np";
 const FIRESTORE =
@@ -44,7 +45,9 @@ function str(fields: Record<string, any>, key: string): string {
 
 export async function generateStaticParams() {
   const schemes = await getAllSchemeFields();
-  return Array.from(schemes.keys()).map((id) => ({ id }));
+  if (schemes.size > 0) return Array.from(schemes.keys()).map((id) => ({ id }));
+  // Firestore unavailable (rate-limited) — fall back to static scheme list so build doesn't fail
+  return SCHEMES.map((s) => ({ id: s.id }));
 }
 
 export async function generateMetadata({
