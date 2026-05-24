@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { UploadDocMeta } from "../../../hooks/vault/useDocumentUpload";
 import type { DocUploadTask, DocCategory } from "../../../lib/types/documents";
 import { createIntelligenceDoc } from "../../../lib/vault/firestore";
+import { ActionLearnCard, type ActionLearnData } from "../../vault/LearnTip";
 
 const ALLOWED_MIME = [
   "application/pdf",
@@ -18,6 +19,94 @@ const ALLOWED_MIME = [
 ];
 
 const CATEGORIES = ["research", "strategy", "legal", "finance", "content", "intelligence", "other"] as const;
+type Cat = typeof CATEGORIES[number];
+
+interface CatInfo {
+  np:         string;
+  desc:       string;
+  examples:   string;
+  ai_does:    string;
+  depends_on: string;
+}
+
+const CATEGORY_INFO: Record<Cat, CatInfo> = {
+  research: {
+    np:         "अनुसन्धान",
+    desc:       "अध्ययन, सर्वेक्षण, आयोग प्रतिवेदन, शोधपत्र — तथ्यमा आधारित विश्लेषण",
+    examples:   "CEDA report, NPC अध्ययन, विश्वविद्यालय thesis, सर्वेक्षण प्रतिवेदन",
+    ai_does:    "AI यो document बाट तथ्याङ्क, निष्कर्ष र नीतिगत सुझावहरू निकाल्छ र Constitution को Directive Principles सँग तुलना गर्छ",
+    depends_on: "Constitution Tree को Research nodes, जनता Civic Gap detector, र भविष्यको Policy Evidence engine",
+  },
+  strategy: {
+    np:         "रणनीति / नीति",
+    desc:       "दीर्घकालीन सरकारी दिशा, राष्ट्रिय योजना र नीति सम्बन्धी documents",
+    examples:   "राष्ट्रिय शिक्षा नीति २०७६, १५औं पञ्चवर्षीय योजना, कृषि विकास रणनीति, स्वास्थ्य नीति",
+    ai_does:    "AI यो document बाट दीर्घकालीन प्रतिबद्धताहरू निकाल्छ, timeline सहित Constitution branches सँग map गर्छ, र नीति कार्यान्वयन gap पहिल्याउँछ",
+    depends_on: "Constitution Tree का सबै branches, जनता Timeline को policy layer, र भविष्यको Governance Scorecard",
+  },
+  legal: {
+    np:         "कानूनी / ऐन",
+    desc:       "ऐन, नियमावली, संविधान, अदालत फैसला, अध्यादेश — कानूनी बाध्यता सम्बन्धी",
+    examples:   "नागरिकता ऐन, श्रम ऐन, उच्च अदालत फैसला, सर्वोच्च आदेश, विनियमावली",
+    ai_does:    "AI कानूनी भाषा सरल बनाउँछ, नागरिक अधिकारहरू निकाल्छ, र संविधानको Fundamental Rights सँग तुलना गर्छ",
+    depends_on: "Constitution Tree को Rights branches, जनता Legal Aid layer, र भविष्यको Citizen Rights tracker",
+  },
+  finance: {
+    np:         "आर्थिक / बजेट",
+    desc:       "बजेट, आर्थिक प्रतिवेदन, वित्तीय तथ्याङ्क, लेखापरीक्षण — सार्वजनिक खर्च र नीति",
+    examples:   "वार्षिक बजेट भाषण, NRB monetary policy, EPF/SSF विवरण, CIAA लेखापरीक्षण प्रतिवेदन",
+    ai_does:    "AI बजेट allocation निकाल्छ, नागरिकमाथि पर्ने प्रभाव विश्लेषण गर्छ, र Constitution को राज्यको दायित्व सँग तुलना गर्छ",
+    depends_on: "Constitution Tree को Economic Rights nodes, जनता Budget Tracker, र भविष्यको Public Finance monitor",
+  },
+  content: {
+    np:         "सामग्री / Content",
+    desc:       "जनचेतना सामग्री, script, outreach draft — नागरिक संचार सम्बन्धी",
+    examples:   "जनजागरण script, social post draft, campaign content, IEC materials",
+    ai_does:    "AI यो content को civic accuracy जाँच्छ, सम्बन्धित government documents सँग जोड्छ, र facts verify गर्छ",
+    depends_on: "Content Queue system, जनता public feed, र भविष्यको Civic Fact-checker",
+  },
+  intelligence: {
+    np:         "सूचना / Intelligence",
+    desc:       "समाचार, सरकारी सूचना, परिपत्र, नीति संकेत — real-time civic signals",
+    examples:   "सरकारी परिपत्र, press release, GoN notice, संसद समाचार, news analysis",
+    ai_does:    "AI यो signal बाट नागरिकमाथि तत्काल प्रभाव निकाल्छ, Constitution branches मा update गर्छ, र trend detect गर्छ",
+    depends_on: "जनता Timeline को real-time layer, Constitution Tree को Living Update system, र भविष्यको Alert engine",
+  },
+  other: {
+    np:         "अन्य",
+    desc:       "माथिका कुनैमा नपर्ने सार्वजनिक महत्त्वका कागजपत्र",
+    examples:   "अन्य सरकारी वा सार्वजनिक महत्त्वका documents जुन specific category मा नपर्ने",
+    ai_does:    "AI document को प्रकृति बुझेर सबैभन्दा उपयुक्त Constitution branch खोज्छ र automatically categorise गर्ने सुझाव दिन्छ",
+    depends_on: "AI Auto-classification system र भविष्यको Smart Categorisation engine",
+  },
+};
+
+// Upload flow steps — always visible, teaches the civic journey
+const FLOW_STEPS = [
+  { icon: "📄", label: "Upload" },
+  { icon: "🤖", label: "AI Extract" },
+  { icon: "🌳", label: "Constitution Map" },
+  { icon: "⚡", label: "Intelligence" },
+  { icon: "🌐", label: "जनताले सिक्छन्" },
+];
+
+function UploadFlowBar() {
+  return (
+    <div className="flex items-center gap-1 py-2">
+      {FLOW_STEPS.map((step, i) => (
+        <div key={i} className="flex items-center gap-1 flex-1 min-w-0">
+          <div className="flex flex-col items-center flex-1 min-w-0">
+            <span className="text-base leading-none">{step.icon}</span>
+            <span className="text-zinc-600 text-[9px] mt-0.5 text-center leading-tight truncate w-full">{step.label}</span>
+          </div>
+          {i < FLOW_STEPS.length - 1 && (
+            <span className="text-zinc-700 text-xs shrink-0">→</span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 interface Props {
   tasks:      DocUploadTask[];
@@ -65,7 +154,7 @@ function UrlIngestPanel({ ownerId, onClose }: { ownerId: string; onClose: () => 
       });
       const data = await res.json() as { ok?: boolean; error?: string } & IngestPreview;
       if (!res.ok || data.error) {
-        setError(data.error ?? "Failed to fetch URL");
+        setError(data.error ?? "URL fetch गर्न सकिएन");
         return;
       }
       setPreview(data);
@@ -95,7 +184,6 @@ function UrlIngestPanel({ ownerId, onClose }: { ownerId: string; onClose: () => 
         category,
         processingStatus: "ai_ready",
         adminApprovalStatus: "pending_review",
-        // AI fields
         aiSummary:        preview.summary,
         aiKeyInsights:    preview.aiInsights,
         detectedTopics:   preview.detectedTopics,
@@ -119,45 +207,55 @@ function UrlIngestPanel({ ownerId, onClose }: { ownerId: string; onClose: () => 
     }
   };
 
+  const catInfo = CATEGORY_INFO[category as Cat] ?? null;
+
   if (saved) {
     return (
       <div className="flex flex-col items-center gap-4 py-8">
-        <p className="text-green-400 font-semibold">Saved to Intelligence Library</p>
-        <p className="text-zinc-500 text-sm text-center">Pending admin review. You can re-run AI analysis from the Documents page.</p>
-        <button onClick={onClose} className="bg-green-500 hover:bg-green-400 text-black font-black px-6 py-2.5 rounded-xl text-sm">Done</button>
+        <p className="text-green-400 font-semibold">Intelligence Library मा save भयो</p>
+        <p className="text-zinc-500 text-sm text-center">Admin review पर्खिरहेको छ। Documents page बाट AI analysis पुनः चलाउन सकिन्छ।</p>
+        <button onClick={onClose} className="bg-green-500 hover:bg-green-400 text-black font-black px-6 py-2.5 rounded-xl text-sm">सम्पन्न</button>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       <div className="space-y-2">
         <input
           type="url"
-          placeholder="https://nrb.org.np/publications/... or parliament.gov.np/..."
+          placeholder="https://nrb.org.np/... वा parliament.gov.np/..."
           value={url}
           onChange={e => setUrl(e.target.value)}
           className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-green-500"
         />
+        <p className="text-zinc-600 text-xs px-1">NRB परिपत्र, संसद विधेयक, MoF सूचना, EPF/SSF pages, समाचार — सबै काम गर्छ</p>
         <input
           type="text"
-          placeholder="Source name (e.g. Nepal Rastra Bank, Parliament of Nepal)"
+          placeholder="स्रोतको नाम (जस्तै: Nepal Rastra Bank, संसद सचिवालय)"
           value={source}
           onChange={e => setSource(e.target.value)}
           className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-green-500"
         />
+        <p className="text-zinc-600 text-xs px-1">स्रोतको नाम AI को विश्वसनीयता मूल्याङ्कनमा प्रयोग हुन्छ</p>
         <select
           value={category}
           onChange={e => setCategory(e.target.value as DocCategory)}
           className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500"
         >
-          {(["intelligence", "research", "finance", "legal", "strategy", "other"] as DocCategory[]).map(c => (
-            <option key={c} value={c}>{c}</option>
+          {(["intelligence", "research", "finance", "legal", "strategy", "content", "other"] as Cat[]).map(c => (
+            <option key={c} value={c}>{CATEGORY_INFO[c].np} — {c}</option>
           ))}
         </select>
+        {catInfo && (
+          <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl px-3 py-2.5 space-y-1.5">
+            <p className="text-cyan-400 text-xs font-bold">{catInfo.np}</p>
+            <p className="text-zinc-300 text-xs">{catInfo.desc}</p>
+            <p className="text-zinc-500 text-xs">🤖 {catInfo.ai_does}</p>
+            <p className="text-zinc-600 text-xs">🌳 {catInfo.depends_on}</p>
+          </div>
+        )}
       </div>
-
-      <p className="text-zinc-600 text-xs">Works with: NRB circulars, parliament bills, MoF notices, EPF/SSF pages, news articles, RSS feeds</p>
 
       {error && <p className="text-red-400 text-sm bg-red-950/40 border border-red-900 rounded-xl px-3 py-2">{error}</p>}
 
@@ -167,7 +265,7 @@ function UrlIngestPanel({ ownerId, onClose }: { ownerId: string; onClose: () => 
           disabled={fetching || !url.trim() || !source.trim()}
           className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-40 text-black font-black py-2.5 rounded-xl text-sm transition-colors"
         >
-          {fetching ? "Fetching + Analyzing…" : "Fetch & Analyze →"}
+          {fetching ? "Fetch + AI विश्लेषण हुँदैछ…" : "Fetch गरेर AI विश्लेषण गर्नुहोस् →"}
         </button>
       ) : (
         <div className="space-y-3">
@@ -180,7 +278,7 @@ function UrlIngestPanel({ ownerId, onClose }: { ownerId: string; onClose: () => 
               ))}
             </div>
             <p className="text-zinc-600 text-xs">
-              Relevance: {Math.round(preview.relevanceScore * 100)}% · Credibility: {preview.credibility}
+              सान्दर्भिकता: {Math.round(preview.relevanceScore * 100)}% · विश्वसनीयता: {preview.credibility}
               {preview.sourceAuthority && ` · ${preview.sourceAuthority}`}
             </p>
           </div>
@@ -190,19 +288,54 @@ function UrlIngestPanel({ ownerId, onClose }: { ownerId: string; onClose: () => 
               disabled={saving}
               className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-black font-black py-2.5 rounded-xl text-sm transition-colors"
             >
-              {saving ? "Saving…" : "Save to Library →"}
+              {saving ? "Save हुँदैछ…" : "Library मा Save गर्नुहोस् →"}
             </button>
             <button
               onClick={() => setPreview(null)}
               className="px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold py-2.5 rounded-xl text-sm"
             >
-              Re-fetch
+              फेरि Fetch
             </button>
           </div>
         </div>
       )}
     </div>
   );
+}
+
+// ── Upload Action Intelligence ────────────────────────────────────────────────
+// Teaches the founder exactly what happens when a document is uploaded.
+
+function UploadActionIntel({ fileCount, category }: { fileCount: number; category: string }) {
+  const uploadAction: ActionLearnData = {
+    icon:  "📤",
+    title: "Upload",
+    color: "cyan",
+    does:  `Document ZZC को Civic Intelligence Library मा store हुन्छ। File Cloudflare R2 storage मा जान्छ र Firestore मा metadata record बन्छ। यसपछि AI automatically document पढ्छ — तपाईंले केही गर्नु पर्दैन।`,
+    creates: [
+      `Cloudflare R2 → file permanently stored (storagePath, downloadUrl)`,
+      `vault_intelligence_docs → नयाँ record (status: "pending_ai" → "ai_ready")`,
+      `Record fields: title, category ("${category}"), ownerId, mimeType, fileSize, uploadedAt`,
+      `Async AI job → Claude ले document पढेर extract गर्छ: summary, keyInsights, policyChanges, financialImplications`,
+    ],
+    flows: [
+      `R2 → Cloudflare Worker → AI extraction (Claude claude-sonnet-4-6)`,
+      `AI output → vault_intelligence_docs update: aiSummary, aiKeyInsights[], policyChanges[], financialImplications[]`,
+      `processingStatus: "pending_ai" → "ai_ready" भएपछि Admin Vault मा appear`,
+      `Admin review (/vault/admin) → Approve → vault_civic_atoms harvest`,
+    ],
+    future: [
+      "Auto-categorization: AI ले category automatically suggest गर्छ",
+      "Duplicate detection: same document दोहोर्याएर upload गर्न नदिने",
+      "Document versioning: updated policy documents को v1→v2 chain",
+      "Cross-document atom linking: same topic, different documents बीच auto-link",
+    ],
+    example: fileCount > 0
+      ? `${fileCount} file${fileCount > 1 ? "s" : ""} upload हुँदैछ — "${category}" category मा। AI ले 30 seconds देखि 2 minutes भित्र process गर्छ।`
+      : `File छान्नुहोस् — त्यसपछि यहाँ real-time status देखाउँछ।`,
+  };
+
+  return <ActionLearnCard actions={[uploadAction]} />;
 }
 
 export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismiss, ownerId }: Props) {
@@ -213,7 +346,7 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismi
   const [meta, setMeta] = useState<UploadDocMeta>({
     title:       "",
     description: "",
-    category:    "research",
+    category:    "strategy",
     folder:      "",
     tags:        "",
   });
@@ -239,7 +372,6 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismi
     setStaged([]);
   };
 
-  // ── Task state analysis ───────────────────────────────────────────────────────
   const anyActive       = tasks.some(t => t.status === "uploading" || t.status === "creating");
   const anyError        = tasks.some(t => t.status === "error");
   const allSucceeded    = tasks.length > 0 && tasks.every(t => t.status === "done");
@@ -247,18 +379,25 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismi
   const successCount    = tasks.filter(t => t.status === "done").length;
   const errorCount      = tasks.filter(t => t.status === "error").length;
 
-  // ── Footer logic ──────────────────────────────────────────────────────────────
-  // Three distinct states, never conflated:
-  //   allSucceeded → green "Done" — closes modal, clears tasks
-  //   allSettled + errors → red error summary — modal stays open, no auto-close
-  //   otherwise → Upload button or Uploading… label
+  const selectedCatInfo = CATEGORY_INFO[meta.category as Cat] ?? null;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-      <div className="bg-zinc-950 border border-zinc-800 rounded-3xl w-full max-w-lg flex flex-col gap-5 p-6">
-        <div className="flex items-center justify-between">
-          <h2 className="text-white font-black text-lg">Add to Intelligence Library</h2>
-          <button onClick={onClose} className="text-zinc-500 hover:text-white text-xl leading-none">×</button>
+      <div className="bg-zinc-950 border border-zinc-800 rounded-3xl w-full max-w-lg flex flex-col gap-4 p-6 max-h-[92vh] overflow-y-auto">
+
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-white font-black text-lg leading-tight">नागरिक Intelligence Library मा थप्नुहोस्</h2>
+            <p className="text-zinc-500 text-xs mt-0.5">तपाईंको document AI ले पढ्छ र नेपालको संविधानसँग जोड्छ</p>
+          </div>
+          <button onClick={onClose} className="text-zinc-500 hover:text-white text-xl leading-none shrink-0 mt-0.5">×</button>
+        </div>
+
+        {/* Civic learning flow — always visible */}
+        <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-2xl px-3 py-2">
+          <p className="text-zinc-600 text-[10px] font-semibold uppercase tracking-wide mb-1.5">Upload पछि के हुन्छ?</p>
+          <UploadFlowBar />
         </div>
 
         {/* Tab switcher */}
@@ -267,13 +406,13 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismi
             onClick={() => setTab("file")}
             className={`flex-1 text-sm font-semibold py-1.5 rounded-lg transition-colors ${tab === "file" ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-white"}`}
           >
-            Upload File
+            📄 File Upload
           </button>
           <button
             onClick={() => setTab("url")}
             className={`flex-1 text-sm font-semibold py-1.5 rounded-lg transition-colors ${tab === "url" ? "bg-zinc-700 text-white" : "text-zinc-500 hover:text-white"}`}
           >
-            Paste URL
+            🔗 URL थप्नुहोस्
           </button>
         </div>
 
@@ -282,18 +421,19 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismi
           <UrlIngestPanel ownerId={ownerId} onClose={onClose} />
         )}
         {tab === "url" && !ownerId && (
-          <p className="text-zinc-500 text-sm text-center py-4">Authentication required</p>
+          <p className="text-zinc-500 text-sm text-center py-4">Authentication आवश्यक छ</p>
         )}
 
-        {/* Drop zone — only in file tab */}
+        {/* File upload tab */}
         {tab === "file" && (
         <>
+        {/* Drop zone */}
         <div
           onDragOver={e => { e.preventDefault(); setDragging(true); }}
           onDragLeave={() => setDragging(false)}
           onDrop={handleDrop}
           onClick={() => inputRef.current?.click()}
-          className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-colors ${
+          className={`border-2 border-dashed rounded-2xl p-7 text-center cursor-pointer transition-colors ${
             dragging ? "border-green-500 bg-green-950/20" : "border-zinc-700 hover:border-zinc-500"
           }`}
         >
@@ -305,16 +445,16 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismi
             className="hidden"
             onChange={e => addFiles(Array.from(e.target.files ?? []))}
           />
-          <p className="text-zinc-400 text-sm">Drop files here or click to browse</p>
-          <p className="text-zinc-600 text-xs mt-1">PDF, DOCX, TXT, MD, Images</p>
+          <p className="text-zinc-400 text-sm">यहाँ file drag गर्नुहोस् वा click गरेर छान्नुहोस्</p>
+          <p className="text-zinc-600 text-xs mt-1">PDF, DOCX, TXT, MD, Images — जुनसुकै सरकारी document</p>
           {staged.length > 0 && (
-            <p className="text-green-400 text-xs mt-2 font-semibold">{staged.length} file{staged.length > 1 ? "s" : ""} staged</p>
+            <p className="text-green-400 text-xs mt-2 font-semibold">{staged.length} file{staged.length > 1 ? "s" : ""} तयार छ</p>
           )}
         </div>
 
         {/* Staged file list */}
         {staged.length > 0 && (
-          <ul className="space-y-1 max-h-24 overflow-y-auto">
+          <ul className="space-y-1 max-h-20 overflow-y-auto">
             {staged.map((f, i) => (
               <li key={i} className="flex items-center justify-between text-xs text-zinc-400 bg-zinc-900 px-3 py-1.5 rounded-lg">
                 <span className="truncate">{f.name}</span>
@@ -325,49 +465,85 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismi
         )}
 
         {/* Metadata form */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="col-span-2">
+        <div className="space-y-3">
+
+          {/* Title */}
+          <div className="space-y-1">
             <input
               type="text"
-              placeholder="Title (optional — defaults to filename)"
+              placeholder="शीर्षक (optional — filename बाट लिन्छ)"
               value={meta.title}
               onChange={e => setMeta(p => ({ ...p, title: e.target.value }))}
               className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
             />
+            <p className="text-zinc-600 text-xs px-1">AI यो नाम प्रयोग गरी document पहिचान गर्छ — official नाम राख्नुहोस् (जस्तै: राष्ट्रिय शिक्षा नीति २०७६)</p>
           </div>
-          <div className="col-span-2">
+
+          {/* Description */}
+          <div className="space-y-1">
             <input
               type="text"
-              placeholder="Description (optional)"
+              placeholder="छोटो विवरण (optional)"
               value={meta.description}
               onChange={e => setMeta(p => ({ ...p, description: e.target.value }))}
               className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
             />
+            <p className="text-zinc-600 text-xs px-1">AI लाई context दिन्छ — document किन महत्त्वपूर्ण छ, कुन सरकारी निकायको हो, कुन वर्षको हो</p>
           </div>
-          <select
-            value={meta.category}
-            onChange={e => setMeta(p => ({ ...p, category: e.target.value as typeof meta.category }))}
-            className="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-zinc-500"
-          >
-            {CATEGORIES.map(c => (
-              <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
-            ))}
-          </select>
-          <input
-            type="text"
-            placeholder="Folder (optional)"
-            value={meta.folder}
-            onChange={e => setMeta(p => ({ ...p, folder: e.target.value }))}
-            className="bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
-          />
-          <div className="col-span-2">
+
+          {/* Category — full civic explanation */}
+          <div className="space-y-1.5">
+            <label className="text-zinc-400 text-xs font-semibold px-1">विषय वर्ग छान्नुहोस्</label>
+            <select
+              value={meta.category}
+              onChange={e => setMeta(p => ({ ...p, category: e.target.value as typeof meta.category }))}
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-cyan-500"
+            >
+              {CATEGORIES.map(c => (
+                <option key={c} value={c}>{CATEGORY_INFO[c].np} — {c}</option>
+              ))}
+            </select>
+            {selectedCatInfo && (
+              <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl px-3 py-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-cyan-400 text-xs font-black">{selectedCatInfo.np}</span>
+                  <span className="text-zinc-700 text-xs">—</span>
+                  <span className="text-zinc-400 text-xs">{selectedCatInfo.desc}</span>
+                </div>
+                <div className="bg-zinc-800/50 rounded-lg px-2.5 py-2 space-y-1.5">
+                  <p className="text-zinc-400 text-xs"><span className="text-violet-400 font-semibold">🤖 AI ले के गर्छ:</span> {selectedCatInfo.ai_does}</p>
+                  <p className="text-zinc-500 text-xs"><span className="text-amber-500 font-semibold">🌳 कुन system प्रयोग गर्छ:</span> {selectedCatInfo.depends_on}</p>
+                </div>
+                <p className="text-zinc-600 text-xs">उदाहरण: {selectedCatInfo.examples}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Tags — AI relationship signal explanation */}
+          <div className="space-y-1">
             <input
               type="text"
-              placeholder="Tags (comma-separated)"
+              placeholder="Tags — शिक्षा, स्वास्थ्य, बजेट, महिला अधिकार…"
               value={meta.tags}
               onChange={e => setMeta(p => ({ ...p, tags: e.target.value }))}
               className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
             />
+            <p className="text-zinc-600 text-xs px-1">
+              Tags = AI को relationship signal — यी keywords ले यो document लाई अरू documents र Constitution branches सँग जोड्छ।
+              राम्रा tags भएमा AI ले civic gap र cross-tree patterns राम्रो detect गर्छ।
+            </p>
+          </div>
+
+          {/* Folder */}
+          <div className="space-y-1">
+            <input
+              type="text"
+              placeholder="फोल्डर (optional) — जस्तै: शिक्षा-मन्त्रालय, NRB"
+              value={meta.folder}
+              onChange={e => setMeta(p => ({ ...p, folder: e.target.value }))}
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
+            />
+            <p className="text-zinc-600 text-xs px-1">Documents लाई organise गर्न — मन्त्रालय वा विषय क्षेत्रको नाम राख्नुहोस्</p>
           </div>
         </div>
 
@@ -403,7 +579,7 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismi
                         onClick={() => onDismiss(task.localId)}
                         className="mt-1.5 text-red-500 hover:text-red-300 underline"
                       >
-                        Dismiss
+                        हटाउनुहोस्
                       </button>
                     )}
                   </div>
@@ -413,23 +589,26 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismi
           </ul>
         )}
 
-        {/* Error summary banner — only shown when all settled and there are errors */}
+        {/* Error summary banner */}
         {allSettled && anyError && (
           <div className="bg-red-950/40 border border-red-900/60 rounded-xl px-4 py-3 space-y-2">
             <p className="text-red-400 text-sm font-semibold">
               {errorCount === tasks.length
-                ? `Upload failed — ${errorCount} file${errorCount > 1 ? "s" : ""} could not be saved`
-                : `${successCount} saved · ${errorCount} failed`}
+                ? `Upload असफल — ${errorCount} file${errorCount > 1 ? "s" : ""} save हुन सकेन`
+                : `${successCount} save भयो · ${errorCount} असफल`}
             </p>
             <p className="text-red-300/70 text-xs">
-              Nothing was saved for the failed files. Check{" "}
+              असफल files save भएन। Storage जाँच गर्न{" "}
               <Link href="/vault/system" className="underline hover:text-red-200" onClick={onClose}>
                 System Status
               </Link>{" "}
-              to diagnose storage connectivity, then dismiss each error above and try again.
+              हेर्नुहोस्, त्यसपछि error dismiss गरेर फेरि try गर्नुहोस्।
             </p>
           </div>
         )}
+
+        {/* ── Upload Action Intelligence ─────────────────────────────────── */}
+        <UploadActionIntel fileCount={staged.length} category={meta.category} />
 
         {/* Footer */}
         <div className="flex gap-3">
@@ -438,7 +617,7 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismi
               onClick={() => { onClear(); onClose(); }}
               className="flex-1 bg-green-500 hover:bg-green-400 text-black font-black py-2.5 rounded-xl text-sm transition-colors"
             >
-              Done — {successCount} saved
+              सम्पन्न — {successCount} save भयो
             </button>
           ) : allSettled && anyError ? (
             <>
@@ -447,14 +626,14 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismi
                   onClick={onClear}
                   className="flex-1 bg-zinc-700 hover:bg-zinc-600 text-white font-bold py-2.5 rounded-xl text-sm transition-colors"
                 >
-                  Keep {successCount} saved, dismiss errors
+                  {successCount} save राख्नुहोस्, errors हटाउनुहोस्
                 </button>
               )}
               <button
                 onClick={onClose}
                 className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 font-bold py-2.5 rounded-xl text-sm transition-colors"
               >
-                Close (files NOT saved)
+                बन्द गर्नुहोस् (files save भएन)
               </button>
             </>
           ) : (
@@ -463,7 +642,7 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismi
               disabled={staged.length === 0 || anyActive}
               className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-40 disabled:cursor-not-allowed text-black font-black py-2.5 rounded-xl text-sm transition-colors"
             >
-              {anyActive ? "Uploading…" : `Upload ${staged.length > 0 ? staged.length + " file" + (staged.length > 1 ? "s" : "") : ""}`.trim()}
+              {anyActive ? "Upload हुँदैछ…" : staged.length > 0 ? `${staged.length} file${staged.length > 1 ? "s" : ""} Upload गर्नुहोस्` : "Upload गर्नुहोस्"}
             </button>
           )}
           {!allSettled && (
@@ -471,7 +650,7 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismi
               onClick={onClose}
               className="px-5 bg-zinc-800 hover:bg-zinc-700 text-white font-bold py-2.5 rounded-xl text-sm transition-colors"
             >
-              Cancel
+              रद्द
             </button>
           )}
         </div>

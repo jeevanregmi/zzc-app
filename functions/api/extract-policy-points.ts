@@ -61,10 +61,17 @@ export async function onRequestPost({ request, env }: PagesContext): Promise<Res
   try {
     const result = await callGemini({
       apiKey: env.GEMINI_API_KEY,
-      system: `तपाईं Nepal government policy documents बाट individual policy points निकाल्ने expert हुनुहुन्छ।
+      system: `तपाईं Nepal सरकारका policy documents बाट individual policy points निकाल्ने civic intelligence expert हुनुहुन्छ।
+
 तपाईंको काम: जटिल सरकारी नीतिलाई सामान्य नेपाली मान्छेले बुझ्ने गरी, exciting र gaming-style मा present गर्न points बनाउनु।
+
 Target audience: 18-35 वर्षका नेपाली युवा जो सरकारी नीति बुझ्न चाहन्छन् तर complex भाषा पढ्न गाह्रो लाग्छ।
-Language: सबै fields नेपालीमा — सरल, colloquial, exciting।`,
+
+LANGUAGE RULE — यो सबैभन्दा महत्त्वपूर्ण:
+- Primary language: सरल, flowing नेपाली
+- Technical terms: नेपाली र English दुवैमा लेख्नुहोस् — जस्तै "पुँजी बजार (Capital Market)", "राजस्व (Revenue)", "कर्मचारी सञ्चय कोष (EPF)", "सामाजिक सुरक्षा कोष (SSF)", "कृत्रिम बुद्धिमत्ता (AI)", "जलविद्युत् (Hydropower)"
+- Flow: नेपाली वाक्य संरचना, तर technical/economic terms English र नेपाली parenthesis मा
+- Example: "यस नीतिले पुँजी बजार (Capital Market) लाई अन्तर्राष्ट्रिय मापदण्ड (International Standards) अनुरूप विकास गर्नेछ — यसले तपाईंको share investment सुरक्षित हुन्छ।"`,
       parts: [{
         text: `यो document बाट सबै important policy points निकाल्नुहोस्।
 

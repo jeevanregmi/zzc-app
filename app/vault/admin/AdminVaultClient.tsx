@@ -14,13 +14,13 @@ import {
 } from "../../../lib/vault/firestore";
 import { CALCULATOR_REGISTRY }  from "../../../lib/data/calculator-registry";
 import type { SourceSignal }        from "../../../lib/types/signals";
-import type { IntelligenceDocument } from "../../../lib/types/documents";
 import type { QueueItem }           from "../../../lib/types/queue";
 import type { CalculatorFormula }   from "../../../lib/data/calculator-registry";
 import { TrustBadge }               from "../../../components/vault/TrustBadge";
-import { trustFromSignal, trustFromDoc, trustFromQueueItem } from "../../../lib/intelligence/trust-score";
+import { trustFromSignal, trustFromQueueItem } from "../../../lib/intelligence/trust-score";
 import { LearnTip, LearnBlock }    from "../../../components/vault/LearnTip";
 import { CivicIntelligencePipeline } from "../../../components/vault/CivicIntelligencePipeline";
+import { DocumentPipelineInspector } from "../../../components/vault/documents/DocumentPipelineInspector";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -217,139 +217,6 @@ function SignalCard({ signal, onValidate, onReject }: {
           Details →
         </Link>
       </div>
-    </div>
-  );
-}
-
-// ─── Document card ────────────────────────────────────────────────────────────
-
-function DocReviewCard({ doc, onApprove, onFlag }: {
-  doc:       IntelligenceDocument;
-  onApprove: (id: string) => Promise<void>;
-  onFlag:    (id: string, notes: string) => Promise<void>;
-}) {
-  const [acting,    setActing]    = useState(false);
-  const [flagging,  setFlagging]  = useState(false);
-  const [flagNotes, setFlagNotes] = useState("");
-  const trust = trustFromDoc(doc);
-
-  const actApprove = async () => {
-    setActing(true);
-    try { await onApprove(doc.id); } finally { setActing(false); }
-  };
-  const actFlag = async () => {
-    setActing(true);
-    try { await onFlag(doc.id, flagNotes); setFlagging(false); } finally { setActing(false); }
-  };
-
-  return (
-    <div className="border border-zinc-800 rounded-lg p-4 space-y-3">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-white truncate">{doc.title}</p>
-          <div className="flex items-center gap-2 mt-1 flex-wrap text-xs text-zinc-600">
-            <span className="uppercase">{doc.category}</span>
-            <span>·</span>
-            <span>{relTime(doc.uploadedAt)}</span>
-            <span>·</span>
-            <span>{doc.fileName}</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {doc.confidence !== undefined && <ConfBadge confidence={doc.confidence} />}
-          <TrustBadge trust={trust} />
-        </div>
-      </div>
-
-      {/* AI Summary */}
-      {doc.aiSummary && (
-        <div className="bg-zinc-950 border border-zinc-900 rounded px-3 py-2">
-          <p className="text-xs text-zinc-600 font-medium mb-1 flex items-center gap-1">
-            AI Summary <LearnTip term="AI Summary" />
-          </p>
-          <p className="text-xs text-zinc-400 leading-relaxed line-clamp-3">{doc.aiSummary}</p>
-        </div>
-      )}
-
-      {/* Key Insights */}
-      {doc.aiKeyInsights && doc.aiKeyInsights.length > 0 && (
-        <div className="space-y-1">
-          <p className="text-xs text-zinc-600 font-medium flex items-center gap-1">
-            Key Insights ({doc.aiKeyInsights.length}) <LearnTip term="Key Insights" />
-          </p>
-          {doc.aiKeyInsights.slice(0, 3).map((insight, i) => (
-            <div key={i} className="flex gap-1.5 text-xs text-zinc-400">
-              <span className="text-cyan-800 shrink-0">›</span>
-              <span className="line-clamp-1">{insight}</span>
-            </div>
-          ))}
-          {doc.aiKeyInsights.length > 3 && (
-            <p className="text-xs text-zinc-600 pl-3">+{doc.aiKeyInsights.length - 3} more</p>
-          )}
-        </div>
-      )}
-
-      {/* Content ideas count */}
-      {doc.contentIdeas && doc.contentIdeas.length > 0 && (
-        <p className="text-xs text-zinc-600">
-          {doc.contentIdeas.length} content idea{doc.contentIdeas.length !== 1 ? "s" : ""} will be sent to queue on approval
-        </p>
-      )}
-
-      {/* Flag notes input */}
-      {flagging && (
-        <div className="space-y-2 pt-1">
-          <textarea
-            value={flagNotes}
-            onChange={e => setFlagNotes(e.target.value)}
-            placeholder="What needs revision? (optional)"
-            rows={2}
-            className="w-full text-xs bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-white placeholder-zinc-600 resize-none focus:outline-none focus:border-zinc-600"
-          />
-          <div className="flex gap-2">
-            <button
-              disabled={acting}
-              onClick={actFlag}
-              className="flex-1 text-xs py-1.5 bg-amber-950 border border-amber-800 text-amber-300 rounded disabled:opacity-50"
-            >
-              {acting ? "…" : "Confirm Flag"}
-            </button>
-            <button
-              onClick={() => setFlagging(false)}
-              className="flex-1 text-xs py-1.5 bg-zinc-900 border border-zinc-800 text-zinc-400 rounded"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Actions */}
-      {!flagging && (
-        <div className="flex gap-2 pt-1">
-          <button
-            disabled={acting}
-            onClick={actApprove}
-            className="flex-1 text-xs py-1.5 bg-green-950 hover:bg-green-900 border border-green-900 text-green-300 rounded transition-colors disabled:opacity-50"
-          >
-            {acting ? "…" : "Approve for Queue"}
-          </button>
-          <button
-            disabled={acting}
-            onClick={() => setFlagging(true)}
-            className="flex-1 text-xs py-1.5 bg-amber-950 hover:bg-amber-900 border border-amber-900 text-amber-400 rounded transition-colors disabled:opacity-50"
-          >
-            Flag for Revision
-          </button>
-          <Link
-            href="/vault/documents"
-            className="flex-1 text-center text-xs py-1.5 bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-500 rounded transition-colors"
-          >
-            Library →
-          </Link>
-        </div>
-      )}
     </div>
   );
 }
@@ -739,7 +606,7 @@ export default function AdminVaultClient() {
               />
             ) : (
               pendingDocs.map(d => (
-                <DocReviewCard
+                <DocumentPipelineInspector
                   key={d.id}
                   doc={d}
                   onApprove={handleApproveDoc}

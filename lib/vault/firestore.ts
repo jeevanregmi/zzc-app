@@ -24,6 +24,7 @@ import type { VaultMedia, VaultFolder, VaultDocument } from "./types";
 import type { IntelligenceDocument } from "../types/documents";
 import type { QueueItem } from "../types/queue";
 import type { SourceSignal, MonitoredSource, IntelligenceTopic } from "../types/signals";
+import { writeAtomsForDoc } from "./atoms";
 
 // ─── Collection names ────────────────────────────────────────────────────────
 
@@ -199,6 +200,20 @@ export async function approveIntelligenceDocForQueue(id: string): Promise<void> 
     adminApprovedAt:     new Date().toISOString(),
     updatedAt:           Timestamp.now(),
   });
+  // Harvest civic atoms — read the doc we just approved, then write atoms
+  const snap = await getDoc(doc(db, COL_INTEL_DOCS, id));
+  if (snap.exists()) {
+    const data = snap.data();
+    const intelligenceDoc: IntelligenceDocument = {
+      ...data,
+      id,
+      uploadedAt: data.uploadedAt?.toDate?.()?.toISOString() ?? now(),
+      updatedAt:  data.updatedAt?.toDate?.()?.toISOString()  ?? now(),
+    } as IntelligenceDocument;
+    await writeAtomsForDoc(intelligenceDoc).catch(err =>
+      console.error("atom harvest failed for", id, err)
+    );
+  }
 }
 
 export async function flagIntelligenceDocForRevision(
