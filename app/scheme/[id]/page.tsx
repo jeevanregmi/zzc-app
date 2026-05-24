@@ -7,24 +7,27 @@ const FIRESTORE =
 
 export const dynamicParams = false;
 
-// One fetch per build worker, shared by generateStaticParams + generateMetadata
+// One fetch per build worker — no cache option (force-cache breaks webpack builds)
 let schemesPromise: Promise<Map<string, Record<string, any>>> | null = null;
 
 function getAllSchemeFields(): Promise<Map<string, Record<string, any>>> {
   if (!schemesPromise) {
-    schemesPromise = fetch(`${FIRESTORE}?pageSize=200`, { cache: "force-cache" })
-      .then((r) => r.json())
+    schemesPromise = fetch(`${FIRESTORE}?pageSize=200`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`Firestore returned ${r.status}`);
+        return r.json();
+      })
       .then((data) => {
         const map = new Map<string, Record<string, any>>();
         for (const doc of data.documents ?? []) {
           const id: string = doc.name.split("/").pop();
           map.set(id, doc.fields ?? {});
         }
+        if (map.size === 0) throw new Error("Firestore returned 0 schemes — check collection or rules");
         return map;
-      })
-      .catch(() => new Map());
+      });
   }
-  return schemesPromise;
+  return schemesPromise!;
 }
 
 function str(fields: Record<string, any>, key: string): string {
