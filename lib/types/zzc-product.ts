@@ -40,6 +40,15 @@ export interface ZzcProductBranding {
   soundTheme?:   string;
 }
 
+export interface ZzcProductTreeAsset {
+  heroImageUrl?:    string; // CDN URL of the cinematic tree image (R2 or Firestore Storage)
+  activeTreeAsset?: string; // asset filename/key in storage
+  generatedBy?:     string; // admin uid who generated the asset
+  assetPrompt?:     string; // the image generation prompt used
+  assetCost?:       number; // cost in USD (for budget tracking)
+  isActive:         boolean; // whether this asset is live on the product
+}
+
 export interface ZzcProductAnalytics {
   installs?:     number;
   activeUsers?:  number;
@@ -65,6 +74,7 @@ export interface ZzcProduct {
   routes:           ZzcProductRoutes;
   monetization:     ZzcProductMonetization;
   branding:         ZzcProductBranding;
+  treeAsset?:       ZzcProductTreeAsset;
   analytics:        ZzcProductAnalytics;
   createdAt:        string;
   updatedAt:        string;
