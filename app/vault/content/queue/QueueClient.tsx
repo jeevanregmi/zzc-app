@@ -255,22 +255,22 @@ function QueueCard({
             + Note
           </button>
         )}
-        {item.status !== "archived" && (
-          <button
-            onClick={() => onArchive(item.id)}
-            className="text-xs text-zinc-700 hover:text-zinc-500 ml-auto"
-          >
-            संग्रह
-          </button>
-        )}
-        {(item.status === "archived" || item.status === "rejected") && (
+        <div className="flex items-center gap-2 ml-auto">
+          {item.status !== "archived" && (
+            <button
+              onClick={() => onArchive(item.id)}
+              className="text-xs text-zinc-700 hover:text-zinc-500"
+            >
+              संग्रह
+            </button>
+          )}
           <button
             onClick={() => onDelete(item.id)}
-            className="text-xs text-zinc-700 hover:text-red-500 ml-auto"
+            className="text-xs text-zinc-700 hover:text-red-500"
           >
             मेटाउनुहोस्
           </button>
-        )}
+        </div>
       </div>
     </div>
   );
