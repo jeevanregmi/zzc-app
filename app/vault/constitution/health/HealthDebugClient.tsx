@@ -18,6 +18,12 @@ import {
 import type { IntelligenceRecord } from "../../../../lib/types/intelligence-record";
 import type { ConstitutionalFrameworkRecord } from "../../../../lib/types/constitutional-framework";
 import { PARTS_META } from "./partsMeta";
+import { UPLOAD_GUIDANCE, type VaultCategory } from "../../../../lib/constitution/uploadGuidance";
+import {
+  computeAllDeepLearnProfiles,
+  type PartDeepLearnProfile,
+  type MetricDeepLearn,
+} from "../../../../lib/constitution/deepLearnComputer";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -130,10 +136,100 @@ function ScoreBar({ score, color }: { score: number; color: string }) {
   );
 }
 
-function LearnCard({ text }: { text: string }) {
+// ─── Metric → deep learn key mapping ─────────────────────────────────────────
+
+type DeepLearnKey = keyof Omit<PartDeepLearnProfile, "partNumber">;
+
+const STRUCT_DEEP_KEY: Record<string, DeepLearnKey | null> = {
+  atoms:        null,           // statistical only
+  dharas:       "dharaList",
+  density:      null,           // statistical only
+  rights:       "rights",
+  institutions: "institutions",
+  deps:         "dependencies",
+  groups:       "affectedGroups",
+};
+
+// ─── Deep Learn Card ─────────────────────────────────────────────────────────
+
+function DeepLearnCard({ data, metricLabel, simpleText }: {
+  data:        MetricDeepLearn | null;
+  metricLabel: string;
+  simpleText:  string;   // fallback for statistical metrics
+}) {
+  const [showAll, setShowAll] = useState(false);
+
+  if (!data) {
+    return (
+      <div style={{ background: "rgba(8,40,50,0.90)", border: "1px solid #0e7490", borderRadius: "9px", padding: "10px 13px", marginTop: "6px" }}>
+        <p style={{ fontSize: "12px", color: "rgba(103,232,249,0.88)", lineHeight: 1.72, margin: 0 }}>{simpleText}</p>
+      </div>
+    );
+  }
+
+  const count      = data.entities.length;
+  const meaning    = data.citizenMeaning.replace("{count}", String(count));
+  const showLimit  = 10;
+  const visible    = showAll ? data.entities : data.entities.slice(0, showLimit);
+  const remaining  = data.entities.length - showLimit;
+
   return (
-    <div style={{ background: "rgba(8,40,50,0.90)", border: "1px solid #0e7490", borderRadius: "9px", padding: "10px 13px", marginTop: "4px" }}>
-      <p style={{ fontSize: "12px", color: "rgba(103,232,249,0.88)", lineHeight: 1.72, margin: 0 }}>{text}</p>
+    <div style={{ background: "rgba(6,30,40,0.95)", border: "1px solid #0e7490", borderRadius: "10px", padding: "13px 14px", marginTop: "6px", display: "flex", flexDirection: "column", gap: "11px" }}>
+
+      {/* Section 1 — Entities */}
+      {data.entities.length > 0 && (
+        <div>
+          <p style={{ fontSize: "9px", fontWeight: 800, color: "#67e8f9", letterSpacing: "0.10em", textTransform: "uppercase", margin: "0 0 7px" }}>
+            संविधानले उल्लेख गरेका {metricLabel} ({count})
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+            {visible.map((e, i) => (
+              <span key={i} style={{ fontSize: "10px", color: "rgba(103,232,249,0.80)", background: "rgba(14,116,144,0.18)", border: "1px solid rgba(14,116,144,0.35)", borderRadius: "5px", padding: "2px 8px" }}>
+                {e}
+              </span>
+            ))}
+            {!showAll && remaining > 0 && (
+              <button onClick={() => setShowAll(true)} style={{ fontSize: "10px", color: "#06b6d4", background: "rgba(6,182,212,0.10)", border: "1px solid rgba(6,182,212,0.25)", borderRadius: "5px", padding: "2px 8px", cursor: "pointer" }}>
+                +{remaining} अझ
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Section 2 — Citizen meaning */}
+      <div>
+        <p style={{ fontSize: "9px", fontWeight: 800, color: "#4ade80", letterSpacing: "0.10em", textTransform: "uppercase", margin: "0 0 5px" }}>किन सम्बन्धित?</p>
+        <p style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.72)", lineHeight: 1.65, margin: 0 }}>{meaning}</p>
+      </div>
+
+      {/* Section 3 — Dhara refs */}
+      {data.sourceArticles.length > 0 && (
+        <div>
+          <p style={{ fontSize: "9px", fontWeight: 800, color: "#fbbf24", letterSpacing: "0.10em", textTransform: "uppercase", margin: "0 0 7px" }}>
+            संविधानले कहाँ भनेको? ({data.sourceArticles.length} धारा)
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+            {data.sourceArticles.map(a => (
+              <span key={a} style={{ fontSize: "10px", color: "rgba(251,191,36,0.80)", background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.22)", borderRadius: "5px", padding: "2px 7px" }}>
+                धारा {a}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Section 4 — AI reasoning */}
+      <div>
+        <p style={{ fontSize: "9px", fontWeight: 800, color: "#a78bfa", letterSpacing: "0.10em", textTransform: "uppercase", margin: "0 0 5px" }}>AI ले कसरी बुझ्यो?</p>
+        <p style={{ fontSize: "10.5px", color: "rgba(167,139,250,0.75)", lineHeight: 1.65, margin: 0 }}>{data.aiReasoning}</p>
+      </div>
+
+      {/* Section 5 — Real-world impact */}
+      <div>
+        <p style={{ fontSize: "9px", fontWeight: 800, color: "#f472b6", letterSpacing: "0.10em", textTransform: "uppercase", margin: "0 0 5px" }}>वास्तविक जीवन सम्बन्ध</p>
+        <p style={{ fontSize: "10.5px", color: "rgba(244,114,182,0.75)", lineHeight: 1.65, margin: 0 }}>{data.whyItMatters}</p>
+      </div>
     </div>
   );
 }
@@ -208,6 +304,108 @@ function LivePill({
   );
 }
 
+// ─── Upload guidance helpers ──────────────────────────────────────────────────
+
+const PRIORITY_STYLE = {
+  high:   { bg: "rgba(239,68,68,0.12)",   dot: "#ef4444", label: "उच्च" },
+  medium: { bg: "rgba(251,191,36,0.12)",  dot: "#fbbf24", label: "मध्यम" },
+  low:    { bg: "rgba(148,163,184,0.10)", dot: "#94a3b8", label: "कम" },
+} as const;
+
+const CATEGORY_COLOR: Record<VaultCategory, string> = {
+  intelligence: "#4ade80",
+  research:     "#60a5fa",
+  legal:        "#a78bfa",
+  finance:      "#fbbf24",
+  strategy:     "#f472b6",
+  other:        "#94a3b8",
+};
+
+function UploadGuidanceSection({ partNumber }: { partNumber: number }) {
+  const recs = UPLOAD_GUIDANCE[partNumber] ?? [];
+  const [open,   setOpen]   = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
+
+  if (recs.length === 0) return null;
+
+  const copyTemplate = (text: string, key: string) => {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(key);
+      setTimeout(() => setCopied(null), 1800);
+    });
+  };
+
+  return (
+    <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: "10px" }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{ width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: "8px", padding: 0 }}
+      >
+        <span style={{ fontSize: "13px" }}>📥</span>
+        <span style={{ fontSize: "11px", fontWeight: 700, color: "#60a5fa", flex: 1 }}>
+          अब के upload गर्ने? <span style={{ fontWeight: 400, color: "rgba(96,165,250,0.55)" }}>({recs.length} सुझाव)</span>
+        </span>
+        <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.22)", transform: open ? "none" : "rotate(-90deg)", transition: "transform 0.18s" }}>▼</span>
+      </button>
+
+      {open && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "10px" }}>
+          {recs.map((rec, i) => {
+            const pStyle = PRIORITY_STYLE[rec.priority];
+            const catCol = CATEGORY_COLOR[rec.category];
+            const copyKey = `${partNumber}-${i}`;
+            return (
+              <div key={i} style={{ background: "rgba(96,165,250,0.04)", border: "1px solid rgba(96,165,250,0.10)", borderRadius: "8px", padding: "10px 12px" }}>
+
+                {/* Title + priority */}
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "8px", marginBottom: "6px" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ fontSize: "12px", fontWeight: 700, color: "#e2e8f0" }}>{rec.title}</span>
+                    <span style={{ fontSize: "9.5px", color: "rgba(255,255,255,0.25)", display: "block", marginTop: "1px" }}>{rec.titleEn}</span>
+                  </div>
+                  <span style={{ flexShrink: 0, fontSize: "9px", fontWeight: 700, color: pStyle.dot, background: pStyle.bg, border: `1px solid ${pStyle.dot}28`, borderRadius: "6px", padding: "2px 7px" }}>
+                    {pStyle.label}
+                  </span>
+                </div>
+
+                {/* Category + tags */}
+                <div style={{ display: "flex", gap: "5px", flexWrap: "wrap", marginBottom: "8px" }}>
+                  <span style={{ fontSize: "9px", fontWeight: 700, color: catCol, background: `${catCol}18`, border: `1px solid ${catCol}28`, borderRadius: "5px", padding: "2px 7px" }}>
+                    {rec.category}
+                  </span>
+                  {rec.tags.map(tag => (
+                    <span key={tag} style={{ fontSize: "9px", color: "rgba(255,255,255,0.32)", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "5px", padding: "2px 6px", fontFamily: "monospace" }}>
+                      #{tag}
+                    </span>
+                  ))}
+                </div>
+
+                {/* Template + copy */}
+                <div style={{ background: "rgba(0,0,0,0.22)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "6px", padding: "7px 10px", display: "flex", alignItems: "flex-start", gap: "8px" }}>
+                  <span style={{ flex: 1, fontSize: "10.5px", color: "rgba(255,255,255,0.42)", lineHeight: 1.65, fontFamily: "monospace" }}>{rec.template}</span>
+                  <button
+                    onClick={() => copyTemplate(rec.template, copyKey)}
+                    style={{ flexShrink: 0, background: copied === copyKey ? "rgba(74,222,128,0.10)" : "rgba(96,165,250,0.10)", border: `1px solid ${copied === copyKey ? "#4ade8030" : "rgba(96,165,250,0.22)"}`, borderRadius: "5px", color: copied === copyKey ? "#4ade80" : "#60a5fa", fontSize: "9px", fontWeight: 700, padding: "3px 8px", cursor: "pointer" }}
+                  >
+                    {copied === copyKey ? "✓ copied" : "copy"}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+
+          <a
+            href="/vault/documents"
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "9px 14px", background: "rgba(96,165,250,0.07)", border: "1px solid rgba(96,165,250,0.20)", borderRadius: "8px", fontSize: "11px", fontWeight: 700, color: "#60a5fa", textDecoration: "none" }}
+          >
+            Vault मा upload गर्नुहोस् →
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Layer divider label ──────────────────────────────────────────────────────
 
 function LayerLabel({ label, sub, color }: { label: string; sub: string; color: string }) {
@@ -222,10 +420,11 @@ function LayerLabel({ label, sub, color }: { label: string; sub: string; color: 
 // ─── Part card — two layers ───────────────────────────────────────────────────
 
 function PartCard({
-  health, structural, learnOn,
+  health, structural, deepLearn, learnOn,
 }: {
   health:     BranchHealth;
   structural: PartStructuralProfile;
+  deepLearn:  PartDeepLearnProfile | undefined;
   learnOn:    boolean;
 }) {
   const title = PARTS_META[health.partNumber] ?? `भाग ${health.partNumber}`;
@@ -239,6 +438,14 @@ function PartCard({
 
   const activeStructMeta = STRUCT_METRICS.find(m => m.id === activeStruct);
   const activeLiveMeta   = LIVE_METRICS.find(m => m.id === activeLive);
+
+  // Resolve deep learn data for the active structural metric
+  const activeDeepLearnData: MetricDeepLearn | null = (() => {
+    if (!activeStructMeta || !deepLearn) return null;
+    const key = STRUCT_DEEP_KEY[activeStructMeta.id];
+    if (!key) return null;
+    return deepLearn[key] as MetricDeepLearn;
+  })();
 
   return (
     <div style={{ background: "rgba(255,255,255,0.022)", border: `1px solid ${col.dot}25`, borderRadius: "12px", padding: "16px", display: "flex", flexDirection: "column", gap: "13px" }}>
@@ -271,7 +478,11 @@ function PartCard({
           ))}
         </div>
         {learnOn && activeStructMeta && (
-          <LearnCard text={activeStructMeta.explain.replace("{val}", String(activeStructMeta.value(structural)))} />
+          <DeepLearnCard
+            data={activeDeepLearnData}
+            metricLabel={activeStructMeta.label}
+            simpleText={activeStructMeta.explain.replace("{val}", String(activeStructMeta.value(structural)))}
+          />
         )}
       </div>
 
@@ -284,7 +495,11 @@ function PartCard({
           ))}
         </div>
         {learnOn && activeLiveMeta && (
-          <LearnCard text={activeLiveMeta.explain.replace("{count}", String(activeLiveMeta.value(health)))} />
+          <DeepLearnCard
+            data={null}
+            metricLabel={activeLiveMeta.label}
+            simpleText={activeLiveMeta.explain.replace("{count}", String(activeLiveMeta.value(health)))}
+          />
         )}
 
         {/* Reason lines */}
@@ -303,6 +518,9 @@ function PartCard({
         )}
       </div>
 
+      {/* ── Upload guidance ──────────────────────────────────────────────────── */}
+      <UploadGuidanceSection partNumber={health.partNumber} />
+
       {health.lastUpdated && (
         <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.16)", margin: 0 }}>
           अन्तिम अद्यावधिक: {new Date(health.lastUpdated).toLocaleDateString("en-GB")}
@@ -315,15 +533,18 @@ function PartCard({
 // ─── Section ──────────────────────────────────────────────────────────────────
 
 function HealthSection({
-  state, parts, structMap, learnOn,
+  state, parts, structMap, deepLearnMap, learnOn,
 }: {
-  state:     BranchHealthState;
-  parts:     BranchHealth[];
-  structMap: Map<number, PartStructuralProfile>;
-  learnOn:   boolean;
+  state:        BranchHealthState;
+  parts:        BranchHealth[];
+  structMap:    Map<number, PartStructuralProfile>;
+  deepLearnMap: Map<number, PartDeepLearnProfile>;
+  learnOn:      boolean;
 }) {
   const col = HEALTH_COLORS[state];
   const [collapsed, setCollapsed] = useState(false);
+
+  const EMPTY_STRUCT: PartStructuralProfile = { partNumber: 0, atomCount: 0, dharaCount: 0, clauseDensity: 0, rightsComplexity: 0, institutionCount: 0, dutyCount: 0, obligationCount: 0, dependencyCount: 0, governanceScope: [], keywordCount: 0, affectedGroupCount: 0 };
 
   return (
     <section style={{ borderBottom: "2px solid rgba(255,255,255,0.05)" }}>
@@ -351,7 +572,8 @@ function HealthSection({
                 <PartCard
                   key={h.partNumber}
                   health={h}
-                  structural={structMap.get(h.partNumber) ?? { partNumber: h.partNumber, atomCount: 0, dharaCount: 0, clauseDensity: 0, rightsComplexity: 0, institutionCount: 0, dutyCount: 0, obligationCount: 0, dependencyCount: 0, governanceScope: [], keywordCount: 0, affectedGroupCount: 0 }}
+                  structural={structMap.get(h.partNumber) ?? { ...EMPTY_STRUCT, partNumber: h.partNumber }}
+                  deepLearn={deepLearnMap.get(h.partNumber)}
                   learnOn={learnOn}
                 />
               ))}
@@ -381,18 +603,17 @@ function LearnBanner() {
 export default function HealthDebugClient() {
   const { user }          = useVaultAuth();
   const { on: learnOn }   = useLearningMode();
-  const [healthMap,   setHealthMap]   = useState<Map<number, BranchHealth>>(new Map());
-  const [structMap,   setStructMap]   = useState<Map<number, PartStructuralProfile>>(new Map());
-  const [loading,     setLoading]     = useState(true);
-  const [totalIntel,  setTotalIntel]  = useState(0);
-  const [totalAtoms,  setTotalAtoms]  = useState(0);
+  const [healthMap,     setHealthMap]     = useState<Map<number, BranchHealth>>(new Map());
+  const [structMap,     setStructMap]     = useState<Map<number, PartStructuralProfile>>(new Map());
+  const [deepLearnMap,  setDeepLearnMap]  = useState<Map<number, PartDeepLearnProfile>>(new Map());
+  const [loading,       setLoading]       = useState(true);
+  const [totalIntel,    setTotalIntel]    = useState(0);
+  const [totalAtoms,    setTotalAtoms]    = useState(0);
 
   useEffect(() => {
     if (!user) return;
     Promise.all([
-      // Layer 2: intelligence records
       getDocs(query(collection(db, "janta_intelligence"), where("publishToJanta", "==", true))),
-      // Layer 1: constitutional atoms
       getDocs(query(collection(db, "constitutional_framework"), where("publishToJanta", "==", true))),
     ])
       .then(([intelSnap, atomSnap]) => {
@@ -402,6 +623,7 @@ export default function HealthDebugClient() {
         setTotalAtoms(atoms.length);
         setHealthMap(computeAllPartsHealth(PART_NUMBERS, records));
         setStructMap(computeAllStructuralProfiles(PART_NUMBERS, atoms));
+        setDeepLearnMap(computeAllDeepLearnProfiles(PART_NUMBERS, atoms));
       })
       .catch(err => console.error("[HealthDebug]", err))
       .finally(() => setLoading(false));
@@ -477,6 +699,7 @@ export default function HealthDebugClient() {
             state={state}
             parts={grouped.get(state) ?? []}
             structMap={structMap}
+            deepLearnMap={deepLearnMap}
             learnOn={learnOn}
           />
         ))
