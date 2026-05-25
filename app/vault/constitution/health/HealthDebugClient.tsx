@@ -556,136 +556,51 @@ function LayerLabel({ label, sub, color }: { label: string; sub: string; color: 
   );
 }
 
-// ─── Part card ────────────────────────────────────────────────────────────────
+// ─── Static constitutional knowledge — always available, no Firestore needed ──
 
-function PartCard({
-  health, structural, deepLearn, learnOn, civicAtomCount,
-}: {
-  health:         BranchHealth;
-  structural:     PartStructuralProfile;
-  deepLearn:      PartDeepLearnProfile | undefined;
-  learnOn:        boolean;
-  civicAtomCount: number;
-}) {
-  const title = PARTS_META[health.partNumber] ?? `भाग ${health.partNumber}`;
-  const col   = HEALTH_COLORS[health.state];
-
-  const [activeStruct, setActiveStruct] = useState<string | null>(null);
-  const [activeLive,   setActiveLive]   = useState<string | null>(null);
-
-  const toggleStruct = (id: string) => { setActiveStruct(p => p === id ? null : id); setActiveLive(null); };
-  const toggleLive   = (id: string) => { setActiveLive(p => p === id ? null : id);   setActiveStruct(null); };
-
-  const activeStructMeta = STRUCT_METRICS.find(m => m.id === activeStruct);
-  const activeLiveMeta   = LIVE_METRICS.find(m => m.id === activeLive);
-
-  const activeDeepLearnData: MetricDeepLearn | null = (() => {
-    if (!activeStructMeta || !deepLearn) return null;
-    const key = STRUCT_DEEP_KEY[activeStructMeta.id];
-    if (!key) return null;
-    return deepLearn[key] as MetricDeepLearn;
-  })();
-
-  const completeness = computeCompleteness(health.partNumber, structural, health, civicAtomCount);
-
-  return (
-    <div style={{ background: "rgba(255,255,255,0.022)", border: `1px solid ${col.dot}25`, borderRadius: "12px", padding: "16px", display: "flex", flexDirection: "column", gap: "13px" }}>
-
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "5px" }}>
-            <span style={{ fontSize: "10px", fontWeight: 700, color: col.dot, background: `${col.dot}18`, padding: "2px 7px", borderRadius: "8px" }}>भाग {health.partNumber}</span>
-            <span style={{ fontSize: "13px", fontWeight: 600, color: "#fde68a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
-          </div>
-          <ScoreBar score={health.healthScore} color={col.dot} />
-        </div>
-        <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <p style={{ fontSize: "22px", fontWeight: 900, color: col.dot, margin: 0, lineHeight: 1 }}>{health.healthScore}</p>
-          <p style={{ fontSize: "9px", color: "rgba(255,255,255,0.25)", margin: "2px 0 0" }}>/ 100</p>
-        </div>
-      </div>
-
-      {/* Data completeness bar */}
-      <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: "7px", padding: "8px 10px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "5px" }}>
-          <span style={{ fontSize: "9px", fontWeight: 800, color: "rgba(255,255,255,0.30)", letterSpacing: "0.10em", textTransform: "uppercase" }}>डेटा पूर्णता</span>
-          <span style={{ fontSize: "10px", fontWeight: 700, color: completeness.color }}>{completeness.pct}% — {completeness.label}</span>
-        </div>
-        <div style={{ height: "4px", background: "rgba(255,255,255,0.06)", borderRadius: "2px", overflow: "hidden" }}>
-          <div style={{ width: `${completeness.pct}%`, height: "100%", background: completeness.color, borderRadius: "2px", transition: "width 0.3s" }} />
-        </div>
-        {completeness.pct < 50 && (
-          <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)", margin: "5px 0 0", fontStyle: "italic" }}>
-            थप documents upload गर्नुस् — तल सुझाव हेर्नुस् ↓
-          </p>
-        )}
-      </div>
-
-      {/* ── Layer 1: Structural ── */}
-      <div style={{ background: "rgba(192,132,252,0.04)", border: "1px solid rgba(192,132,252,0.12)", borderRadius: "8px", padding: "10px 12px" }}>
-        <LayerLabel label="तह १ · संरचना" sub="constitutional_framework + constitutional_atoms" color="#c084fc" />
-        <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
-          {STRUCT_METRICS.map(m => (
-            <StructPill key={m.id} m={m} profile={structural} activeId={activeStruct} onToggle={toggleStruct} learnOn={learnOn} />
-          ))}
-        </div>
-        {learnOn && activeStructMeta && (
-          <DeepLearnCard
-            data={activeDeepLearnData}
-            metricLabel={activeStructMeta.label}
-            simpleText={activeStructMeta.explain.replace("{val}", String(activeStructMeta.value(structural)))}
-          />
-        )}
-        {structural.atomCount === 0 && (
-          <p style={{ fontSize: "10px", color: "rgba(192,132,252,0.35)", margin: "6px 0 0", fontStyle: "italic" }}>
-            यस भागका संविधानिक atoms अझै load भएका छैनन्
-          </p>
-        )}
-      </div>
-
-      {/* ── Layer 2: Live Intelligence ── */}
-      <div style={{ background: "rgba(74,222,128,0.03)", border: "1px solid rgba(74,222,128,0.10)", borderRadius: "8px", padding: "10px 12px" }}>
-        <LayerLabel label="तह २ · जीवित बुद्धि" sub="vault_civic_atoms + janta_intelligence + civic_signals" color={col.dot} />
-        <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
-          {LIVE_METRICS.map(m => (
-            <LivePill key={m.id} m={m} health={health} activeId={activeLive} onToggle={toggleLive} learnOn={learnOn} />
-          ))}
-        </div>
-        {learnOn && activeLiveMeta && (
-          <DeepLearnCard
-            data={null}
-            metricLabel={activeLiveMeta.label}
-            simpleText={activeLiveMeta.explain.replace("{count}", String(activeLiveMeta.value(health)))}
-          />
-        )}
-        {health.reasonLines.length > 0 && (
-          <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", marginTop: "10px", paddingTop: "8px", display: "flex", flexDirection: "column", gap: "2px" }}>
-            {health.reasonLines.map((line, i) => (
-              <span key={i} style={{ fontSize: "10.5px", color: "rgba(255,255,255,0.38)", fontFamily: "monospace", lineHeight: 1.6 }}>{line}</span>
-            ))}
-          </div>
-        )}
-        {health.totalRecords === 0 && (
-          <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.20)", fontStyle: "italic", margin: "4px 0 0" }}>
-            कुनै प्रकाशित अभिलेख छैन — document upload र approve गर्नुस्
-          </p>
-        )}
-      </div>
-
-      {/* ── Upload guidance ── */}
-      <UploadGuidanceSection partNumber={health.partNumber} />
-
-      {health.lastUpdated && (
-        <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.16)", margin: 0 }}>
-          अन्तिम अद्यावधिक: {new Date(health.lastUpdated).toLocaleDateString("en-GB")}
-        </p>
-      )}
-    </div>
-  );
+interface PartStatic {
+  purpose:    string;
+  dharasHint: string;
+  themes:     string[];
 }
 
-// ─── Section ──────────────────────────────────────────────────────────────────
+const PART_STATIC: Record<number, PartStatic> = {
+  1:  { purpose: "नेपालको राज्य स्वरूप, सार्वभौमसत्ता, राष्ट्रिय भाषा र चिह्न",         dharasHint: "धारा १–९",     themes: ["सार्वभौमसत्ता","राज्य स्वरूप","राष्ट्रिय चिह्न","भाषा"] },
+  2:  { purpose: "नागरिकता प्राप्तिका आधार र नागरिक अधिकार",                              dharasHint: "धारा १०–१४",   themes: ["नागरिकता","वंश","विवाह","आप्रवासी"] },
+  3:  { purpose: "नागरिकका मौलिक हक — शिक्षा, स्वास्थ्य, समानता, स्वतन्त्रता",          dharasHint: "धारा १६–४६",   themes: ["शिक्षा","स्वास्थ्य","समानता","स्वतन्त्रता","महिला","दलित","बालबालिका"] },
+  4:  { purpose: "राज्यका निर्देशक सिद्धान्त, नीतिगत दायित्व र राज्यको दायित्व",        dharasHint: "धारा ५०–५५",   themes: ["सुशासन","विकास","सामाजिक न्याय","समावेश"] },
+  5:  { purpose: "संघ, प्रदेश, स्थानीय तहको तीन-तहीय संरचना र अधिकार बाँडफाँड",        dharasHint: "धारा ५६–५७",   themes: ["संघीयता","राज्य संरचना","अधिकार बाँडफाँड"] },
+  6:  { purpose: "राष्ट्रपति र उपराष्ट्रपतिको पद, शक्ति र कर्तव्य",                    dharasHint: "धारा ६१–७४",   themes: ["राष्ट्रपति","उपराष्ट्रपति","कार्यकारी शक्ति"] },
+  7:  { purpose: "प्रधानमन्त्री र मन्त्रिपरिषद् — संघीय कार्यकारी शक्ति",              dharasHint: "धारा ७५–८४",   themes: ["प्रधानमन्त्री","मन्त्रिपरिषद्","कार्यपालिका","नीति निर्माण"] },
+  8:  { purpose: "संघीय संसद — प्रतिनिधिसभा र राष्ट्रियसभा",                            dharasHint: "धारा ८३–१०१",  themes: ["संसद","प्रतिनिधिसभा","राष्ट्रियसभा","कानुन निर्माण"] },
+  9:  { purpose: "संघीय कानून निर्माण प्रक्रिया र विधेयक पारित",                        dharasHint: "धारा १०७–११७", themes: ["कानुन","विधेयक","संसदीय कार्यविधि"] },
+  10: { purpose: "संघीय सञ्चित कोष, बजेट, आर्थिक पारदर्शिता",                           dharasHint: "धारा ११८–१२४", themes: ["बजेट","सञ्चित कोष","आर्थिक अनुशासन"] },
+  11: { purpose: "सर्वोच्च अदालत, उच्च अदालत, जिल्ला अदालत — स्वतन्त्र न्यायपालिका",  dharasHint: "धारा १२६–१४८", themes: ["न्यायपालिका","सर्वोच्च अदालत","संविधान व्याख्या","न्यायिक स्वतन्त्रता"] },
+  12: { purpose: "महान्यायाधिवक्ता — सरकारको कानुनी परामर्शदाता",                       dharasHint: "धारा १५७–१६२", themes: ["कानुन","सरकारी वकिल","अभियोजन"] },
+  13: { purpose: "प्रदेश गठन, सिमाना, नाम र अधिकार क्षेत्र",                           dharasHint: "धारा १६३–१६७", themes: ["प्रदेश","संघीयता","स्वायत्तता"] },
+  14: { purpose: "प्रदेश मुख्यमन्त्री र मन्त्रिपरिषद्",                                 dharasHint: "धारा १६८–१७४", themes: ["प्रदेश सरकार","मुख्यमन्त्री","प्रदेश कार्यपालिका"] },
+  15: { purpose: "प्रदेश सभा — प्रदेशस्तरीय व्यवस्थापिका",                              dharasHint: "धारा १७५–१८५", themes: ["प्रदेश सभा","प्रदेश कानुन","निर्वाचन"] },
+  16: { purpose: "प्रदेशस्तरीय कानून निर्माण प्रक्रिया",                                dharasHint: "धारा १९७–२०२", themes: ["प्रदेश कानुन","विधेयक","कार्यविधि"] },
+  17: { purpose: "प्रदेशमा उच्च अदालतको न्यायिक व्यवस्था",                             dharasHint: "धारा २०३–२१३", themes: ["उच्च अदालत","प्रदेश न्याय","न्यायिक सेवा"] },
+  18: { purpose: "स्थानीय तहको कार्यपालिका — मेयर, उपमेयर, अध्यक्ष",                  dharasHint: "धारा २१४–२१९", themes: ["स्थानीय सरकार","मेयर","अध्यक्ष","वडा"] },
+  19: { purpose: "गाउँ सभा र नगर सभा — स्थानीय व्यवस्थापिका",                          dharasHint: "धारा २२०–२२४", themes: ["गाउँसभा","नगरसभा","वडा समिति","स्थानीय कानुन"] },
+  20: { purpose: "स्थानीय तहको शासन व्यवस्था र स्वशासन",                               dharasHint: "धारा २२५",     themes: ["स्थानीय शासन","स्वशासन","सेवा प्रवाह"] },
+  21: { purpose: "स्थानीय तहको वित्त व्यवस्था, राजस्व र अनुदान",                       dharasHint: "धारा २२६–२२९", themes: ["स्थानीय बजेट","राजस्व","वित्त समानीकरण"] },
+  22: { purpose: "संघ, प्रदेश, स्थानीयबीच समन्वय र अन्तरसरकारी सम्बन्ध",              dharasHint: "धारा २३०–२३५", themes: ["समन्वय","अन्तरसरकारी","सहकार्य"] },
+  23: { purpose: "राष्ट्रिय प्राकृतिक स्रोत र वित्त आयोग — राजस्व बाँडफाँड",           dharasHint: "धारा २५०–२६५", themes: ["वित्त आयोग","राजस्व बाँडफाँड","प्राकृतिक स्रोत"] },
+  24: { purpose: "अख्तियार दुरुपयोग अनुसन्धान आयोग — भ्रष्टाचार नियन्त्रण",            dharasHint: "धारा २३८–२४२", themes: ["भ्रष्टाचार","CIAA","अनुसन्धान","सुशासन"] },
+  25: { purpose: "महालेखापरीक्षक — सरकारी खर्चको स्वतन्त्र लेखापरीक्षण",               dharasHint: "धारा २४३–२४६", themes: ["लेखापरीक्षण","आर्थिक पारदर्शिता"] },
+  26: { purpose: "लोक सेवा आयोग — निष्पक्ष सरकारी भर्ती र पदस्थापन",                  dharasHint: "धारा २४३–२४७", themes: ["लोक सेवा","भर्ती","समावेश","योग्यता"] },
+  27: { purpose: "निर्वाचन आयोग — स्वतन्त्र र निष्पक्ष निर्वाचन सञ्चालन",             dharasHint: "धारा २४५–२५२", themes: ["निर्वाचन","मतदान","राजनीतिक दल","मतदाता"] },
+  28: { purpose: "राष्ट्रिय मानव अधिकार आयोग — नागरिक हक संरक्षण",                    dharasHint: "धारा २४८–२५३", themes: ["मानव अधिकार","NHRC","नागरिक सुरक्षा"] },
+  29: { purpose: "राष्ट्रिय महिला आयोग — लैंगिक समानता र महिला संरक्षण",              dharasHint: "धारा २५२–२५८", themes: ["महिला अधिकार","लैंगिक समानता","हिंसा निवारण"] },
+  30: { purpose: "राष्ट्रिय दलित आयोग — जातीय भेदभाव उन्मूलन",                        dharasHint: "धारा २५५–२६०", themes: ["दलित","जातीय भेदभाव","सामाजिक समावेश"] },
+  31: { purpose: "राष्ट्रिय समावेशी आयोग — समानुपातिक र समावेशी प्रतिनिधित्व",       dharasHint: "धारा २६१–२६५", themes: ["समावेश","पिछडिएका वर्ग","समानुपातिक"] },
+  32: { purpose: "राष्ट्रिय जनजाति आयोग — आदिवासी जनजातिको अधिकार",                  dharasHint: "धारा २६१–२६७", themes: ["जनजाति","आदिवासी","भाषा","संस्कृति"] },
+  33: { purpose: "संवैधानिक निकायहरूको साझा व्यवस्था",                                 dharasHint: "धारा २६६–२७०", themes: ["संवैधानिक निकाय","स्वायत्तता","जवाफदेहिता"] },
+  34: { purpose: "मधेसी आयोग — मधेस क्षेत्रको विशेष प्रतिनिधित्व",                    dharasHint: "धारा २७१–२७३", themes: ["मधेसी","तराई","समावेश","प्रतिनिधित्व"] },
+  35: { purpose: "संविधान संशोधन, संक्रमणकालीन व्यवस्था र विविध प्रावधान",            dharasHint: "धारा २७४–३०८", themes: ["संशोधन","संक्रमण","विविध","अन्तिम प्रावधान"] },
+};
 
 const EMPTY_STRUCT: PartStructuralProfile = {
   partNumber: 0, atomCount: 0, dharaCount: 0, clauseDensity: 0,
@@ -693,51 +608,153 @@ const EMPTY_STRUCT: PartStructuralProfile = {
   dependencyCount: 0, governanceScope: [], keywordCount: 0, affectedGroupCount: 0,
 };
 
-function HealthSection({ state, parts, structMap, deepLearnMap, learnOn, civicAtomsByPart }: {
-  state:            BranchHealthState;
-  parts:            BranchHealth[];
-  structMap:        Map<number, PartStructuralProfile>;
-  deepLearnMap:     Map<number, PartDeepLearnProfile>;
-  learnOn:          boolean;
-  civicAtomsByPart: Map<number, number>;
+const EMPTY_HEALTH: BranchHealth = {
+  partNumber: 0, state: "unknown", healthScore: 0,
+  totalRecords: 0, positiveCount: 0, warningCount: 0,
+  fundingCount: 0, progressCount: 0, contradictionCount: 0,
+  lastUpdated: null, reasonLines: [],
+};
+
+// ─── Part roadmap card — always renders for all 35 parts ─────────────────────
+
+function PartRoadmapCard({
+  partNumber, health, structural, deepLearn, learnOn, civicAtomCount,
+}: {
+  partNumber:     number;
+  health:         BranchHealth | undefined;
+  structural:     PartStructuralProfile;
+  deepLearn:      PartDeepLearnProfile | undefined;
+  learnOn:        boolean;
+  civicAtomCount: number;
 }) {
-  const col = HEALTH_COLORS[state];
-  const [collapsed, setCollapsed] = useState(false);
+  const title    = PARTS_META[partNumber] ?? `भाग ${partNumber}`;
+  const st       = PART_STATIC[partNumber] ?? { purpose: "", dharasHint: "", themes: [] };
+  const h        = health ?? { ...EMPTY_HEALTH, partNumber };
+  const col      = HEALTH_COLORS[h.state];
+  const hasL1    = structural.atomCount > 0 || structural.dharaCount > 0;
+  const hasL2    = h.totalRecords > 0;
+  const completeness = computeCompleteness(partNumber, structural, h, civicAtomCount);
+
+  const [activeStruct, setActiveStruct] = useState<string | null>(null);
+  const [activeLive,   setActiveLive]   = useState<string | null>(null);
+  const toggleStruct = (id: string) => { setActiveStruct(p => p === id ? null : id); setActiveLive(null); };
+  const toggleLive   = (id: string) => { setActiveLive(p => p === id ? null : id);   setActiveStruct(null); };
+  const activeStructMeta = STRUCT_METRICS.find(m => m.id === activeStruct);
+  const activeLiveMeta   = LIVE_METRICS.find(m => m.id === activeLive);
+  const activeDeepLearnData: MetricDeepLearn | null = (() => {
+    if (!activeStructMeta || !deepLearn) return null;
+    const key = STRUCT_DEEP_KEY[activeStructMeta.id];
+    return key ? deepLearn[key] as MetricDeepLearn : null;
+  })();
 
   return (
-    <section style={{ borderBottom: "2px solid rgba(255,255,255,0.05)" }}>
-      <button
-        onClick={() => setCollapsed(c => !c)}
-        style={{ width: "100%", textAlign: "left", background: `linear-gradient(90deg,${col.dot}12 0%,transparent 55%)`, border: "none", borderBottom: "1px solid rgba(255,255,255,0.04)", padding: "14px 24px", cursor: "pointer", display: "flex", alignItems: "center", gap: "12px" }}
-      >
-        <span style={{ width: "10px", height: "10px", borderRadius: "50%", background: col.dot, flexShrink: 0, boxShadow: `0 0 8px ${col.dot}` }} />
-        <span style={{ fontSize: "15px", fontWeight: 800, color: col.dot, flex: 1 }}>{col.label}</span>
-        <span style={{ fontSize: "12px", fontWeight: 700, color: parts.length === 0 ? "rgba(255,255,255,0.18)" : col.dot, background: parts.length === 0 ? "rgba(255,255,255,0.04)" : `${col.dot}18`, border: `1px solid ${col.dot}28`, borderRadius: "20px", padding: "2px 10px" }}>
-          {parts.length} भाग
-        </span>
-        <span style={{ color: "rgba(255,255,255,0.20)", fontSize: "12px", transform: collapsed ? "rotate(-90deg)" : "none", transition: "transform 0.2s" }}>▼</span>
-      </button>
-      {!collapsed && (
-        <div style={{ padding: "16px 24px 20px" }}>
-          {parts.length === 0 ? (
-            <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.18)", fontStyle: "italic", margin: 0 }}>यस अवस्थामा कुनै भाग छैन</p>
-          ) : (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(340px,1fr))", gap: "14px" }}>
-              {parts.map(h => (
-                <PartCard
-                  key={h.partNumber}
-                  health={h}
-                  structural={structMap.get(h.partNumber) ?? { ...EMPTY_STRUCT, partNumber: h.partNumber }}
-                  deepLearn={deepLearnMap.get(h.partNumber)}
-                  learnOn={learnOn}
-                  civicAtomCount={civicAtomsByPart.get(h.partNumber) ?? 0}
-                />
+    <div style={{ background: "rgba(255,255,255,0.018)", border: `1px solid ${hasL2 ? col.dot + "30" : "rgba(255,255,255,0.06)"}`, borderRadius: "12px", padding: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+
+      {/* ── Header (always visible) ── */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "4px" }}>
+            <span style={{ fontSize: "10px", fontWeight: 700, color: "#fbbf24", background: "rgba(251,191,36,0.12)", padding: "2px 8px", borderRadius: "8px", flexShrink: 0 }}>भाग {partNumber}</span>
+            <span style={{ fontSize: "13px", fontWeight: 700, color: "#fde68a" }}>{title}</span>
+            {hasL2 && (
+              <span style={{ fontSize: "9px", fontWeight: 700, color: col.dot, background: `${col.dot}15`, border: `1px solid ${col.dot}30`, padding: "1px 7px", borderRadius: "10px" }}>
+                {HEALTH_COLORS[h.state].label}
+              </span>
+            )}
+          </div>
+          <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.42)", margin: 0, lineHeight: 1.5 }}>{st.purpose}</p>
+        </div>
+        <div style={{ textAlign: "right", flexShrink: 0 }}>
+          <p style={{ fontSize: hasL2 ? "22px" : "14px", fontWeight: 900, color: hasL2 ? col.dot : "rgba(255,255,255,0.15)", margin: 0, lineHeight: 1 }}>{hasL2 ? h.healthScore : "—"}</p>
+          <p style={{ fontSize: "8px", color: "rgba(255,255,255,0.18)", margin: "2px 0 0" }}>/ 100</p>
+        </div>
+      </div>
+
+      {/* ── Data completeness bar ── */}
+      <div style={{ height: "3px", background: "rgba(255,255,255,0.06)", borderRadius: "2px", overflow: "hidden" }}>
+        <div style={{ width: `${completeness.pct}%`, height: "100%", background: completeness.color, borderRadius: "2px" }} />
+      </div>
+
+      {/* ── Layer 1: संविधान संरचना (ALWAYS shows) ── */}
+      <div style={{ background: "rgba(192,132,252,0.04)", border: "1px solid rgba(192,132,252,0.12)", borderRadius: "8px", padding: "10px 12px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
+          <LayerLabel label="तह १ · संविधान संरचना" sub={st.dharasHint} color="#c084fc" />
+          <span style={{ fontSize: "9px", fontWeight: 700, padding: "2px 8px", borderRadius: "8px",
+            color: hasL1 ? "#4ade80" : "#fbbf24",
+            background: hasL1 ? "rgba(74,222,128,0.10)" : "rgba(251,191,36,0.10)",
+            border: `1px solid ${hasL1 ? "rgba(74,222,128,0.25)" : "rgba(251,191,36,0.25)"}` }}>
+            {hasL1 ? `✓ ${structural.dharaCount} धाराहरू extract भए` : "⚠ अझै extract भएन"}
+          </span>
+        </div>
+
+        {/* Purpose + themes — always shown */}
+        <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginBottom: hasL1 ? "8px" : "0" }}>
+          {st.themes.map(t => (
+            <span key={t} style={{ fontSize: "9px", color: "rgba(192,132,252,0.70)", background: "rgba(192,132,252,0.08)", border: "1px solid rgba(192,132,252,0.18)", borderRadius: "5px", padding: "2px 7px" }}>{t}</span>
+          ))}
+        </div>
+
+        {/* Structural metrics — only if data exists */}
+        {hasL1 ? (
+          <>
+            <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
+              {STRUCT_METRICS.map(m => (
+                <StructPill key={m.id} m={m} profile={structural} activeId={activeStruct} onToggle={toggleStruct} learnOn={learnOn} />
               ))}
             </div>
-          )}
-        </div>
-      )}
-    </section>
+            {learnOn && activeStructMeta && (
+              <DeepLearnCard
+                data={activeDeepLearnData}
+                metricLabel={activeStructMeta.label}
+                simpleText={activeStructMeta.explain.replace("{val}", String(activeStructMeta.value(structural)))}
+              />
+            )}
+          </>
+        ) : (
+          <a href="/vault/documents" style={{ display: "inline-flex", alignItems: "center", gap: "6px", marginTop: "8px", fontSize: "10px", fontWeight: 700, color: "#fbbf24", background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.22)", borderRadius: "7px", padding: "5px 11px", textDecoration: "none" }}>
+            📜 Documents मा गएर संविधान extract गर्नुस् →
+          </a>
+        )}
+      </div>
+
+      {/* ── Layer 2: जीवित बुद्धि (always shows, empty state if no data) ── */}
+      <div style={{ background: hasL2 ? "rgba(74,222,128,0.04)" : "rgba(255,255,255,0.02)", border: `1px solid ${hasL2 ? "rgba(74,222,128,0.12)" : "rgba(255,255,255,0.06)"}`, borderRadius: "8px", padding: "10px 12px" }}>
+        <LayerLabel label="तह २ · जीवित बुद्धि" sub="janta_intelligence + civic_atoms + signals" color={hasL2 ? col.dot : "rgba(255,255,255,0.25)"} />
+
+        {hasL2 ? (
+          <>
+            <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
+              {LIVE_METRICS.map(m => (
+                <LivePill key={m.id} m={m} health={h} activeId={activeLive} onToggle={toggleLive} learnOn={learnOn} />
+              ))}
+            </div>
+            {learnOn && activeLiveMeta && (
+              <DeepLearnCard data={null} metricLabel={activeLiveMeta.label}
+                simpleText={activeLiveMeta.explain.replace("{count}", String(activeLiveMeta.value(h)))} />
+            )}
+            {h.reasonLines && h.reasonLines.length > 0 && (
+              <div style={{ borderTop: "1px solid rgba(255,255,255,0.05)", marginTop: "8px", paddingTop: "6px" }}>
+                {h.reasonLines.map((line, i) => (
+                  <span key={i} style={{ fontSize: "10px", color: "rgba(255,255,255,0.30)", display: "block", fontFamily: "monospace", lineHeight: 1.6 }}>{line}</span>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
+            <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.22)", fontStyle: "italic", margin: 0 }}>
+              अझै live data छैन — documents upload गरेर AI extract गर्नुस्
+            </p>
+            <a href="/vault/documents?upload=1" style={{ flexShrink: 0, fontSize: "10px", fontWeight: 700, color: "#4ade80", background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.22)", borderRadius: "7px", padding: "4px 10px", textDecoration: "none", whiteSpace: "nowrap" }}>
+              📤 Upload →
+            </a>
+          </div>
+        )}
+      </div>
+
+      {/* ── Recommended uploads ── */}
+      <UploadGuidanceSection partNumber={partNumber} />
+    </div>
   );
 }
 
@@ -863,12 +880,6 @@ export default function HealthDebugClient() {
     }
   };
 
-  // Group by state
-  const grouped = new Map<BranchHealthState, BranchHealth[]>();
-  for (const state of SECTION_ORDER) grouped.set(state, []);
-  for (const h of healthMap.values()) grouped.get(h.state)?.push(h);
-  for (const [, arr] of grouped) arr.sort((a, b) => b.healthScore - a.healthScore);
-
   const totalParts = healthMap.size;
   const withData   = Array.from(healthMap.values()).filter(h => h.state !== "unknown").length;
   const avgScore   = totalParts > 0
@@ -970,24 +981,28 @@ export default function HealthDebugClient() {
         />
       )}
 
-      {/* ── Part sections ── */}
-      {loading ? (
-        <div style={{ padding: "60px 24px", textAlign: "center" }}>
-          <p style={{ color: "rgba(255,255,255,0.22)", fontSize: "13px" }}>दुवै तह लोड गर्दै…</p>
+      {/* ── All 35 parts — always shown, data-aware not data-dependent ── */}
+      <div style={{ padding: "16px 24px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "16px" }}>
+          <span style={{ fontSize: "10px", fontWeight: 800, color: "rgba(255,255,255,0.25)", letterSpacing: "0.12em", textTransform: "uppercase" }}>
+            ३५ भाग रोडम्याप
+          </span>
+          {loading && <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.22)", fontStyle: "italic" }}>live data लोड हुँदैछ…</span>}
         </div>
-      ) : (
-        SECTION_ORDER.map(state => (
-          <HealthSection
-            key={state}
-            state={state}
-            parts={grouped.get(state) ?? []}
-            structMap={structMap}
-            deepLearnMap={deepLearnMap}
-            learnOn={learnOn}
-            civicAtomsByPart={civicAtomsByPart}
-          />
-        ))
-      )}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(340px,1fr))", gap: "14px" }}>
+          {PART_NUMBERS.map(n => (
+            <PartRoadmapCard
+              key={n}
+              partNumber={n}
+              health={healthMap.get(n)}
+              structural={structMap.get(n) ?? { ...EMPTY_STRUCT, partNumber: n }}
+              deepLearn={deepLearnMap.get(n)}
+              learnOn={learnOn}
+              civicAtomCount={civicAtomsByPart.get(n) ?? 0}
+            />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
