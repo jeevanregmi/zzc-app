@@ -21,7 +21,7 @@ import type { CivicAtom } from "../../../../lib/types/atoms";
 import type { ConstitutionalFrameworkRecord } from "../../../../lib/types/constitutional-framework";
 import { atomsToIntelRecords } from "../../../../lib/vault/atomToIntelBridge";
 import { PARTS_META } from "./partsMeta";
-import { UPLOAD_GUIDANCE, type VaultCategory } from "../../../../lib/constitution/uploadGuidance";
+import { UPLOAD_GUIDANCE, type VaultCategory, type UploadRecommendation } from "../../../../lib/constitution/uploadGuidance";
 import {
   computeAllDeepLearnProfiles,
   type PartDeepLearnProfile,
