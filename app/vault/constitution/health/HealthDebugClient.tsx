@@ -896,7 +896,7 @@ function autoSatisfied(
 }
 
 function FounderGuidancePanel({ healthMap, structMap, vaultTags, totalFramework }: FounderGuidancePanelProps) {
-  const [tab, setTab] = useState<"empty" | "weak" | "uploads">("uploads");
+  const [tab, setTab] = useState<"empty" | "weak" | "uploads" | "index">("uploads");
 
   // Manual dismiss — persisted in localStorage
   const [dismissed, setDismissed] = useState<Set<string>>(() => {
@@ -950,8 +950,27 @@ function FounderGuidancePanel({ healthMap, structMap, vaultTags, totalFramework 
   const urgentUploads = allCandidates.filter(({ partNumber, rec }) => !isHidden(partNumber, rec)).slice(0, 12);
   const doneCount     = allCandidates.filter(({ partNumber, rec }) => isHidden(partNumber, rec)).length;
 
+  // Flat document index across all 35 parts — for reverse lookup
+  const [docSearch, setDocSearch] = useState("");
+  const allDocs: Array<{ partNumber: number; rec: UploadRecommendation }> = [];
+  for (const n of PART_NUMBERS) {
+    for (const rec of UPLOAD_GUIDANCE[n] ?? []) {
+      allDocs.push({ partNumber: n, rec });
+    }
+  }
+  const filteredDocs = docSearch.trim()
+    ? allDocs.filter(({ rec, partNumber }) => {
+        const q = docSearch.toLowerCase();
+        return rec.title.toLowerCase().includes(q)
+          || rec.titleEn.toLowerCase().includes(q)
+          || rec.tags.some(t => t.toLowerCase().includes(q))
+          || String(partNumber).includes(q);
+      })
+    : allDocs;
+
   const TABS = [
     { id: "uploads" as const, label: "📥 अर्को Upload",  count: urgentUploads.length },
+    { id: "index"   as const, label: "🔍 Document Index", count: allDocs.length },
     { id: "empty"   as const, label: "⬜ खाली शाखा",    count: emptyParts.length },
     { id: "weak"    as const, label: "🔴 कमजोर शाखा",   count: weakParts.length },
   ];
@@ -1090,6 +1109,53 @@ function FounderGuidancePanel({ healthMap, structMap, vaultTags, totalFramework 
               </div>
             </div>
           )
+        )}
+
+        {/* ── Tab: Document Index (reverse lookup) ── */}
+        {tab === "index" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.28)", margin: 0 }}>
+              तपाईंसँग भएको document को नाम टाइप गर्नुस् — कुन भागमा upload गर्ने थाहा हुन्छ
+            </p>
+            <input
+              type="text"
+              value={docSearch}
+              onChange={e => setDocSearch(e.target.value)}
+              placeholder="खोज्नुस्: periodic plan, budget, citizenship, judiciary..."
+              style={{ width: "100%", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "8px", padding: "8px 12px", fontSize: "12px", color: "#fff", outline: "none", boxSizing: "border-box" }}
+            />
+            <p style={{ fontSize: "9px", color: "rgba(255,255,255,0.20)", margin: "-4px 0 0" }}>
+              {filteredDocs.length} / {allDocs.length} documents देखाइँदै
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "5px", maxHeight: "420px", overflowY: "auto" }}>
+              {filteredDocs.map(({ partNumber, rec }, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "8px 10px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "8px" }}>
+                  <span style={{ flexShrink: 0, fontSize: "9px", fontWeight: 800, color: "#fbbf24", background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.20)", borderRadius: "6px", padding: "3px 7px", whiteSpace: "nowrap" }}>
+                    भाग {partNumber}
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: "11px", fontWeight: 700, color: "#e2e8f0", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{rec.title}</p>
+                    <p style={{ fontSize: "9px", color: "rgba(255,255,255,0.30)", margin: "1px 0 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{rec.titleEn}</p>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "3px", flexShrink: 0, alignItems: "flex-end" }}>
+                    <span style={{ fontSize: "8px", fontWeight: 700, color: CATEGORY_COLOR[rec.category], background: `${CATEGORY_COLOR[rec.category]}18`, borderRadius: "4px", padding: "1px 6px" }}>{rec.category}</span>
+                    <span style={{ fontSize: "8px", fontWeight: 700, color: rec.priority === "high" ? "#ef4444" : rec.priority === "medium" ? "#fbbf24" : "#94a3b8", }}>{PRIORITY_STYLE[rec.priority].label}</span>
+                  </div>
+                  <a
+                    href={recUploadUrl(rec, partNumber)}
+                    style={{ flexShrink: 0, fontSize: "9px", fontWeight: 700, color: "#4ade80", background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.22)", borderRadius: "6px", padding: "4px 9px", textDecoration: "none", whiteSpace: "nowrap" }}
+                  >
+                    📤 Upload →
+                  </a>
+                </div>
+              ))}
+              {filteredDocs.length === 0 && (
+                <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.28)", margin: "8px 0", textAlign: "center" }}>
+                  "{docSearch}" — कुनै match भएन। अर्को keyword try गर्नुस्।
+                </p>
+              )}
+            </div>
+          </div>
         )}
 
         {/* ── Tab: Weak branches ── */}
