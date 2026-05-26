@@ -758,6 +758,192 @@ function PartRoadmapCard({
   );
 }
 
+// ─── Founder Guidance Panel ───────────────────────────────────────────────────
+// Surfaces the most urgent upload gaps across all 35 parts in one view.
+// Answers: empty branches, weak branches, top priority next uploads.
+
+interface FounderGuidancePanelProps {
+  healthMap:  Map<number, BranchHealth>;
+  structMap:  Map<number, PartStructuralProfile>;
+}
+
+function FounderGuidancePanel({ healthMap, structMap }: FounderGuidancePanelProps) {
+  const [tab, setTab] = useState<"empty" | "weak" | "uploads">("uploads");
+
+  // Empty branches: Layer 2 = 0 records
+  const emptyParts = PART_NUMBERS.filter(n => {
+    const h = healthMap.get(n);
+    return !h || h.totalRecords === 0;
+  });
+
+  // Weak branches: have some data but healthScore < 40
+  const weakParts = PART_NUMBERS.filter(n => {
+    const h = healthMap.get(n);
+    return h && h.totalRecords > 0 && h.healthScore < 40;
+  }).sort((a, b) => (healthMap.get(a)!.healthScore) - (healthMap.get(b)!.healthScore));
+
+  // Top upload priorities: high-priority recs from empty parts first, then weak
+  const urgentUploads: Array<{ partNumber: number; rec: UploadRecommendation; isEmpty: boolean }> = [];
+  const priorityParts = [...emptyParts, ...weakParts.filter(n => !emptyParts.includes(n))];
+  for (const n of priorityParts) {
+    const recs = UPLOAD_GUIDANCE[n] ?? [];
+    for (const rec of recs.filter(r => r.priority === "high")) {
+      urgentUploads.push({ partNumber: n, rec, isEmpty: emptyParts.includes(n) });
+      if (urgentUploads.length >= 12) break;
+    }
+    if (urgentUploads.length >= 12) break;
+  }
+
+  const TABS = [
+    { id: "uploads" as const, label: "📥 अर्को Upload",  count: urgentUploads.length },
+    { id: "empty"   as const, label: "⬜ खाली शाखा",    count: emptyParts.length },
+    { id: "weak"    as const, label: "🔴 कमजोर शाखा",   count: weakParts.length },
+  ];
+
+  return (
+    <div style={{ margin: "0 24px 20px", background: "rgba(96,165,250,0.03)", border: "1px solid rgba(96,165,250,0.12)", borderRadius: "14px", overflow: "hidden" }}>
+
+      {/* Header */}
+      <div style={{ padding: "14px 18px 0", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "8px" }}>
+        <div>
+          <p style={{ fontSize: "12px", fontWeight: 800, color: "#60a5fa", margin: "0 0 2px" }}>📥 Founder Upload Guidance</p>
+          <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.28)", margin: 0 }}>
+            कुन branch खाली छ · कुन कमजोर छ · अर्को के upload गर्ने
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
+          {TABS.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              style={{ fontSize: "10px", fontWeight: 700, padding: "4px 10px", borderRadius: "20px", cursor: "pointer", border: `1px solid ${tab === t.id ? "rgba(96,165,250,0.60)" : "rgba(255,255,255,0.10)"}`, color: tab === t.id ? "#60a5fa" : "rgba(255,255,255,0.35)", background: tab === t.id ? "rgba(96,165,250,0.10)" : "transparent" }}
+            >
+              {t.label} <span style={{ opacity: 0.6 }}>({t.count})</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ padding: "14px 18px" }}>
+
+        {/* ── Tab: Top priority uploads ── */}
+        {tab === "uploads" && (
+          urgentUploads.length === 0 ? (
+            <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.30)", fontStyle: "italic", margin: 0 }}>सबै शाखामा high-priority documents छन् — excellent!</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+              <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.28)", margin: "0 0 4px" }}>
+                खाली शाखाबाट high-priority recommendations — यीनलाई पहिले upload गर्नुस्
+              </p>
+              {urgentUploads.map(({ partNumber, rec, isEmpty }, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "10px", padding: "10px 12px", background: isEmpty ? "rgba(239,68,68,0.05)" : "rgba(251,191,36,0.04)", border: `1px solid ${isEmpty ? "rgba(239,68,68,0.15)" : "rgba(251,191,36,0.12)"}`, borderRadius: "9px" }}>
+                  <div style={{ flexShrink: 0, textAlign: "center", minWidth: "42px" }}>
+                    <p style={{ fontSize: "9px", fontWeight: 700, color: "#fbbf24", background: "rgba(251,191,36,0.12)", padding: "2px 6px", borderRadius: "6px", margin: 0, whiteSpace: "nowrap" }}>भाग {partNumber}</p>
+                    <p style={{ fontSize: "8px", color: isEmpty ? "#ef4444" : "#fbbf24", margin: "3px 0 0", fontWeight: 700 }}>{isEmpty ? "खाली" : "कमजोर"}</p>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: "12px", fontWeight: 700, color: "#e2e8f0", margin: "0 0 1px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{rec.title}</p>
+                    <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.35)", margin: "0 0 5px" }}>{rec.titleEn}</p>
+                    <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+                      <span style={{ fontSize: "9px", color: CATEGORY_COLOR[rec.category], background: `${CATEGORY_COLOR[rec.category]}18`, border: `1px solid ${CATEGORY_COLOR[rec.category]}28`, borderRadius: "4px", padding: "1px 6px", fontWeight: 700 }}>{rec.category}</span>
+                      {rec.tags.slice(0, 3).map(tag => (
+                        <span key={tag} style={{ fontSize: "9px", color: "rgba(255,255,255,0.28)", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "4px", padding: "1px 5px", fontFamily: "monospace" }}>#{tag}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <a
+                    href={`/vault/documents?upload=1`}
+                    style={{ flexShrink: 0, fontSize: "10px", fontWeight: 700, color: "#4ade80", background: "rgba(74,222,128,0.10)", border: "1px solid rgba(74,222,128,0.25)", borderRadius: "7px", padding: "6px 10px", textDecoration: "none", whiteSpace: "nowrap", alignSelf: "center" }}
+                  >
+                    📤 Upload →
+                  </a>
+                </div>
+              ))}
+            </div>
+          )
+        )}
+
+        {/* ── Tab: Empty branches ── */}
+        {tab === "empty" && (
+          emptyParts.length === 0 ? (
+            <p style={{ fontSize: "12px", color: "#4ade80", fontWeight: 700, margin: 0 }}>✓ सबै भागमा live intelligence data छ!</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.28)", margin: "0 0 4px" }}>
+                यी {emptyParts.length} भागमा Layer 2 data छैन — documents upload गरेर fill गर्नुस्
+              </p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                {emptyParts.map(n => {
+                  const hasL1 = (structMap.get(n)?.dharaCount ?? 0) > 0;
+                  const recs  = UPLOAD_GUIDANCE[n] ?? [];
+                  const topRec = recs.find(r => r.priority === "high");
+                  return (
+                    <div key={n} style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px", background: "rgba(239,68,68,0.05)", border: "1px solid rgba(239,68,68,0.15)", borderRadius: "8px", minWidth: "200px", flex: "1 1 200px" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: "11px", fontWeight: 700, color: "#fde68a", margin: "0 0 1px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                          भाग {n} — {PARTS_META[n] ?? ""}
+                        </p>
+                        <p style={{ fontSize: "9px", margin: 0, color: hasL1 ? "rgba(74,222,128,0.60)" : "rgba(251,191,36,0.60)" }}>
+                          {hasL1 ? `✓ L1 संरचना छ` : "⚠ L1 पनि खाली"} · {recs.length} सुझाव
+                        </p>
+                        {topRec && <p style={{ fontSize: "9px", color: "rgba(255,255,255,0.28)", margin: "2px 0 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>→ {topRec.title}</p>}
+                      </div>
+                      <a href="/vault/documents?upload=1" style={{ flexShrink: 0, fontSize: "9px", fontWeight: 700, color: "#60a5fa", background: "rgba(96,165,250,0.10)", border: "1px solid rgba(96,165,250,0.22)", borderRadius: "6px", padding: "4px 8px", textDecoration: "none" }}>Upload</a>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )
+        )}
+
+        {/* ── Tab: Weak branches ── */}
+        {tab === "weak" && (
+          weakParts.length === 0 ? (
+            <p style={{ fontSize: "12px", color: "#4ade80", fontWeight: 700, margin: 0 }}>✓ कुनै पनि भाग कमजोर अवस्थामा छैन!</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.28)", margin: "0 0 4px" }}>
+                यी भागमा data छ तर health score कम छ — अझ documents थप्नुस्
+              </p>
+              {weakParts.map(n => {
+                const h = healthMap.get(n)!;
+                const col = HEALTH_COLORS[h.state];
+                const recs = UPLOAD_GUIDANCE[n] ?? [];
+                const topRec = recs.find(r => r.priority === "high") ?? recs[0];
+                return (
+                  <div key={n} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 12px", background: `${col.dot}08`, border: `1px solid ${col.dot}22`, borderRadius: "8px" }}>
+                    <div style={{ flexShrink: 0, width: "36px", textAlign: "center" }}>
+                      <p style={{ fontSize: "18px", fontWeight: 900, color: col.dot, margin: 0, lineHeight: 1 }}>{h.healthScore}</p>
+                      <p style={{ fontSize: "8px", color: "rgba(255,255,255,0.25)", margin: "1px 0 0" }}>/ 100</p>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: "11px", fontWeight: 700, color: "#fde68a", margin: "0 0 1px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        भाग {n} — {PARTS_META[n] ?? ""}
+                      </p>
+                      <p style={{ fontSize: "9px", color: col.dot, margin: "0 0 2px" }}>{col.label} · {h.totalRecords} records</p>
+                      {topRec && <p style={{ fontSize: "9px", color: "rgba(255,255,255,0.30)", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>→ {topRec.title} upload गर्नुस्</p>}
+                    </div>
+                    <div style={{ display: "flex", gap: "6px", alignItems: "center", flexShrink: 0 }}>
+                      <div style={{ width: "60px" }}>
+                        <div style={{ height: "4px", background: "rgba(255,255,255,0.07)", borderRadius: "2px", overflow: "hidden" }}>
+                          <div style={{ width: `${h.healthScore}%`, height: "100%", background: col.dot }} />
+                        </div>
+                      </div>
+                      <a href="/vault/documents?upload=1" style={{ fontSize: "9px", fontWeight: 700, color: "#60a5fa", background: "rgba(96,165,250,0.10)", border: "1px solid rgba(96,165,250,0.22)", borderRadius: "6px", padding: "4px 8px", textDecoration: "none" }}>Upload</a>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )
+        )}
+
+      </div>
+    </div>
+  );
+}
+
 // ─── Learning banner ──────────────────────────────────────────────────────────
 
 function LearnBanner() {
@@ -976,6 +1162,14 @@ export default function HealthDebugClient() {
           totalSignals={totalSignals}
           withData={withData}
           avgScore={avgScore}
+          healthMap={healthMap}
+          structMap={structMap}
+        />
+      )}
+
+      {/* ── Founder Upload Guidance Panel ── */}
+      {!loading && (
+        <FounderGuidancePanel
           healthMap={healthMap}
           structMap={structMap}
         />
