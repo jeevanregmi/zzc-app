@@ -118,6 +118,7 @@ interface Props {
   ownerId?:        string;
   initialGovFolder?: GovFolder;
   initialTags?:    string;
+  initialTitle?:   string;
 }
 
 // ── URL ingest result preview ─────────────────────────────────────────────────
@@ -341,13 +342,13 @@ function UploadActionIntel({ fileCount, category }: { fileCount: number; categor
   return <ActionLearnCard actions={[uploadAction]} />;
 }
 
-export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismiss, ownerId, initialGovFolder, initialTags }: Props) {
+export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismiss, ownerId, initialGovFolder, initialTags, initialTitle }: Props) {
   const inputRef   = useRef<HTMLInputElement>(null);
   const [tab,      setTab]     = useState<"file" | "url">("file");
   const [dragging, setDragging] = useState(false);
   const [staged,   setStaged]   = useState<File[]>([]);
   const [meta, setMeta] = useState<UploadDocMeta>({
-    title:       "",
+    title:       initialTitle ?? "",
     description: "",
     category:    "strategy",
     folder:      "",

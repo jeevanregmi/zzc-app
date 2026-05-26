@@ -570,7 +570,7 @@ function recGovFolder(rec: UploadRecommendation, partNumber: number): GovFolder 
 function recUploadUrl(rec: UploadRecommendation, partNumber: number): string {
   const gf   = recGovFolder(rec, partNumber);
   const tags = rec.tags.join(",");
-  return `/vault/documents?upload=1&govFolder=${gf}&parts=${partNumber}&tags=${encodeURIComponent(tags)}`;
+  return `/vault/documents?upload=1&govFolder=${gf}&parts=${partNumber}&tags=${encodeURIComponent(tags)}&title=${encodeURIComponent(rec.title)}`;
 }
 
 function UploadGuidanceSection({ partNumber }: { partNumber: number }) {
