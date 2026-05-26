@@ -93,6 +93,16 @@
 - Nepali (current) + English + Maithili (major second language)
 - Translation via AI with human review gate
 
+### 13. Media Atom Engine — Civic intelligence → short clips
+- Architecture: see `docs/MEDIA_ATOM_ENGINE.md`
+- Media atoms are an EXPRESSION LAYER on top of existing intelligence atoms
+- `media_atoms` Firestore collection references `constitutional_framework` / `janta_intelligence` — never duplicates
+- Phase 1: Script generation (Gemini Flash) + admin approve → caption export
+- Phase 2: Visual prompt + AI image generation
+- Phase 3: TTS narration + video assembly + TikTok/YouTube Shorts publish
+- **Prerequisite:** QA sprint (#4) + stable intel pipeline + Signal Intelligence (#6) + AI cost dashboard (#8)
+- Safe media only: AI-generated visuals, own animations, CC0, government footage
+
 ---
 
 ## ⛔ Not Now (Explicitly deferred)
