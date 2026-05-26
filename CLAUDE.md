@@ -18,36 +18,80 @@ This file has current context, founder preferences, and session continuity.
 
 ---
 
+## Core System Philosophy
+
+ZZC must evolve like a **calm, durable civic operating system** — not a fast-growing startup dashboard.
+
+### The ONE Brain Principle (most important architectural rule)
+
+**Outputs can multiply. The brain must remain singular.**
+
+Every media output, social post, signal, reel, narration, infographic, or public content must trace back to an existing intelligence atom. If the intelligence already exists in `constitutional_framework` or `janta_intelligence` — reference it. Never duplicate it.
+
+- Before creating a new Firestore collection: ask "can this reference an existing atom?"
+- Before a new AI pipeline: ask "does this extract to the same collections?"
+- Before a new page: ask "does this consume the same intelligence graph?"
+
+Future layers (media atoms, signal alerts, social content) are **expression layers** — not parallel brains.
+
+### Consolidation Over Expansion
+
+Current sprint philosophy: stabilize before extending.
+
+- Do not create disconnected systems
+- Do not add pages that don't connect to the intelligence graph
+- Do not extract intelligence into new isolated collections
+- Every new feature must consume or extend the existing pipeline:
+  `Document → AI Analyze → Admin Review → Intelligence → Relationships → Branch Health → Public Tree`
+
+---
+
 ## Founder Preferences (non-negotiable)
 
 1. **Nepali first** — all vault UI text in Nepali. English is secondary everywhere.
-2. **No bloated dashboards** — every page must answer "what do I do next?"
+2. **No bloated dashboards** — every page must answer "what is happening / why it matters / what to do next."
 3. **No dead zeros** — every 0 count must explain why and link to a fix.
 4. **Guided workflows** — use `WorkflowGuide` for multi-step tasks.
-5. **Cost-aware** — never suggest AI re-extraction without checking if already done.
+5. **Cost-aware** — never trigger AI re-extraction without checking if already done.
 6. **Lean code** — no premature abstractions, no unused state, no redundant comments.
 7. **Scan before create** — always `Grep` for existing files before creating new ones.
 8. **TypeScript strict** — zero errors before every commit.
+9. **Founder Mode by default** — all vault UI uses plain Nepali language, not developer terms. Debug Mode is behind a toggle.
+10. **No panic colors** — amber for warnings, red only for critical. Calm and strategic, not alarming.
+
+---
+
+## Founder Mode / Debug Mode
+
+- **Founder Mode** (default): simplified Nepali language, no collection names, guided UI, destructive actions hidden
+- **Debug Mode**: raw collection names, snapshot fields, insight IDs, Dedup/Delete All buttons exposed
+- Toggle lives in sidebar (below Learning Mode toggle). Persisted in `zzc_vault_mode` localStorage.
+- Context: `contexts/FounderModeContext.tsx` → `useFounderMode()` hook
 
 ---
 
 ## Current System State (as of 2026-05-26)
 
-### What exists and works:
-- **Document upload pipeline** — R2 storage, Firestore metadata, AI analysis
-- **Constitution extraction** — 22 batch API calls, `constitutional_framework` collection
-- **Janta Intelligence** — `janta_intelligence` + `janta_relationships` collections
-- **Admin Vault** — document review + approval gate
+### Intelligence Pipeline (Layer 1 + Layer 2)
+- **Document upload** — R2 storage, Firestore metadata (`vault_documents`), AI analysis
+- **Constitution extraction** — 22 batch API calls → `constitutional_framework` (Layer 1, static)
+- **Janta Intelligence** — deep extract from approved docs → `janta_intelligence` + `janta_relationships` (Layer 2, dynamic)
+- **Admin Vault** — review + approval gate before Intelligence is extracted
 - **Branch Health** — per-part metrics from `constitutional_framework` and `janta_intelligence`
-- **Janta public page** — story cards with TTS, timeline view, sector colors, Nepali dates
-- **CTO Assistant** — Founder Cockpit floating dock in all `/vault` pages
-- **WorkflowGuide** — reusable step-by-step workflow component
-- **Document Library** — `govFolder`-grouped view in Documents page
 
-### Known issues / in-progress:
-- Existing constitution records may have `partNumber=0` — Repair button on `/vault/constitution`
+### Public Outputs
+- **Janta public page** — story cards with TTS, timeline view, sector colors, Nepali dates
+- **Constitution Tree** — public `/constitution` page
+
+### Founder Tools
+- **CTO Assistant** — Founder Cockpit floating dock in all `/vault` pages (rule-based, no LLM)
+- **WorkflowGuide** — reusable step-by-step task guide
+- **Document Library** — `govFolder`-grouped view
+
+### Known gaps (in-progress):
 - `DocumentUploadModal` does not yet have `govFolder` picker
-- `FounderGuidancePanel` upload links don't pass `govFolder` params yet
+- `FounderGuidancePanel` upload links don't pass `govFolder` URL params yet
+- QA sprint: 10 real documents through full pipeline (ROADMAP #4) — in progress
 
 ### Phantom collections (never use):
 - `constitutional_atoms` — defined in rules, never written. Do not read.
@@ -82,9 +126,23 @@ ready → processing_ai → ai_ready → (admin approves) → approved
                    ai_paused (billing fail — document SAFE, never lost)
 ```
 
-### Two-layer model:
+### Two-layer model (immutable):
 - **Layer 1**: `constitutional_framework` — static, extracted once from Constitution PDF
-- **Layer 2**: `janta_intelligence` — dynamic, extracted from each government document
+- **Layer 2**: `janta_intelligence` — dynamic, extracted from each approved government document
+- **Expression layer** (future): `media_atoms` — references Layer 1/2 atoms, never duplicates them
+
+---
+
+## Portability
+
+ZZC is designed to be device-independent. See `docs/PORTABILITY.md` for full audit.
+
+- All user data: Firestore + R2 (cloud)
+- All code: GitHub (cloud)
+- Secrets: Cloudflare Pages env vars + GitHub Actions Secrets → see `docs/ENV_TEMPLATE.md`
+- New device setup: ~20 minutes (`git clone` + `npm install` + `.env.local` from Bitwarden)
+
+**Stage 1 (immediate):** Copy all secrets to Bitwarden. Done: `docs/ENV_TEMPLATE.md` exists.
 
 ---
 
@@ -93,9 +151,11 @@ ready → processing_ai → ai_ready → (admin approves) → approved
 | Component | File |
 |---|---|
 | Vault shell + sidebar | `components/vault/VaultShell.tsx` |
+| Founder Mode context | `contexts/FounderModeContext.tsx` |
 | CTO Assistant (cockpit) | `components/vault/CTOAssistant.tsx` |
 | CTO rule engine | `lib/vault/ctoEngine.ts` |
 | CTO insights hook | `hooks/vault/useCTOInsights.ts` |
+| Session tracker hook | `hooks/vault/useSessionTracker.ts` |
 | Workflow guide | `components/vault/WorkflowGuide.tsx` |
 | Document upload modal | `components/vault/documents/DocumentUploadModal.tsx` |
 | Document card | `components/vault/documents/DocumentCard.tsx` |
@@ -118,7 +178,7 @@ npx tsc --noEmit
 git add <files>
 
 # 3. Commit
-git commit -m "feat: description"
+git commit -m "feat/fix/docs: description"
 
 # 4. Push — GitHub Actions auto-deploys to Cloudflare Pages
 git push origin main
@@ -132,17 +192,20 @@ git push origin main
 
 When context is compacted or a new session starts:
 1. Re-read this file + AGENTS.md
-2. Check `git status` to see uncommitted work
-3. Check `npx tsc --noEmit` for errors before starting
-4. Check `docs/ROADMAP.md` for current priorities
-5. Check `docs/RUNBOOK.md` for operational procedures
+2. `git status` — see uncommitted work
+3. `npx tsc --noEmit` — confirm zero errors
+4. `docs/ROADMAP.md` — current priorities
+5. `docs/RUNBOOK.md` — operational procedures
+6. `docs/ENV_TEMPLATE.md` — if secrets are involved
 
 ---
 
 ## What NOT to Build (Deferred)
 
-- Math Verification Vault — admin-verified calculator QA (future)
-- Taxonomy Governance — AI taxonomy needs admin review gate (future)
-- Social Membership System — contributor requests, manual ID verification (future)
+- Media Atom Engine UI — design in `docs/MEDIA_ATOM_ENGINE.md`; build after QA sprint + stable pipeline
+- Math Verification Vault — future, after calculator is stable
+- Taxonomy Governance — AI tag suggestions need admin review gate first
+- Social Membership System — manual ID verification not worth it at current scale
 - Open signups — never. Single founder/admin only.
 - Generic LLM chatbot in vault — not the goal. Rule-based CTO engine first.
+- Any new Firestore collection that duplicates existing intelligence atoms

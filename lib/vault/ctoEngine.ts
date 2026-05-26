@@ -8,7 +8,9 @@
  * - Max 5 insights returned (1 primary + 4 supporting)
  * - Critical insights are never dismissable
  * - AI-cost actions carry a costWarning so the UI can show a guard
- * - Every insight must answer: what is wrong, why it matters, what to click
+ * - Every insight must answer: what is blocked, what reaches जनता when fixed
+ * - No noise: low-confidence and no-relationships have high thresholds
+ * - constitution_gap suppressed when brokenFrameworkRecords > 0 (fix root cause first)
  */
 
 export type InsightPriority = "critical" | "high" | "medium" | "low";
@@ -30,19 +32,14 @@ export interface CTOInsight {
   type:         InsightType;
   priority:     InsightPriority;
   icon:         string;
-  // What happened + why it matters (1–2 sentences, simple Nepali)
   titleNp:      string;
   bodyNp:       string;
-  // Why am I seeing this? — expanded explanation shown on demand
+  // "यो किन देखिँदैछ?" — expanded, shown on demand
   whyNp:        string;
-  // Primary action
   actionLabel?: string;
   actionHref?:  string;
-  // Count of affected items (for sorting + badge)
   count?:       number;
-  // Can this insight be dismissed for 24h? (critical = never)
   dismissable:  boolean;
-  // AI-cost action warning — shown before user clicks
   costWarning?: string;
 }
 
@@ -56,7 +53,7 @@ export interface SystemSnapshot {
   approvedNoExtractTitles: string[];
   docsPaused:              number;
   totalFramework:          number;
-  brokenFrameworkRecords:  number;   // partNumber === 0 — need PartNumber Repair
+  brokenFrameworkRecords:  number;
   emptyParts:              number[];
   partsWithData:           number;
   totalIntel:              number;
@@ -72,10 +69,18 @@ const WEIGHT: Record<InsightPriority, number> = {
 
 const MAX_INSIGHTS = 5;
 
+// Noise thresholds — tuned to avoid premature alerts
+const THRESHOLD = {
+  lowConfidence:   25,   // only surface when clearly a quality problem
+  noRelationships: 30,   // relationships are meaningless with few records
+  signalGapDays:    7,   // days before surfacing signal gap
+};
+
 export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
   const pool: CTOInsight[] = [];
 
-  // ── Documents never analyzed ────────────────────────────────────────────────
+  // ── 1. Documents never analyzed ────────────────────────────────────────────
+  // Blocks: nothing enters the pipeline. Highest pipeline urgency.
   if (snap.docsNeverAnalyzed > 0) {
     const sample = snap.neverAnalyzedTitles.slice(0, 2).join(" र ");
     pool.push({
@@ -83,36 +88,38 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
       type:        "never_analyzed",
       priority:    snap.docsNeverAnalyzed >= 3 ? "critical" : "high",
       icon:        "🤖",
-      titleNp:     `${snap.docsNeverAnalyzed} document AI analyze गरिएन`,
+      titleNp:     `${snap.docsNeverAnalyzed} document पढिएन — pipeline सुरु हुँदैन`,
       bodyNp:      snap.docsNeverAnalyzed === 1
-        ? `"${snap.neverAnalyzedTitles[0] ?? "Document"}" upload भयो तर AI ले पढेको छैन।`
-        : `${sample}${snap.docsNeverAnalyzed > 2 ? ` लगायत ${snap.docsNeverAnalyzed} documents` : ""} — AI analyze गर्नुस्।`,
-      whyNp:       "AI analyze नगरी document बाट topics, rights, institutions, र promises निकाल्न सकिँदैन। Constitution Tree मा intelligence थपिँदैन। यो pipeline को पहिलो step हो।",
-      actionLabel: "Documents मा जानुस्",
+        ? `"${snap.neverAnalyzedTitles[0] ?? "Document"}" upload भयो तर AI ले अझै पढेको छैन।`
+        : `${sample}${snap.docsNeverAnalyzed > 2 ? ` लगायत ${snap.docsNeverAnalyzed} documents` : ""} — AI analyze नगरे intelligence निकाल्न सकिँदैन।`,
+      whyNp:       "AI analyze नगरी document बाट topics, rights, institutions, र promises निकाल्न सकिँदैन। यो pipeline को पहिलो step हो — यो नभई Constitution Tree मा केही थपिँदैन।",
+      actionLabel: "Documents → AI Analyze",
       actionHref:  "/vault/documents",
       count:       snap.docsNeverAnalyzed,
       dismissable: false,
     });
   }
 
-  // ── Pending admin review ────────────────────────────────────────────────────
+  // ── 2. Pending admin review ─────────────────────────────────────────────────
+  // Blocks: intelligence exists but is quarantined. जनता can't see it yet.
   if (snap.docsPendingReview > 0) {
     pool.push({
       id:          "pending_review",
       type:        "pending_review",
       priority:    snap.docsPendingReview >= 3 ? "critical" : "high",
       icon:        "👁",
-      titleNp:     `${snap.docsPendingReview} document Admin Review पर्खिरहेको`,
-      bodyNp:      "AI analysis सकियो। तपाईंले review नगरेसम्म यो intelligence public हुँदैन।",
-      whyNp:       "AI गलत पनि हुन सक्छ — गलत intelligence जनतासम्म नपुगोस् भनेर Admin Review राखिएको हो। Approve नगरी Deep Extract र Public Tree access हुँदैन।",
-      actionLabel: "Admin Vault मा Review गर्नुस्",
+      titleNp:     `${snap.docsPendingReview} document review पर्खिरहेको — intelligence अड्किएको छ`,
+      bodyNp:      "AI analysis सकियो। तपाईंको review नभई यो intelligence जनतासम्म पुग्दैन।",
+      whyNp:       "AI कहिलेकाहीँ गलत पनि हुन्छ — गलत civic intelligence publish हुन नदिन Admin Review gate राखिएको हो। Approve नगरी Deep Extract र Public Tree access खुल्दैन।",
+      actionLabel: "Admin Vault → Review",
       actionHref:  "/vault/admin?tab=documents",
       count:       snap.docsPendingReview,
       dismissable: false,
     });
   }
 
-  // ── Approved but not deep-extracted ────────────────────────────────────────
+  // ── 3. Approved but not deep-extracted ────────────────────────────────────
+  // Blocks: approved document hasn't yielded Janta cards yet.
   if (snap.docsApprovedNoExtract > 0) {
     const first = snap.approvedNoExtractTitles[0] ?? "document";
     pool.push({
@@ -120,20 +127,21 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
       type:        "approved_no_extract",
       priority:    "high",
       icon:        "🔍",
-      titleNp:     `${snap.docsApprovedNoExtract} approved document — Deep Extract बाँकी`,
+      titleNp:     `${snap.docsApprovedNoExtract} document approve भयो — Intelligence निकाल्न बाँकी`,
       bodyNp:      snap.docsApprovedNoExtract === 1
-        ? `"${first}" approve भएको छ। Deep Extract गरे Janta cards र relationships तयार हुन्छन्।`
-        : `${snap.docsApprovedNoExtract} documents approve भए तर Intelligence extract गरिएन।`,
-      whyNp:       "Approve गरेपछि पनि document static छ — Deep Extract गरेपछि मात्र Janta Intelligence cards, policy points, र cross-document relationships बन्छन्। यो step नगरे जनताले document बाट फाइदा लिन सक्दैनन्।",
-      actionLabel: "Documents → Deep Extract",
+        ? `"${first}" approve भएको छ। Intelligence निकाले Janta cards र connections तयार हुन्छन्।`
+        : `${snap.docsApprovedNoExtract} documents approve भए तर Intelligence अझै निकालिएन।`,
+      whyNp:       "Approve गरेपछि पनि document static छ — Intelligence निकालेपछि मात्र Janta cards, policy points, र cross-document connections बन्छन्। यो step नगरे जनताले document बाट केही पाउँदैनन्।",
+      actionLabel: "Documents → Intelligence निकाल्नुहोस्",
       actionHref:  "/vault/documents",
       count:       snap.docsApprovedNoExtract,
       dismissable: true,
-      costWarning: "Deep Extract ले AI cost लाग्छ। Document पहिले नै extract भएको छैन भने मात्र गर्नुस् — Document card मा intel count हेर्नुस्।",
+      costWarning: "Intelligence निकाल्न AI cost लाग्छ। Document card मा intel count हेर्नुस् — पहिले नै extract भएको छैन भने मात्र गर्नुस्।",
     });
   }
 
-  // ── Constitution framework: completely empty ────────────────────────────────
+  // ── 4. Constitution framework: completely empty ────────────────────────────
+  // Blocks: the entire Layer 1 tree is absent.
   if (snap.totalFramework === 0) {
     pool.push({
       id:          snap.docsTotal > 0 ? "constitution_not_extracted" : "constitution_no_doc",
@@ -141,42 +149,47 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
       priority:    "high",
       icon:        "📜",
       titleNp:     snap.docsTotal > 0
-        ? "Constitution Framework extract गरिएन — Tree खाली छ"
+        ? "संविधान Framework निकालिएन — Constitution Tree खाली छ"
         : "नेपालको संविधान PDF upload गरिएन",
       bodyNp:      snap.docsTotal > 0
-        ? "Constitution PDF छ तर Framework extract गरिएन। Constitution Tree मा केही देखिँदैन।"
-        : "संविधान २०७२ PDF upload गर्नुस् — यो पूरा system को आधार हो।",
-      whyNp:       "Constitutional Framework (Layer 1) बिना Constitution Tree खाली हुन्छ। ३५ भागका धाराहरू, अधिकारहरू, र institutions — सबै यही बाट आउँछन्। यो एकपटक गरे पुग्छ।",
-      actionLabel: snap.docsTotal > 0 ? "Documents → Extract" : "Upload गर्नुस्",
+        ? "Constitution PDF छ तर धाराहरू निकालिएनन्। Public Tree मा केही देखिँदैन।"
+        : "संविधान २०७२ PDF upload गर्नुस् — यो पूरा civic intelligence system को जग हो।",
+      whyNp:       "Constitutional Framework (Layer 1) बिना Constitution Tree खाली हुन्छ। ३५ भागका धाराहरू, अधिकारहरू, र institutions — सबै यही बाट आउँछन्। एकपटक निकाले पुग्छ।",
+      actionLabel: snap.docsTotal > 0 ? "Documents → संविधान निकाल्नुहोस्" : "संविधान Upload गर्नुस्",
       actionHref:  "/vault/documents",
       dismissable: false,
       costWarning: snap.docsTotal > 0
-        ? "Constitution extraction ले 22 batch API calls लाग्छ। एकपटक सकिएपछि re-extract आवश्यक हुँदैन।"
+        ? "संविधान extraction ले multiple AI calls लाग्छ। एकपटक सकिएपछि re-extract आवश्यक हुँदैन।"
         : undefined,
     });
   }
 
-  // ── Constitution: partNumber=0 broken records ──────────────────────────────
-  // These records exist but Branch Health can't read them — they look like empty parts.
+  // ── 5. Constitution: broken branch mapping ────────────────────────────────
+  // Blocks: records exist but are invisible to Branch Health (show root cause first).
   if (snap.brokenFrameworkRecords > 0 && snap.totalFramework > 0) {
     pool.push({
       id:          "broken_framework",
       type:        "constitution_gap",
       priority:    snap.brokenFrameworkRecords > 50 ? "high" : "medium",
       icon:        "🔧",
-      titleNp:     `${snap.brokenFrameworkRecords} धाराहरू "भाग ०" मा अड्किएका छन्`,
-      bodyNp:      `AI ले देवनागरी अंक ("भाग ३" → "भाग 0") पढ्न सकेन। Branch Health ले यी records देख्दैन — सबै parts खाली देखिन्छन्।`,
-      whyNp:       "Extraction को bug: `parseInt(\"३\", 10)` = NaN = 0। Repair ले `part` field बाट सही number निकाल्छ — re-extraction हुँदैन, AI cost छैन, content बदलिँदैन। ३०–६० seconds लाग्छ।",
-      actionLabel: "PartNumber Repair → /vault/constitution",
+      titleNp:     `${snap.brokenFrameworkRecords} धाराहरू सही भागमा पुगेका छैनन्`,
+      bodyNp:      `AI ले देवनागरी अंक गलत पढ्यो — यी ${snap.brokenFrameworkRecords} धाराहरू Branch Health ले देख्दैन र सबै भाग खाली देखिन्छन्।`,
+      whyNp:       "भाग mapping गलत भएकाले Branch Health page मा सबै ३५ भाग 'खाली' देखिन्छन् — Constitution Tree सही काम गर्दैन। यो मिलाउँदा AI फेरि चल्दैन, content बदलिँदैन, ~३० सेकेन्ड लाग्छ।",
+      actionLabel: "भाग-संरचना सुधार → Constitution",
       actionHref:  "/vault/constitution",
       count:       snap.brokenFrameworkRecords,
       dismissable: false,
-      costWarning: undefined, // explicitly safe — no AI, no re-extraction
     });
   }
 
-  // ── Constitution: important parts empty ────────────────────────────────────
-  if (snap.emptyParts.length > 0 && snap.totalFramework > 0) {
+  // ── 6. Constitution: important parts empty ────────────────────────────────
+  // Only surface AFTER broken records are fixed (they cause false empty readings).
+  // Only matters for civically critical parts.
+  if (
+    snap.emptyParts.length > 0 &&
+    snap.totalFramework > 0 &&
+    snap.brokenFrameworkRecords === 0   // suppress until root cause is fixed
+  ) {
     const importantParts = [3, 4, 5, 6, 7, 11, 12, 15, 16, 17];
     const importantEmpty = snap.emptyParts.filter(p => importantParts.includes(p));
     if (importantEmpty.length > 0) {
@@ -185,27 +198,27 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
         type:        "constitution_gap",
         priority:    importantEmpty.length >= 5 ? "high" : "medium",
         icon:        "🌿",
-        titleNp:     `${snap.emptyParts.length} संवैधानिक भाग मा intelligence छैन`,
-        bodyNp:      `भाग ${importantEmpty.slice(0, 4).join(", ")} मा कुनै data छैन। ${snap.partsWithData}/35 भाग active छन्।`,
-        whyNp:       "खाली भागको Branch Health red देखिन्छ। ती भागमा upload गरिएका documents गएनन् वा extract भएनन्। Branch Health page मा हेर्नुस् र relevant documents upload/extract गर्नुस्।",
+        titleNp:     `${importantEmpty.length} महत्त्वपूर्ण संवैधानिक भाग मा intelligence छैन`,
+        bodyNp:      `भाग ${importantEmpty.slice(0, 4).join(", ")} मा कुनै data छैन — जनताले यी भागका अधिकार देख्न पाउँदैनन्। ${snap.partsWithData}/35 भाग active छन्।`,
+        whyNp:       "खाली भागहरूमा upload भएका documents त्यहाँ पुगेनन् वा Intelligence निकालिएन। Branch Health page मा कुन भाग कमजोर छन् हेर्नुस् र relevant documents upload/extract गर्नुस्।",
         actionLabel: "Branch Health हेर्नुस्",
         actionHref:  "/vault/constitution/health",
-        count:       snap.emptyParts.length,
+        count:       importantEmpty.length,
         dismissable: true,
       });
     }
   }
 
-  // ── AI paused ───────────────────────────────────────────────────────────────
+  // ── 7. AI paused ────────────────────────────────────────────────────────────
   if (snap.docsPaused > 0) {
     pool.push({
       id:          "ai_paused",
       type:        "ai_paused",
       priority:    snap.docsPaused >= 3 ? "high" : "medium",
       icon:        "⏸",
-      titleNp:     `${snap.docsPaused} document AI billing कारण रोकियो`,
-      bodyNp:      "AI provider को limit पुग्यो। Document safe छ — AI मात्र रोकियो।",
-      whyNp:       "AI analysis fail हुँदा document 'ai_paused' state मा जान्छ — document delete हुँदैन, कहिल्यै। System Settings मा API key configure गरेपछि retry गर्न सकिन्छ।",
+      titleNp:     `${snap.docsPaused} document — AI रोकियो, document सुरक्षित छ`,
+      bodyNp:      "AI provider को limit पुग्यो। Document safe छ, intelligence मात्र रोकियो। API key ठीक गरेपछि retry हुन्छ।",
+      whyNp:       "AI analysis fail हुँदा document 'रोकिएको' state मा जान्छ — document कहिल्यै delete हुँदैन। System Settings मा API key configure गरेपछि retry गर्न सकिन्छ।",
       actionLabel: "System Settings →",
       actionHref:  "/vault/system",
       count:       snap.docsPaused,
@@ -213,32 +226,34 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
     });
   }
 
-  // ── Signal gap ─────────────────────────────────────────────────────────────
-  if (snap.daysSinceLastSignal !== null && snap.daysSinceLastSignal > 7) {
+  // ── 8. Signal gap ──────────────────────────────────────────────────────────
+  // Infrastructure concern — never escalates to "high" (it's not blocking pipeline).
+  if (snap.daysSinceLastSignal !== null && snap.daysSinceLastSignal > THRESHOLD.signalGapDays) {
     pool.push({
       id:          "signal_gap",
       type:        "signal_gap",
-      priority:    snap.daysSinceLastSignal > 30 ? "high" : "medium",
+      priority:    "medium",   // capped — signal gap is infrastructure, not pipeline blocker
       icon:        "📡",
-      titleNp:     `${snap.daysSinceLastSignal} दिनदेखि कुनै signal feed छैन`,
-      bodyNp:      "NRB, MoF वा Parliament बाट signal आएको छैन। Signal Feed check गर्नुस्।",
-      whyNp:       "Signal Feed ले live government/financial news detect गर्छ। लामो gap भएमा नयाँ policy changes detect हुँदैनन् — Janta Intelligence outdated हुन्छ।",
+      titleNp:     `${snap.daysSinceLastSignal} दिनदेखि नयाँ government signal छैन`,
+      bodyNp:      "NRB, MoF वा Parliament बाट live update आएको छैन। जारी नीति परिवर्तनहरू detect हुँदैनन्।",
+      whyNp:       "Signal Feed ले live government/financial news detect गर्छ। लामो gap भएमा नयाँ policy changes intelligence मा आउँदैनन् — Janta cards outdated हुन्छन्।",
       actionLabel: "Signal Feed →",
       actionHref:  "/vault/content/intelligence",
       dismissable: true,
     });
   }
 
-  // ── Low confidence ─────────────────────────────────────────────────────────
-  if (snap.lowConfidenceIntel > 10) {
+  // ── 9. Low confidence — suppressed until clearly a problem ────────────────
+  // Only surfaces when 25+ records have <60% confidence (not after just a few docs).
+  if (snap.lowConfidenceIntel > THRESHOLD.lowConfidence) {
     pool.push({
       id:          "low_confidence",
       type:        "low_confidence",
       priority:    "low",
       icon:        "⚠️",
       titleNp:     `${snap.lowConfidenceIntel} intelligence records कमजोर छन्`,
-      bodyNp:      "AI confidence 60% भन्दा कम छ — Branch Health मा review गर्न सकिन्छ।",
-      whyNp:       "Confidence कम भएका records गलत हुन सक्छन्। Re-extract गर्नुभन्दा पहिले Branch Health page मा कुन records कमजोर छन् हेर्नुस् — unnecessary AI cost नगर्नुस्।",
+      bodyNp:      "AI confidence 60% भन्दा कम छ — गलत information जनतासम्म जान सक्छ।",
+      whyNp:       "Confidence कम भएका records गलत हुन सक्छन्। Branch Health page मा कुन records कमजोर छन् हेर्नुस् — unnecessary AI cost नगर्नुस्, हेरेर मात्र re-extract गर्नुस्।",
       actionLabel: "Branch Health →",
       actionHref:  "/vault/constitution/health",
       count:       snap.lowConfidenceIntel,
@@ -246,17 +261,18 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
     });
   }
 
-  // ── No relationships ────────────────────────────────────────────────────────
-  if (snap.totalRelationships === 0 && snap.totalIntel > 5) {
+  // ── 10. No relationships — only after enough intel exists ─────────────────
+  // Premature below 30 records (Deep Extract auto-creates relationships).
+  if (snap.totalRelationships === 0 && snap.totalIntel > THRESHOLD.noRelationships) {
     pool.push({
       id:          "no_relationships",
       type:        "no_relationships",
       priority:    "low",
       icon:        "🔗",
-      titleNp:     "Intelligence records isolated छन्",
-      bodyNp:      `${snap.totalIntel} records छन् तर कुनै cross-document relationship link छैन।`,
-      whyNp:       "Relationships ले documents बीचको pattern देखाउँछ — उदाहरण: 'Budget 2081 ले Education Act लाई कसरी affect गर्छ।' Deep Extract गर्दा auto-match हुन्छ, manual काम छैन।",
-      actionLabel: "Documents →",
+      titleNp:     "Documents बीचको connection map बनेको छैन",
+      bodyNp:      `${snap.totalIntel} intelligence records छन् तर cross-document connections छैनन् — जनताले सम्बन्धित policies एकसाथ देख्न पाउँदैनन्।`,
+      whyNp:       "Connections ले documents बीचको pattern देखाउँछ — 'Budget 2081 ले Education Act लाई कसरी affect गर्छ।' Intelligence निकाल्दा auto-match हुन्छ, manual काम छैन।",
+      actionLabel: "Documents → Intelligence निकाल्नुहोस्",
       actionHref:  "/vault/documents",
       dismissable: true,
     });
@@ -269,18 +285,17 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
       type:        "system_healthy",
       priority:    "low",
       icon:        "✅",
-      titleNp:     snap.docsTotal > 0 ? "System राम्रो चलिरहेको छ" : "Backend तयार छ",
+      titleNp:     snap.docsTotal > 0 ? "Civic Intelligence Pipeline चलिरहेको छ" : "System तयार छ",
       bodyNp:      snap.docsTotal > 0
-        ? `${snap.docsTotal} documents · ${snap.totalIntel} intelligence records · ${snap.partsWithData}/35 branches active।`
+        ? `${snap.docsTotal} documents · ${snap.totalIntel} intelligence records · ${snap.partsWithData}/35 branches active — pipeline unblocked।`
         : "पहिलो civic document upload गरेर Constitution Intelligence सुरु गर्नुस्।",
-      whyNp:       "सबै tracked pipeline steps complete भएका छन्। नयाँ document upload गर्नुस् वा Branch Health check गर्नुस्।",
-      actionLabel: snap.docsTotal === 0 ? "पहिलो Upload →" : "Branch Health →",
+      whyNp:       "सबै tracked pipeline steps clear छन् — कुनै document review मा अड्किएको छैन, कुनै AI error छैन, कुनै branch mapping problem छैन। नयाँ document upload गर्नुस् वा Branch Health check गर्नुस्।",
+      actionLabel: snap.docsTotal === 0 ? "पहिलो Document Upload →" : "Branch Health →",
       actionHref:  snap.docsTotal === 0 ? "/vault/documents" : "/vault/constitution/health",
       dismissable: false,
     });
   }
 
-  // Sort by priority, then count, then cap at MAX_INSIGHTS
   return pool
     .sort((a, b) => {
       const pw = WEIGHT[b.priority] - WEIGHT[a.priority];
