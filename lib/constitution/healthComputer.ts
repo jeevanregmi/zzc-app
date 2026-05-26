@@ -32,6 +32,15 @@ export interface BranchHealth {
 // Keeps inference coarse-grained — explicit constitutionalRefs always takes priority.
 
 const SECTOR_PARTS: Record<string, number[]> = {
+  // ── Citizenship (Part 2) ─────────────────────────────────────────────────
+  citizenship:       [2, 3],
+  nagarikta:         [2],
+  naturalization:    [2],
+  nationality:       [2],
+  diaspora:          [2, 3],
+  identity:          [2],
+  immigration:       [2],
+
   // ── Fundamental Rights (Part 3) ───────────────────────────────────────────
   human_rights:      [3, 28],
   rights:            [3],
