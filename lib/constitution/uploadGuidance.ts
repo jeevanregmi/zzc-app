@@ -4,13 +4,19 @@
 export type VaultCategory =
   | "intelligence" | "research" | "legal" | "finance" | "strategy" | "other";
 
+export interface SourceLink {
+  label: string;   // short domain/org name shown on badge
+  url:   string;   // official .gov.np or international org URL
+}
+
 export interface UploadRecommendation {
-  title:       string;          // Nepali document type name
-  titleEn:     string;          // English for clarity
-  category:    VaultCategory;
-  tags:        string[];        // suggested tags to add when uploading
-  template:    string;          // pre-written description template to paste
-  priority:    "high" | "medium" | "low";
+  title:        string;          // Nepali document type name
+  titleEn:      string;          // English for clarity
+  category:     VaultCategory;
+  tags:         string[];        // suggested tags to add when uploading
+  template:     string;          // pre-written description template to paste
+  priority:     "high" | "medium" | "low";
+  sourceLinks?: SourceLink[];    // 2–3 authentic official source URLs
 }
 
 export interface PartUploadGuidance {
@@ -20,27 +26,81 @@ export interface PartUploadGuidance {
 
 export const UPLOAD_GUIDANCE: Record<number, UploadRecommendation[]> = {
   1: [
-    { title: "संविधान पाठ", titleEn: "Nepal Constitution 2015 full text", category: "legal", tags: ["constitution", "2072", "nepal", "fundamental-law"], template: "नेपालको संविधान २०७२ को पूर्ण पाठ — सबै भागहरूको मूल स्रोत।", priority: "high" },
-    { title: "संवैधानिक संशोधन", titleEn: "Constitutional amendments", category: "legal", tags: ["amendment", "constitution", "parliament"], template: "नेपालको संविधानमा भएको संशोधन {n} — संसदद्वारा पारित।", priority: "high" },
+    { title: "संविधान पाठ", titleEn: "Nepal Constitution 2015 full text", category: "legal", tags: ["constitution", "2072", "nepal", "fundamental-law"], template: "नेपालको संविधान २०७२ को पूर्ण पाठ — सबै भागहरूको मूल स्रोत।", priority: "high",
+      sourceLinks: [
+        { label: "Law Commission", url: "https://lawcommission.gov.np/content/13437/nepal-s-constitution/" },
+        { label: "PDF (ag.gov.np)", url: "https://ag.gov.np/files/Constitution-of-Nepal_2072_Eng_www.moljpa.gov_.npDate-72_11_16.pdf" },
+      ],
+    },
+    { title: "संवैधानिक संशोधन", titleEn: "Constitutional amendments", category: "legal", tags: ["amendment", "constitution", "parliament"], template: "नेपालको संविधानमा भएको संशोधन {n} — संसदद्वारा पारित।", priority: "high",
+      sourceLinks: [
+        { label: "Parliament Nepal", url: "https://www.parliament.gov.np/en/category/legislation/" },
+        { label: "Law Commission", url: "https://lawcommission.gov.np" },
+      ],
+    },
   ],
   2: [
-    { title: "नागरिकता ऐन", titleEn: "Citizenship Act", category: "legal", tags: ["citizenship", "nagarikta", "identity", "act"], template: "नेपालको नागरिकता ऐन — नागरिकता प्रदान गर्ने प्रक्रिया र मापदण्ड।", priority: "high" },
-    { title: "गृह मन्त्रालय नागरिकता निर्देशिका", titleEn: "MoHA citizenship directives", category: "intelligence", tags: ["citizenship", "ministry-home", "directive", "nagarikta"], template: "गृह मन्त्रालयले जारी गरेको नागरिकता सम्बन्धी निर्देशिका वा परिपत्र।", priority: "medium" },
+    { title: "नागरिकता ऐन", titleEn: "Citizenship Act", category: "legal", tags: ["citizenship", "nagarikta", "identity", "act"], template: "नेपालको नागरिकता ऐन — नागरिकता प्रदान गर्ने प्रक्रिया र मापदण्ड।", priority: "high",
+      sourceLinks: [
+        { label: "Law Commission", url: "https://lawcommission.gov.np/content/12939/12939-nepal-citizenship-act-2063/" },
+        { label: "MoHA", url: "https://moha.gov.np/en/post/citizenship-act-2063" },
+      ],
+    },
+    { title: "गृह मन्त्रालय नागरिकता निर्देशिका", titleEn: "MoHA citizenship directives", category: "intelligence", tags: ["citizenship", "ministry-home", "directive", "nagarikta"], template: "गृह मन्त्रालयले जारी गरेको नागरिकता सम्बन्धी निर्देशिका वा परिपत्र।", priority: "medium",
+      sourceLinks: [
+        { label: "MoHA", url: "https://moha.gov.np/en/category/circulars/" },
+      ],
+    },
     { title: "नागरिकता वितरण तथ्यांक", titleEn: "Citizenship distribution statistics", category: "research", tags: ["citizenship", "statistics", "data", "gender"], template: "वार्षिक नागरिकता वितरण तथ्यांक — लिंग, प्रदेश र जातीयताको आधारमा।", priority: "medium" },
   ],
   3: [
-    { title: "शिक्षा नीति", titleEn: "National Education Policy", category: "intelligence", tags: ["education", "policy", "fundamental-rights", "ministry-education"], template: "राष्ट्रिय शिक्षा नीति — शिक्षाको मौलिक हक कार्यान्वयनको आधार।", priority: "high" },
-    { title: "स्वास्थ्य नीति", titleEn: "National Health Policy", category: "intelligence", tags: ["health", "policy", "fundamental-rights", "ministry-health"], template: "राष्ट्रिय स्वास्थ्य नीति — स्वास्थ्यको मौलिक हक कार्यान्वयन।", priority: "high" },
-    { title: "श्रम ऐन / रोजगार नीति", titleEn: "Labour Act / Employment Policy", category: "legal", tags: ["labour", "employment", "rights", "ministry-labour"], template: "श्रम ऐन वा रोजगार नीति — रोजगारीको हकको कानूनी आधार।", priority: "high" },
-    { title: "अदालती फैसला (हक सम्बन्धी)", titleEn: "Court decisions on fundamental rights", category: "legal", tags: ["court", "fundamental-rights", "judiciary", "landmark"], template: "मौलिक हकसँग सम्बन्धित सर्वोच्च अदालतको उल्लेखनीय फैसला।", priority: "high" },
-    { title: "मानव अधिकार आयोगको वार्षिक प्रतिवेदन", titleEn: "NHRC Annual Report", category: "research", tags: ["human-rights", "NHRC", "annual-report", "monitoring"], template: "राष्ट्रिय मानव अधिकार आयोगको वार्षिक प्रतिवेदन — हक उल्लंघनको अवस्था।", priority: "high" },
+    { title: "शिक्षा नीति", titleEn: "National Education Policy", category: "intelligence", tags: ["education", "policy", "fundamental-rights", "ministry-education"], template: "राष्ट्रिय शिक्षा नीति — शिक्षाको मौलिक हक कार्यान्वयनको आधार।", priority: "high",
+      sourceLinks: [
+        { label: "MoEST", url: "https://moest.gov.np/category/publications/" },
+      ],
+    },
+    { title: "स्वास्थ्य नीति", titleEn: "National Health Policy", category: "intelligence", tags: ["health", "policy", "fundamental-rights", "ministry-health"], template: "राष्ट्रिय स्वास्थ्य नीति — स्वास्थ्यको मौलिक हक कार्यान्वयन।", priority: "high",
+      sourceLinks: [
+        { label: "MoHP", url: "https://mohp.gov.np/category/publications/" },
+      ],
+    },
+    { title: "श्रम ऐन / रोजगार नीति", titleEn: "Labour Act / Employment Policy", category: "legal", tags: ["labour", "employment", "rights", "ministry-labour"], template: "श्रम ऐन वा रोजगार नीति — रोजगारीको हकको कानूनी आधार।", priority: "high",
+      sourceLinks: [
+        { label: "Law Commission", url: "https://lawcommission.gov.np" },
+        { label: "MoLESS", url: "https://moless.gov.np/en/category/publications/" },
+      ],
+    },
+    { title: "अदालती फैसला (हक सम्बन्धी)", titleEn: "Court decisions on fundamental rights", category: "legal", tags: ["court", "fundamental-rights", "judiciary", "landmark"], template: "मौलिक हकसँग सम्बन्धित सर्वोच्च अदालतको उल्लेखनीय फैसला।", priority: "high",
+      sourceLinks: [
+        { label: "Supreme Court", url: "https://www.supremecourt.gov.np/web/yearlyreps" },
+      ],
+    },
+    { title: "मानव अधिकार आयोगको वार्षिक प्रतिवेदन", titleEn: "NHRC Annual Report", category: "research", tags: ["human-rights", "NHRC", "annual-report", "monitoring"], template: "राष्ट्रिय मानव अधिकार आयोगको वार्षिक प्रतिवेदन — हक उल्लंघनको अवस्था।", priority: "high",
+      sourceLinks: [
+        { label: "NHRC", url: "https://nhrc.gov.np/publications/annual-reports/" },
+      ],
+    },
     { title: "नागरिक गुनासो तथा सार्वजनिक सुनुवाइ", titleEn: "Citizen complaints / public hearings", category: "intelligence", tags: ["complaints", "citizen", "public-hearing", "rights-violation"], template: "नागरिकका गुनासा र सार्वजनिक सुनुवाइका अभिलेख — मौलिक हकको व्यावहारिक कार्यान्वयन।", priority: "medium" },
     { title: "खाद्य सुरक्षा प्रतिवेदन", titleEn: "Food security report", category: "research", tags: ["food-security", "nutrition", "rights", "poverty"], template: "खाद्य सुरक्षा र पोषणस्थिति सम्बन्धी प्रतिवेदन — खाद्यको हक (धारा ३६)।", priority: "medium" },
   ],
   4: [
-    { title: "आवधिक योजना", titleEn: "Periodic Plan (NPC)", category: "strategy", tags: ["periodic-plan", "NPC", "development", "niti-aayog"], template: "राष्ट्रिय योजना आयोगको {n} आवधिक योजना — निर्देशक सिद्धान्तको कार्यान्वयन खाका।", priority: "high" },
-    { title: "वार्षिक बजेट", titleEn: "Annual Federal Budget", category: "finance", tags: ["budget", "annual", "federal", "ministry-finance"], template: "संघीय सरकारको आर्थिक वर्ष {year} को बजेट — निर्देशक सिद्धान्त कार्यान्वयन कोष।", priority: "high" },
-    { title: "नीति तथा कार्यक्रम", titleEn: "Government Policy and Program (Niti tatha Karyakram)", category: "intelligence", tags: ["niti-karyakram", "government-program", "annual", "federal"], template: "सरकारको वार्षिक नीति तथा कार्यक्रम — सरकारको प्राथमिकता र प्रतिबद्धताहरू।", priority: "high" },
+    { title: "आवधिक योजना", titleEn: "Periodic Plan (NPC)", category: "strategy", tags: ["periodic-plan", "NPC", "development", "niti-aayog"], template: "राष्ट्रिय योजना आयोगको {n} आवधिक योजना — निर्देशक सिद्धान्तको कार्यान्वयन खाका।", priority: "high",
+      sourceLinks: [
+        { label: "NPC Nepal", url: "https://npc.gov.np/periodic_plans" },
+      ],
+    },
+    { title: "वार्षिक बजेट", titleEn: "Annual Federal Budget", category: "finance", tags: ["budget", "annual", "federal", "ministry-finance"], template: "संघीय सरकारको आर्थिक वर्ष {year} को बजेट — निर्देशक सिद्धान्त कार्यान्वयन कोष।", priority: "high",
+      sourceLinks: [
+        { label: "MoF Budget 2082/83", url: "https://mof.gov.np/content/1523/budget-speech-2082-83/" },
+        { label: "PDF (Nepali)", url: "https://giwmscdntwo.gov.np/media/pdf_upload/Webside%20Final%20budget%20Speech%202_15_qbn3jyt.pdf" },
+        { label: "PDF (English)", url: "https://giwmscdnone.gov.np/media/pdf_upload/Budget%20Translation_2082-2083_nzrwuof.pdf" },
+      ],
+    },
+    { title: "नीति तथा कार्यक्रम", titleEn: "Government Policy and Program (Niti tatha Karyakram)", category: "intelligence", tags: ["niti-karyakram", "government-program", "annual", "federal"], template: "सरकारको वार्षिक नीति तथा कार्यक्रम — सरकारको प्राथमिकता र प्रतिबद्धताहरू।", priority: "high",
+      sourceLinks: [
+        { label: "OPMCM", url: "https://opmcm.gov.np/en/category/publications/" },
+      ],
+    },
     { title: "क्षेत्रगत रणनीति", titleEn: "Sectoral strategy (agriculture, energy, etc.)", category: "strategy", tags: ["sectoral", "strategy", "agriculture", "energy", "directive-principles"], template: "क्षेत्रगत रणनीति — {sector} क्षेत्रको दीर्घकालीन विकास योजना।", priority: "medium" },
     { title: "दिगो विकास लक्ष्य (SDG) प्रतिवेदन", titleEn: "SDG Progress Report", category: "research", tags: ["SDG", "development", "international", "monitoring"], template: "नेपालको दिगो विकास लक्ष्य (SDG) प्रगति प्रतिवेदन — निर्देशक सिद्धान्तसँग तुलना।", priority: "medium" },
   ],
@@ -57,8 +117,17 @@ export const UPLOAD_GUIDANCE: Record<number, UploadRecommendation[]> = {
     { title: "प्रधानमन्त्री कार्यालयको प्रतिवेदन", titleEn: "PMO report / progress review", category: "intelligence", tags: ["PMO", "progress", "government", "executive"], template: "प्रधानमन्त्री कार्यालयको सरकारी कार्यक्रम प्रगति समीक्षा।", priority: "medium" },
   ],
   8: [
-    { title: "संसदीय समिति प्रतिवेदन", titleEn: "Parliamentary committee reports", category: "research", tags: ["parliament", "committee", "oversight", "legislation"], template: "संघीय संसदको {committee} समितिको अनुसन्धान वा अनुगमन प्रतिवेदन।", priority: "high" },
-    { title: "संसद् बैठकका निर्णय/कार्यसूची", titleEn: "Parliament session proceedings", category: "intelligence", tags: ["parliament", "session", "proceedings", "legislation"], template: "संघीय संसदको अधिवेशन कार्यसूची वा प्रमुख निर्णयहरू।", priority: "medium" },
+    { title: "संसदीय समिति प्रतिवेदन", titleEn: "Parliamentary committee reports", category: "research", tags: ["parliament", "committee", "oversight", "legislation"], template: "संघीय संसदको {committee} समितिको अनुसन्धान वा अनुगमन प्रतिवेदन।", priority: "high",
+      sourceLinks: [
+        { label: "Parliament Nepal", url: "https://www.parliament.gov.np/en/category/reports/" },
+        { label: "HoR Nepal", url: "https://www.hor.gov.np/en/category/publications/" },
+      ],
+    },
+    { title: "संसद् बैठकका निर्णय/कार्यसूची", titleEn: "Parliament session proceedings", category: "intelligence", tags: ["parliament", "session", "proceedings", "legislation"], template: "संघीय संसदको अधिवेशन कार्यसूची वा प्रमुख निर्णयहरू।", priority: "medium",
+      sourceLinks: [
+        { label: "Parliament Nepal", url: "https://www.parliament.gov.np" },
+      ],
+    },
   ],
   9: [
     { title: "ऐन/नियमावली", titleEn: "Federal Acts and regulations", category: "legal", tags: ["act", "law", "regulation", "federal"], template: "{act-name} ऐन — संघीय कानून निर्माण प्रक्रियाको उपज।", priority: "high" },
@@ -69,8 +138,17 @@ export const UPLOAD_GUIDANCE: Record<number, UploadRecommendation[]> = {
     { title: "महालेखा नियन्त्रकको प्रतिवेदन", titleEn: "Comptroller General's report", category: "finance", tags: ["comptroller", "expenditure", "budget-execution", "treasury"], template: "महालेखा नियन्त्रक कार्यालयको बजेट कार्यान्वयन वार्षिक प्रतिवेदन।", priority: "medium" },
   ],
   11: [
-    { title: "सर्वोच्च अदालतको वार्षिक प्रतिवेदन", titleEn: "Supreme Court Annual Report", category: "legal", tags: ["supreme-court", "judiciary", "annual-report", "justice"], template: "सर्वोच्च अदालतको वार्षिक प्रतिवेदन — न्याय प्रशासनको अवस्था।", priority: "high" },
-    { title: "न्याय परिषद् प्रतिवेदन", titleEn: "Judicial Council report", category: "legal", tags: ["judicial-council", "judges", "appointment", "discipline"], template: "न्याय परिषद्को वार्षिक प्रतिवेदन — न्यायाधीश नियुक्ति र अनुशासन।", priority: "high" },
+    { title: "सर्वोच्च अदालतको वार्षिक प्रतिवेदन", titleEn: "Supreme Court Annual Report", category: "legal", tags: ["supreme-court", "judiciary", "annual-report", "justice"], template: "सर्वोच्च अदालतको वार्षिक प्रतिवेदन — न्याय प्रशासनको अवस्था।", priority: "high",
+      sourceLinks: [
+        { label: "SC Annual Reports", url: "https://www.supremecourt.gov.np/web/yearlyreps" },
+        { label: "SC Booklet 2080 PDF", url: "https://supremecourt.gov.np/web/assets/downloads/Supreme%20Court%20Booklet-2080.pdf" },
+      ],
+    },
+    { title: "न्याय परिषद् प्रतिवेदन", titleEn: "Judicial Council report", category: "legal", tags: ["judicial-council", "judges", "appointment", "discipline"], template: "न्याय परिषद्को वार्षिक प्रतिवेदन — न्यायाधीश नियुक्ति र अनुशासन।", priority: "high",
+      sourceLinks: [
+        { label: "Judicial Council", url: "https://www.judicialcouncil.gov.np/en/publications/" },
+      ],
+    },
     { title: "न्याय सुधार प्रतिवेदन", titleEn: "Justice reform / access to justice report", category: "research", tags: ["justice-reform", "access-to-justice", "legal-aid"], template: "न्याय पहुँच र न्याय सुधार सम्बन्धी अध्ययन प्रतिवेदन।", priority: "high" },
     { title: "उल्लेखनीय अदालती फैसलाहरू", titleEn: "Landmark court decisions", category: "legal", tags: ["court-decision", "landmark", "precedent", "judiciary"], template: "सर्वोच्च वा उच्च अदालतको {topic} सम्बन्धी उल्लेखनीय फैसला।", priority: "medium" },
   ],
@@ -116,30 +194,62 @@ export const UPLOAD_GUIDANCE: Record<number, UploadRecommendation[]> = {
     { title: "समन्वय परिषद् बैठकका निर्णय", titleEn: "Coordination council meeting decisions", category: "intelligence", tags: ["coordination", "inter-government", "meeting", "federal"], template: "अन्तर प्रदेश परिषद् वा समन्वय परिषद्का बैठकका निर्णयहरू।", priority: "medium" },
   ],
   23: [
-    { title: "राष्ट्रिय प्राकृतिक स्रोत तथा वित्त आयोग प्रतिवेदन", titleEn: "NNRFC report", category: "finance", tags: ["NNRFC", "fiscal-system", "natural-resources", "finance"], template: "राष्ट्रिय प्राकृतिक स्रोत तथा वित्त आयोगको वार्षिक प्रतिवेदन।", priority: "high" },
-    { title: "राजस्व नीति", titleEn: "Revenue / Tax policy documents", category: "finance", tags: ["tax", "revenue", "policy", "IRD"], template: "आन्तरिक राजस्व विभागको राजस्व नीति वा कर सम्बन्धी दिशानिर्देश।", priority: "high" },
-    { title: "NRB मौद्रिक नीति", titleEn: "NRB Monetary Policy", category: "finance", tags: ["NRB", "monetary-policy", "banking", "interest-rate"], template: "राष्ट्र बैंकको वार्षिक मौद्रिक नीति — वित्त व्यवस्थाको मुख्य साधन।", priority: "medium" },
+    { title: "राष्ट्रिय प्राकृतिक स्रोत तथा वित्त आयोग प्रतिवेदन", titleEn: "NNRFC report", category: "finance", tags: ["NNRFC", "fiscal-system", "natural-resources", "finance"], template: "राष्ट्रिय प्राकृतिक स्रोत तथा वित्त आयोगको वार्षिक प्रतिवेदन।", priority: "high",
+      sourceLinks: [
+        { label: "NNRFC", url: "https://nnrfc.gov.np/en/publications/" },
+      ],
+    },
+    { title: "राजस्व नीति", titleEn: "Revenue / Tax policy documents", category: "finance", tags: ["tax", "revenue", "policy", "IRD"], template: "आन्तरिक राजस्व विभागको राजस्व नीति वा कर सम्बन्धी दिशानिर्देश।", priority: "high",
+      sourceLinks: [
+        { label: "IRD Nepal", url: "https://ird.gov.np/en/category/publications/" },
+      ],
+    },
+    { title: "NRB मौद्रिक नीति", titleEn: "NRB Monetary Policy", category: "finance", tags: ["NRB", "monetary-policy", "banking", "interest-rate"], template: "राष्ट्र बैंकको वार्षिक मौद्रिक नीति — वित्त व्यवस्थाको मुख्य साधन।", priority: "medium",
+      sourceLinks: [
+        { label: "NRB Monetary Policy", url: "https://www.nrb.org.np/category/monetary-policy/" },
+      ],
+    },
   ],
   24: [
-    { title: "अख्तियार दुरुपयोग अनुसन्धान आयोगको वार्षिक प्रतिवेदन", titleEn: "CIAA Annual Report", category: "research", tags: ["CIAA", "corruption", "accountability", "annual-report"], template: "अख्तियार दुरुपयोग अनुसन्धान आयोगको वार्षिक प्रतिवेदन — भ्रष्टाचार नियन्त्रणको अवस्था।", priority: "high" },
+    { title: "अख्तियार दुरुपयोग अनुसन्धान आयोगको वार्षिक प्रतिवेदन", titleEn: "CIAA Annual Report", category: "research", tags: ["CIAA", "corruption", "accountability", "annual-report"], template: "अख्तियार दुरुपयोग अनुसन्धान आयोगको वार्षिक प्रतिवेदन — भ्रष्टाचार नियन्त्रणको अवस्था।", priority: "high",
+      sourceLinks: [
+        { label: "CIAA Nepal", url: "https://ciaa.gov.np/en/publication/annual-report" },
+      ],
+    },
     { title: "भ्रष्टाचार मुद्दाको सारांश", titleEn: "Corruption case summary / Special Court decisions", category: "legal", tags: ["corruption", "special-court", "CIAA", "prosecution"], template: "विशेष अदालतमा दायर भ्रष्टाचार मुद्दाहरूको सारांश र फैसला।", priority: "high" },
     { title: "सुशासन सूचकांक", titleEn: "Good governance index / report", category: "research", tags: ["governance", "transparency", "index", "accountability"], template: "सुशासन सूचकांक वा पारदर्शिता मूल्यांकन प्रतिवेदन।", priority: "medium" },
   ],
   25: [
-    { title: "महालेखापरीक्षकको वार्षिक प्रतिवेदन", titleEn: "Auditor General Annual Report", category: "finance", tags: ["auditor-general", "audit", "annual-report", "irregularity"], template: "महालेखापरीक्षकको वार्षिक प्रतिवेदन — सरकारी खर्चको लेखापरीक्षण।", priority: "high" },
+    { title: "महालेखापरीक्षकको वार्षिक प्रतिवेदन", titleEn: "Auditor General Annual Report", category: "finance", tags: ["auditor-general", "audit", "annual-report", "irregularity"], template: "महालेखापरीक्षकको वार्षिक प्रतिवेदन — सरकारी खर्चको लेखापरीक्षण।", priority: "high",
+      sourceLinks: [
+        { label: "OAG Nepal", url: "https://oag.gov.np/en/reports" },
+      ],
+    },
     { title: "बेरुजु फर्छ्यौट प्रगति", titleEn: "Audit irregularity clearance report", category: "finance", tags: ["audit", "irregularity", "clearance", "accountability"], template: "बेरुजु फर्छ्यौटको प्रगति प्रतिवेदन — सरकारी जवाफदेहिताको मापन।", priority: "medium" },
   ],
   26: [
-    { title: "लोक सेवा आयोगको वार्षिक प्रतिवेदन", titleEn: "PSC Annual Report", category: "research", tags: ["PSC", "civil-service", "recruitment", "annual-report"], template: "लोक सेवा आयोगको वार्षिक प्रतिवेदन — निजामती सेवा भर्ना र परीक्षाको अवस्था।", priority: "high" },
+    { title: "लोक सेवा आयोगको वार्षिक प्रतिवेदन", titleEn: "PSC Annual Report", category: "research", tags: ["PSC", "civil-service", "recruitment", "annual-report"], template: "लोक सेवा आयोगको वार्षिक प्रतिवेदन — निजामती सेवा भर्ना र परीक्षाको अवस्था।", priority: "high",
+      sourceLinks: [
+        { label: "PSC Nepal", url: "https://psc.gov.np/annual-report" },
+      ],
+    },
     { title: "निजामती सेवा सुधार प्रतिवेदन", titleEn: "Civil service reform report", category: "strategy", tags: ["civil-service", "reform", "capacity", "governance"], template: "निजामती सेवा सुधार र क्षमता विकाससम्बन्धी प्रतिवेदन।", priority: "medium" },
   ],
   27: [
-    { title: "निर्वाचन आयोगको वार्षिक प्रतिवेदन", titleEn: "Election Commission Annual Report", category: "research", tags: ["election", "commission", "annual-report", "democracy"], template: "निर्वाचन आयोगको वार्षिक प्रतिवेदन — निर्वाचन प्रक्रिया र परिणाम।", priority: "high" },
+    { title: "निर्वाचन आयोगको वार्षिक प्रतिवेदन", titleEn: "Election Commission Annual Report", category: "research", tags: ["election", "commission", "annual-report", "democracy"], template: "निर्वाचन आयोगको वार्षिक प्रतिवेदन — निर्वाचन प्रक्रिया र परिणाम।", priority: "high",
+      sourceLinks: [
+        { label: "Election Commission", url: "https://election.gov.np/en/page/publications" },
+      ],
+    },
     { title: "निर्वाचन परिणाम तथ्यांक", titleEn: "Election results data", category: "research", tags: ["election-results", "data", "statistics", "representation"], template: "{year} सालको {election-type} निर्वाचनको परिणाम तथ्यांक।", priority: "medium" },
     { title: "निर्वाचन सुधार प्रस्ताव", titleEn: "Electoral reform proposal/report", category: "strategy", tags: ["electoral-reform", "democracy", "representation", "commission"], template: "निर्वाचन प्रणाली सुधारसम्बन्धी प्रतिवेदन वा प्रस्ताव।", priority: "medium" },
   ],
   28: [
-    { title: "राष्ट्रिय मानव अधिकार आयोग प्रतिवेदन", titleEn: "NHRC Annual Report", category: "research", tags: ["NHRC", "human-rights", "monitoring", "annual-report"], template: "राष्ट्रिय मानव अधिकार आयोगको वार्षिक प्रतिवेदन — मानव अधिकारको अवस्था।", priority: "high" },
+    { title: "राष्ट्रिय मानव अधिकार आयोग प्रतिवेदन", titleEn: "NHRC Annual Report", category: "research", tags: ["NHRC", "human-rights", "monitoring", "annual-report"], template: "राष्ट्रिय मानव अधिकार आयोगको वार्षिक प्रतिवेदन — मानव अधिकारको अवस्था।", priority: "high",
+      sourceLinks: [
+        { label: "NHRC", url: "https://nhrc.gov.np/publications/annual-reports/" },
+      ],
+    },
     { title: "संयुक्त राष्ट्रसंघ UPR प्रतिवेदन", titleEn: "UN Universal Periodic Review (UPR) report", category: "research", tags: ["UPR", "UN", "human-rights", "international"], template: "नेपालको यूपीआर (Universal Periodic Review) प्रतिवेदन — अन्तर्राष्ट्रिय मानव अधिकार समीक्षा।", priority: "medium" },
     { title: "मानव तस्करी तथा श्रम शोषण प्रतिवेदन", titleEn: "Human trafficking / labour exploitation report", category: "research", tags: ["trafficking", "labour", "exploitation", "rights"], template: "मानव तस्करी र श्रम शोषण नियन्त्रणसम्बन्धी प्रतिवेदन।", priority: "medium" },
   ],
