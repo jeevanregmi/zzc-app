@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { collection, getDocs, query, where, updateDoc, doc as firestoreDoc } from "firebase/firestore";
+import { db } from "../../app/firebase";
 import { useCTOInsights } from "../../hooks/vault/useCTOInsights";
 import { systemHealthStatus } from "../../lib/vault/ctoEngine";
 import type { CTOInsight, InsightPriority } from "../../lib/vault/ctoEngine";
@@ -270,6 +272,271 @@ function DebugPanel({ snapshot }: { snapshot: NonNullable<ReturnType<typeof useC
   );
 }
 
+// ── CTO Command Center ────────────────────────────────────────────────────────
+
+function devanagariToInt(s: string): number {
+  const converted = s.replace(/[०-९]/g, d => String(d.charCodeAt(0) - 0x0966)).replace(/[^\d]/g, "");
+  const n = parseInt(converted, 10);
+  return isNaN(n) ? 0 : n;
+}
+
+type CmdStatus = "idle" | "running" | "done" | "error";
+
+interface VaultDoc {
+  id:                  string;
+  processingStatus?:   string;
+  adminApprovalStatus?: string;
+  title?:              string;
+  fileName?:           string;
+  downloadUrl?:        string;
+  mimeType?:           string;
+  aiSummary?:          string;
+  nepaliExplainer?:    string;
+  affectedSectors?:    string[];
+  aiKeyInsights?:      string[];
+  detectedTopics?:     string[];
+  uploadedAt?:         string;
+  category?:           string;
+}
+
+function CommandCenter({ uid }: { uid: string }) {
+  const [log,        setLog]        = useState<string[]>([]);
+  const [repairSt,   setRepairSt]   = useState<CmdStatus>("idle");
+  const [analyzeSt,  setAnalyzeSt]  = useState<CmdStatus>("idle");
+  const [extractSt,  setExtractSt]  = useState<CmdStatus>("idle");
+  const [showAnalyze, setShowAnalyze] = useState(false);
+  const [showExtract, setShowExtract] = useState(false);
+
+  const addLog = (msg: string) => setLog(p => [`${new Date().toLocaleTimeString("ne-NP")} — ${msg}`, ...p.slice(0, 19)]);
+
+  // ── 1. PartNumber Repair ──
+  const runRepair = async () => {
+    setRepairSt("running");
+    addLog("🔧 constitutional_framework scan गर्दैछ…");
+    try {
+      const snap = await getDocs(query(collection(db, "constitutional_framework"), where("ownerId", "==", uid)));
+      const broken = snap.docs.filter(d => {
+        const data = d.data() as Record<string, unknown>;
+        return (data.partNumber as number ?? 0) === 0 || (data.article as number ?? 0) === 0;
+      });
+      if (broken.length === 0) {
+        addLog("✅ सबै records मा सही partNumber छ — repair आवश्यक छैन।");
+        setRepairSt("done"); return;
+      }
+      addLog(`⚠ ${broken.length} records repair गर्नुपर्छ — fixing…`);
+      let fixed = 0;
+      for (const d of broken) {
+        const data = d.data() as Record<string, unknown>;
+        const updates: Record<string, number> = {};
+        if ((data.partNumber as number ?? 0) === 0 && data.part) {
+          const pn = devanagariToInt(data.part as string);
+          if (pn > 0) updates.partNumber = pn;
+        }
+        if ((data.article as number ?? 0) === 0 && data.articleId) {
+          const match = (data.articleId as string).match(/^art-(\d+)/);
+          if (match) { const an = parseInt(match[1], 10); if (!isNaN(an) && an > 0) updates.article = an; }
+        }
+        if (Object.keys(updates).length > 0) {
+          await updateDoc(firestoreDoc(db, "constitutional_framework", d.id), updates);
+          fixed++;
+        }
+      }
+      addLog(`✅ Repair सम्पन्न — ${fixed} records ठीक गरियो।`);
+      setRepairSt("done");
+    } catch (e) {
+      addLog(`❌ Repair failed: ${e instanceof Error ? e.message : String(e)}`);
+      setRepairSt("error");
+    }
+  };
+
+  // ── 2. Analyze All Pending ──
+  const runAnalyzeAll = async () => {
+    setAnalyzeSt("running"); setShowAnalyze(false);
+    addLog("🤖 pending documents scan गर्दैछ…");
+    try {
+      const snap = await getDocs(query(collection(db, "vault_documents"), where("ownerId", "==", uid)));
+      const pending = snap.docs
+        .map(d => ({ id: d.id, ...d.data() } as VaultDoc))
+        .filter(d => d.processingStatus === "ready");
+      if (pending.length === 0) {
+        addLog("✅ कुनै pending document छैन।");
+        setAnalyzeSt("done"); return;
+      }
+      addLog(`📄 ${pending.length} documents analyze गर्दैछ…`);
+      let done = 0;
+      for (const d of pending) {
+        addLog(`🔄 (${done + 1}/${pending.length}) ${String(d.title || d.fileName || d.id).slice(0, 40)}…`);
+        await updateDoc(firestoreDoc(db, "vault_documents", d.id), { processingStatus: "processing_ai" });
+        try {
+          const res = await fetch("/api/process-document", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ docId: d.id, downloadUrl: d.downloadUrl, mimeType: d.mimeType, fileName: d.fileName }),
+          });
+          const data = await res.json() as { ok?: boolean; error?: string; code?: string };
+          if (!res.ok || data.error) {
+            const aiPaused = ["BILLING_EXHAUSTED", "NO_PROVIDERS", "AI_UNAVAILABLE", "TIMEOUT"].includes(data.code ?? "");
+            await updateDoc(firestoreDoc(db, "vault_documents", d.id), { processingStatus: aiPaused ? "ai_paused" : "ready" });
+            addLog(`⚠ ${String(d.title || d.id).slice(0, 30)} — ${data.error ?? "failed"}`);
+          } else {
+            await updateDoc(firestoreDoc(db, "vault_documents", d.id), { processingStatus: "ai_ready", adminApprovalStatus: "pending_review" });
+            addLog(`✓ ${String(d.title || d.id).slice(0, 30)} — AI ready`);
+            done++;
+          }
+        } catch (err) {
+          await updateDoc(firestoreDoc(db, "vault_documents", d.id), { processingStatus: "ready" });
+          addLog(`❌ ${String(d.title || d.id).slice(0, 30)} — ${err instanceof Error ? err.message : "error"}`);
+        }
+      }
+      addLog(`✅ Analyze batch सम्पन्न — ${done}/${pending.length} सफल।`);
+      setAnalyzeSt("done");
+    } catch (e) {
+      addLog(`❌ Analyze failed: ${e instanceof Error ? e.message : String(e)}`);
+      setAnalyzeSt("error");
+    }
+  };
+
+  // ── 3. Extract All Approved ──
+  const runExtractAll = async () => {
+    setExtractSt("running"); setShowExtract(false);
+    addLog("⚡ approved documents scan गर्दैछ…");
+    try {
+      const [docsSnap, intelSnap] = await Promise.all([
+        getDocs(query(collection(db, "vault_documents"), where("ownerId", "==", uid))),
+        getDocs(query(collection(db, "janta_intelligence"), where("ownerId", "==", uid))),
+      ]);
+      const intelByDoc: Record<string, number> = {};
+      intelSnap.docs.forEach(d => {
+        const docId = (d.data() as Record<string, unknown>).docId as string;
+        if (docId) intelByDoc[docId] = (intelByDoc[docId] ?? 0) + 1;
+      });
+      const approved = docsSnap.docs
+        .map(d => ({ id: d.id, ...d.data() } as VaultDoc))
+        .filter(d => d.adminApprovalStatus === "approved" && (intelByDoc[d.id] ?? 0) === 0);
+      if (approved.length === 0) {
+        addLog("✅ Extract गर्नुपर्ने कुनै approved document छैन।");
+        setExtractSt("done"); return;
+      }
+      addLog(`📋 ${approved.length} documents extract गर्दैछ…`);
+      let done = 0;
+      for (const d of approved) {
+        addLog(`🔄 (${done + 1}/${approved.length}) ${String(d.title || d.fileName || d.id).slice(0, 40)}…`);
+        const text = [d.aiSummary, d.nepaliExplainer, ...(Array.isArray(d.affectedSectors) ? d.affectedSectors : []), ...(Array.isArray(d.aiKeyInsights) ? d.aiKeyInsights : [])].filter(Boolean).join("\n\n");
+        if (!text) { addLog(`⚠ ${String(d.title || d.id).slice(0, 30)} — text छैन, skip`); continue; }
+        try {
+          const res = await fetch("/api/extract-intelligence", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text, downloadUrl: d.downloadUrl, mimeType: d.mimeType, docTitle: d.title, docType: (Array.isArray(d.detectedTopics) ? d.detectedTopics[0] : undefined) ?? "government document", sourceYear: new Date(String(d.uploadedAt)).getFullYear().toString(), ownerId: uid, docId: d.id, domain: d.category === "finance" ? "finance" : "janta" }),
+          });
+          const data = await res.json() as { ok: boolean; totalFound?: number; error?: string };
+          if (data.ok) { addLog(`✓ ${String(d.title || d.id).slice(0, 30)} — ${data.totalFound ?? 0} intel records`); done++; }
+          else { addLog(`⚠ ${String(d.title || d.id).slice(0, 30)} — ${data.error ?? "failed"}`); }
+        } catch (err) {
+          addLog(`❌ ${String(d.title || d.id).slice(0, 30)} — ${err instanceof Error ? err.message : "error"}`);
+        }
+      }
+      addLog(`✅ Extract batch सम्पन्न — ${done}/${approved.length} सफल।`);
+      setExtractSt("done");
+    } catch (e) {
+      addLog(`❌ Extract failed: ${e instanceof Error ? e.message : String(e)}`);
+      setExtractSt("error");
+    }
+  };
+
+  const statusColor = (s: CmdStatus) => s === "done" ? "text-green-400" : s === "error" ? "text-red-400" : s === "running" ? "text-amber-400" : "text-zinc-500";
+  const statusIcon  = (s: CmdStatus) => s === "done" ? "✅" : s === "error" ? "❌" : s === "running" ? "⟳" : "▶";
+
+  return (
+    <div className="space-y-3">
+      <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-black">⚡ Command Center — Direct Execute</p>
+
+      {/* ── Repair ── */}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-white text-xs font-black">🔧 PartNumber Repair</p>
+            <p className="text-zinc-500 text-[10px] mt-0.5">partNumber=0 records fix गर्छ — free, instant</p>
+          </div>
+          <span className={`text-[10px] font-black ${statusColor(repairSt)}`}>{statusIcon(repairSt)}</span>
+        </div>
+        <button
+          onClick={runRepair}
+          disabled={repairSt === "running"}
+          className="w-full py-2 rounded-lg text-xs font-black bg-purple-900/60 border border-purple-700/60 text-purple-300 hover:bg-purple-800/60 disabled:opacity-40 transition-colors"
+        >
+          {repairSt === "running" ? "Repair हुँदैछ…" : "Run Repair"}
+        </button>
+      </div>
+
+      {/* ── Analyze All ── */}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-white text-xs font-black">🤖 Analyze All Pending</p>
+            <p className="text-zinc-500 text-[10px] mt-0.5">सबै ready docs AI analyze गर्छ · AI cost लाग्छ</p>
+          </div>
+          <span className={`text-[10px] font-black ${statusColor(analyzeSt)}`}>{statusIcon(analyzeSt)}</span>
+        </div>
+        {!showAnalyze && analyzeSt !== "running" ? (
+          <button onClick={() => setShowAnalyze(true)} className="w-full py-2 rounded-lg text-xs font-black bg-amber-900/40 border border-amber-700/50 text-amber-300 hover:bg-amber-800/40 transition-colors">
+            Run Analyze All →
+          </button>
+        ) : showAnalyze ? (
+          <div className="space-y-1.5">
+            <p className="text-amber-400 text-[10px] leading-relaxed">⚠ प्रत्येक document मा AI cost लाग्छ। Gemini Flash use हुन्छ।</p>
+            <div className="flex gap-2">
+              <button onClick={runAnalyzeAll} className="flex-1 py-2 rounded-lg text-xs font-black bg-amber-600 text-black hover:bg-amber-500 transition-colors">✓ Confirm — Run</button>
+              <button onClick={() => setShowAnalyze(false)} className="px-3 py-2 rounded-lg text-xs text-zinc-500 border border-zinc-700 hover:text-white transition-colors">रद्द</button>
+            </div>
+          </div>
+        ) : (
+          <p className="text-amber-400 text-[10px]">⟳ Analyze हुँदैछ — log हेर्नुस्…</p>
+        )}
+      </div>
+
+      {/* ── Extract All ── */}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3 space-y-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-white text-xs font-black">⚡ Extract All Approved</p>
+            <p className="text-zinc-500 text-[10px] mt-0.5">approved + 0 intel docs बाट janta_intelligence extract गर्छ</p>
+          </div>
+          <span className={`text-[10px] font-black ${statusColor(extractSt)}`}>{statusIcon(extractSt)}</span>
+        </div>
+        {!showExtract && extractSt !== "running" ? (
+          <button onClick={() => setShowExtract(true)} className="w-full py-2 rounded-lg text-xs font-black bg-blue-900/40 border border-blue-700/50 text-blue-300 hover:bg-blue-800/40 transition-colors">
+            Run Extract All →
+          </button>
+        ) : showExtract ? (
+          <div className="space-y-1.5">
+            <p className="text-blue-400 text-[10px] leading-relaxed">⚠ Approved documents मा AI extraction run हुन्छ — intelligence records बन्छन्।</p>
+            <div className="flex gap-2">
+              <button onClick={runExtractAll} className="flex-1 py-2 rounded-lg text-xs font-black bg-blue-600 text-white hover:bg-blue-500 transition-colors">✓ Confirm — Run</button>
+              <button onClick={() => setShowExtract(false)} className="px-3 py-2 rounded-lg text-xs text-zinc-500 border border-zinc-700 hover:text-white transition-colors">रद्द</button>
+            </div>
+          </div>
+        ) : (
+          <p className="text-blue-400 text-[10px]">⟳ Extract हुँदैछ — log हेर्नुस्…</p>
+        )}
+      </div>
+
+      {/* ── Approve note ── */}
+      <div className="rounded-xl border border-zinc-800/50 px-3 py-2.5">
+        <p className="text-zinc-600 text-[10px] leading-relaxed">🔒 <strong className="text-zinc-500">Admin Approve</strong> — quality gate हो, कहिल्यै automate हुँदैन। <Link href="/vault/admin" className="text-zinc-400 hover:text-white">Admin Vault →</Link></p>
+      </div>
+
+      {/* ── Live log ── */}
+      {log.length > 0 && (
+        <div className="rounded-xl border border-zinc-800 bg-black/60 p-3 space-y-1 max-h-48 overflow-y-auto">
+          <p className="text-[9px] text-zinc-700 uppercase tracking-widest font-black mb-1.5">Live Log</p>
+          {log.map((l, i) => (
+            <p key={i} className="text-[10px] font-mono text-zinc-400 leading-relaxed">{l}</p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function CTOAssistant({ uid }: { uid: string | null }) {
@@ -317,6 +584,8 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
   const criticalCount = insights.filter(i => i.priority === "critical").length;
   const highCount     = insights.filter(i => i.priority === "high").length;
   const urgentCount   = criticalCount + highCount;
+
+  const [panelTab, setPanelTab] = useState<"insights" | "commands">("insights");
 
   const isHealthy    = insights.length === 1 && insights[0]?.type === "system_healthy";
   const topInsight   = insights[0] ?? null;
@@ -404,8 +673,30 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
             </div>
           </div>
 
+          {/* Tab bar */}
+          <div className="flex border-b border-zinc-800 px-4 shrink-0">
+            {([
+              { id: "insights",  label: "💡 Insights" },
+              { id: "commands",  label: "⚡ Commands" },
+            ] as const).map(t => (
+              <button
+                key={t.id}
+                onClick={() => setPanelTab(t.id)}
+                className={`px-3 py-2 text-[11px] font-black border-b-2 transition-colors ${panelTab === t.id ? "border-white text-white" : "border-transparent text-zinc-600 hover:text-zinc-400"}`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
           {/* Scrollable content */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
+
+            {/* ── Commands tab ── */}
+            {panelTab === "commands" && <CommandCenter uid={uid} />}
+
+            {/* ── Insights tab ── */}
+            {panelTab === "insights" && <>
 
             {/* Last session continuity banner */}
             {showSession && (
@@ -534,6 +825,8 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
                 </div>
               </details>
             )}
+
+            </>}
           </div>
 
           {/* Footer */}
