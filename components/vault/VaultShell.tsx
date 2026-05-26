@@ -10,6 +10,7 @@ import { useIntelligenceDocs } from "../../hooks/vault/useIntelligenceDocs";
 import { useQueueItems } from "../../hooks/vault/useQueueItems";
 import { useSourceSignals } from "../../hooks/vault/useSourceSignals";
 import { LearningModeProvider, useLearningMode } from "../../contexts/LearningModeContext";
+import { CTOAssistant } from "./CTOAssistant";
 
 // ─── Primary nav — always visible ─────────────────────────────────────────────
 const PRIMARY_NAV = [
@@ -303,6 +304,9 @@ export function VaultShell({ children }: { children: React.ReactNode }) {
       <main className="flex-1 lg:ml-52 pt-12 lg:pt-0 min-h-screen">
         {children}
       </main>
+
+      {/* ── CTO Assistant — persistent floating dock ──────────────────────── */}
+      <CTOAssistant uid={user?.uid ?? null} />
     </div>
     </LearningModeProvider>
   );
