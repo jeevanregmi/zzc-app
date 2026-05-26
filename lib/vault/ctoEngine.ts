@@ -156,7 +156,9 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
         : "संविधान २०७२ PDF upload गर्नुस् — यो पूरा civic intelligence system को जग हो।",
       whyNp:       "Constitutional Framework (Layer 1) बिना Constitution Tree खाली हुन्छ। ३५ भागका धाराहरू, अधिकारहरू, र institutions — सबै यही बाट आउँछन्। एकपटक निकाले पुग्छ।",
       actionLabel: snap.docsTotal > 0 ? "Documents → संविधान निकाल्नुहोस्" : "संविधान Upload गर्नुस्",
-      actionHref:  "/vault/documents",
+      actionHref:  snap.docsTotal > 0
+        ? "/vault/documents"
+        : "/vault/documents?upload=1&govFolder=constitution&tags=constitution,2072,nepal,fundamental-law",
       dismissable: false,
       costWarning: snap.docsTotal > 0
         ? "संविधान extraction ले multiple AI calls लाग्छ। एकपटक सकिएपछि re-extract आवश्यक हुँदैन।"

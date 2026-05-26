@@ -20,6 +20,7 @@ import type { IntelligenceRecord } from "../../../../lib/types/intelligence-reco
 import type { ConstitutionalFrameworkRecord } from "../../../../lib/types/constitutional-framework";
 import { PARTS_META } from "./partsMeta";
 import { UPLOAD_GUIDANCE, type VaultCategory, type UploadRecommendation } from "../../../../lib/constitution/uploadGuidance";
+import type { GovFolder } from "../../../../lib/types/documents";
 import {
   computeAllDeepLearnProfiles,
   type PartDeepLearnProfile,
@@ -526,6 +527,32 @@ const CATEGORY_COLOR: Record<VaultCategory, string> = {
   other:        "#94a3b8",
 };
 
+// Maps constitutional part number → default Civic Library govFolder.
+function partGovFolder(partNumber: number): GovFolder {
+  if (partNumber >= 1  && partNumber <= 3)  return "constitution";
+  if (partNumber === 4)                     return "policy-planning";
+  if (partNumber >= 5  && partNumber <= 7)  return "parliament";
+  if (partNumber === 8)                     return "budget-economy";
+  if (partNumber >= 9  && partNumber <= 10) return "judiciary";
+  if (partNumber >= 12 && partNumber <= 22) return "local-governance";
+  return "policy-planning";
+}
+
+// Refines govFolder using the recommendation category when it's more specific.
+function recGovFolder(rec: UploadRecommendation, partNumber: number): GovFolder {
+  if (rec.category === "finance") return "budget-economy";
+  if (rec.category === "legal") {
+    return (partNumber >= 9 && partNumber <= 10) ? "judiciary" : "constitution";
+  }
+  return partGovFolder(partNumber);
+}
+
+function recUploadUrl(rec: UploadRecommendation, partNumber: number): string {
+  const gf   = recGovFolder(rec, partNumber);
+  const tags = rec.tags.join(",");
+  return `/vault/documents?upload=1&govFolder=${gf}&parts=${partNumber}&tags=${encodeURIComponent(tags)}`;
+}
+
 function UploadGuidanceSection({ partNumber }: { partNumber: number }) {
   const recs = UPLOAD_GUIDANCE[partNumber] ?? [];
   const [open,   setOpen]   = useState(false);
@@ -578,7 +605,7 @@ function UploadGuidanceSection({ partNumber }: { partNumber: number }) {
                     {copied === copyKey ? "✓ copied" : "copy"}
                   </button>
                 </div>
-                <a href="/vault/documents?upload=1" style={{ marginTop: "8px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "8px 12px", background: "rgba(34,197,94,0.10)", border: "1px solid rgba(34,197,94,0.25)", borderRadius: "7px", fontSize: "11px", fontWeight: 700, color: "#4ade80", textDecoration: "none" }}>
+                <a href={recUploadUrl(rec, partNumber)} style={{ marginTop: "8px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "8px 12px", background: "rgba(34,197,94,0.10)", border: "1px solid rgba(34,197,94,0.25)", borderRadius: "7px", fontSize: "11px", fontWeight: 700, color: "#4ade80", textDecoration: "none" }}>
                   📤 यो document अहिले upload गर्नुहोस्
                 </a>
               </div>
@@ -790,7 +817,7 @@ function PartRoadmapCard({
             <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.22)", fontStyle: "italic", margin: 0 }}>
               अझै live data छैन — documents upload गरेर AI extract गर्नुस्
             </p>
-            <a href="/vault/documents?upload=1" style={{ flexShrink: 0, fontSize: "10px", fontWeight: 700, color: "#4ade80", background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.22)", borderRadius: "7px", padding: "4px 10px", textDecoration: "none", whiteSpace: "nowrap" }}>
+            <a href={`/vault/documents?upload=1&govFolder=${partGovFolder(partNumber)}&parts=${partNumber}`} style={{ flexShrink: 0, fontSize: "10px", fontWeight: 700, color: "#4ade80", background: "rgba(74,222,128,0.08)", border: "1px solid rgba(74,222,128,0.22)", borderRadius: "7px", padding: "4px 10px", textDecoration: "none", whiteSpace: "nowrap" }}>
               📤 Upload →
             </a>
           </div>
@@ -976,7 +1003,7 @@ function FounderGuidancePanel({ healthMap, structMap, vaultTags, totalFramework 
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: "5px", flexShrink: 0, alignSelf: "center" }}>
                       <a
-                        href="/vault/documents?upload=1"
+                        href={recUploadUrl(rec, partNumber)}
                         style={{ fontSize: "10px", fontWeight: 700, color: "#4ade80", background: "rgba(74,222,128,0.10)", border: "1px solid rgba(74,222,128,0.25)", borderRadius: "7px", padding: "6px 10px", textDecoration: "none", whiteSpace: "nowrap", textAlign: "center" }}
                       >
                         📤 Upload →
