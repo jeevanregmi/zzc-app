@@ -133,6 +133,7 @@ export default function DocumentsClient() {
     }).catch(() => {});
   }, [user?.uid]);
   const [matchingIntelId, setMatchingIntelId] = useState<string | null>(null);
+  const [reExtractGuardDoc,        setReExtractGuardDoc]        = useState<IntelligenceDocument | null>(null);
   const [extractingConstitutionId, setExtractingConstitutionId] = useState<string | null>(null);
   const [constitutionBatch,        setConstitutionBatch]        = useState<number>(0); // 1,2,3 = which batch running
   const [constitutionCountByDoc, setConstitutionCountByDoc]     = useState<Record<string, number>>({});
@@ -569,13 +570,23 @@ export default function DocumentsClient() {
         throw new Error(msg);
       }
 
-      // Clear old intel for this doc
-      const oldSnap = await getDocs(query(
-        collection(db, "janta_intelligence"),
-        where("sourceDocId", "==", doc.id),
-        where("ownerId",     "==", user.uid),
-      ));
-      await Promise.all(oldSnap.docs.map(d => deleteDoc(d.ref)));
+      // Clear old intel + relationships for this doc before fresh extraction
+      const [oldSnap, oldRels] = await Promise.all([
+        getDocs(query(
+          collection(db, "janta_intelligence"),
+          where("sourceDocId", "==", doc.id),
+          where("ownerId",     "==", user.uid),
+        )),
+        getDocs(query(
+          collection(db, "janta_relationships"),
+          where("sourceDocIds", "array-contains", doc.id),
+          where("ownerId",      "==", user.uid),
+        )),
+      ]);
+      await Promise.all([
+        ...oldSnap.docs.map(d => deleteDoc(d.ref)),
+        ...oldRels.docs.map(d => deleteDoc(d.ref)),
+      ]);
 
       // Save all new records and collect IDs + data for matching
       const now    = new Date().toISOString();
@@ -624,6 +635,11 @@ export default function DocumentsClient() {
       }));
 
       setIntelCountByDoc(prev => ({ ...prev, [doc.id]: savedWithIds.length }));
+
+      // Increment extractionVersion on vault document (non-blocking)
+      updateIntelligenceDoc(doc.id, {
+        extractionVersion: ((doc as unknown as Record<string, unknown>).extractionVersion as number ?? 0) + 1,
+      } as unknown as Partial<IntelligenceDocument>).catch(() => {});
 
       // ── Step 2: Relationship Matching ────────────────────────────────────
       // Non-blocking — matching failure must not break extraction result
@@ -698,6 +714,17 @@ export default function DocumentsClient() {
       setExtractingIntelId(null);
       setMatchingIntelId(null);
     }
+  };
+
+  // ── Re-extract guard — prevents casual AI spend on unchanged docs ─────────
+  // Shows a cost warning + stats modal when intel records already exist.
+  // Initial extract (intelCount === 0) bypasses the guard and runs directly.
+  const handleRequestExtractIntel = (targetDoc: IntelligenceDocument) => {
+    if ((intelCountByDoc[targetDoc.id] ?? 0) === 0) {
+      handleExtractIntelligence(targetDoc);
+      return;
+    }
+    setReExtractGuardDoc(targetDoc);
   };
 
   // ── Constitution Framework extraction — 22 batches × 14 articles ──────────
@@ -893,6 +920,70 @@ export default function DocumentsClient() {
           doc={viewing}
           onClose={() => setViewing(null)}
         />
+      )}
+
+      {/* Re-extract cost guard modal */}
+      {reExtractGuardDoc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+          <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl shrink-0">⚠️</span>
+              <div className="min-w-0">
+                <p className="text-white font-black text-base">Re-extract गर्ने?</p>
+                <p className="text-zinc-500 text-xs mt-0.5 truncate">{reExtractGuardDoc.title}</p>
+              </div>
+            </div>
+
+            <div className="bg-amber-950/40 border border-amber-800/60 rounded-xl px-4 py-3 space-y-1.5">
+              <p className="text-amber-300 text-sm font-semibold">AI Cost चेतावनी</p>
+              <p className="text-amber-500/80 text-xs leading-relaxed">
+                यो document पहिले नै extract भइसकेको छ। फेरि extract गर्दा AI cost लाग्छ।
+                Document वा extractor change भएको छैन भने Re-extract गर्नु आवश्यक छैन।
+              </p>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-2.5 text-center">
+                <p className="text-white font-black text-xl">{intelCountByDoc[reExtractGuardDoc.id] ?? 0}</p>
+                <p className="text-zinc-600 text-[10px] mt-0.5">records छन्</p>
+              </div>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-2.5 text-center">
+                <p className="text-amber-400 font-black text-xl">Medium</p>
+                <p className="text-zinc-600 text-[10px] mt-0.5">AI Cost</p>
+              </div>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-2.5 text-center">
+                <p className="text-blue-400 font-black text-xl">
+                  {Math.round((reExtractGuardDoc.confidence ?? 0) * 100)}%
+                </p>
+                <p className="text-zinc-600 text-[10px] mt-0.5">confidence</p>
+              </div>
+            </div>
+
+            <p className="text-zinc-600 text-xs leading-relaxed">
+              Re-extract गर्दा: पुराना {intelCountByDoc[reExtractGuardDoc.id] ?? 0} intel records र
+              सबै relationships DELETE भई fresh extraction र matching हुन्छ।
+            </p>
+
+            <div className="flex gap-3 pt-1">
+              <button
+                onClick={() => setReExtractGuardDoc(null)}
+                className="flex-1 px-4 py-2.5 rounded-xl border border-zinc-700 text-zinc-300 text-sm font-semibold hover:bg-zinc-900 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  const d = reExtractGuardDoc;
+                  setReExtractGuardDoc(null);
+                  handleExtractIntelligence(d);
+                }}
+                className="flex-1 px-4 py-2.5 rounded-xl bg-red-950/60 border border-red-800 text-red-300 text-sm font-semibold hover:bg-red-900/60 transition-colors"
+              >
+                Force Re-extract
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <div className="p-4 sm:p-6 lg:p-8">
@@ -1264,7 +1355,7 @@ export default function DocumentsClient() {
                 onExtractPromises={handleExtractPromises}
                 isExtractingPromises={extractingPromisesId === doc.id}
                 promiseCount={promiseCountByDoc[doc.id] ?? 0}
-                onExtractIntel={handleExtractIntelligence}
+                onExtractIntel={handleRequestExtractIntel}
                 isExtractingIntel={extractingIntelId === doc.id}
                 isMatchingIntel={matchingIntelId === doc.id}
                 intelCount={intelCountByDoc[doc.id] ?? 0}
