@@ -362,7 +362,7 @@ interface Props {
   relCount?:               number;
   onExtractConstitution?:  (doc: IntelligenceDocument) => void;
   isExtractingConstitution?: boolean;
-  constitutionBatch?:      number; // 1–11 = which of 11 article-range batches is running
+  constitutionBatch?:      number; // 1–22 = which of 22 article-range batches is running
   constitutionCount?:      number;
   onArchive?:              (doc: IntelligenceDocument) => void;
   isArchiving?:            boolean;
@@ -724,26 +724,37 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
         <div className="w-full rounded-xl bg-amber-950/40 border border-amber-800 px-3 py-3 space-y-1.5">
           <div className="flex items-center justify-between">
             <p className="text-amber-300 text-xs font-bold animate-pulse">📜 संविधान extract हुँदैछ…</p>
-            <span className="text-amber-600 text-xs font-mono">{constitutionBatch}/11 बैच</span>
+            <span className="text-amber-600 text-xs font-mono">{constitutionBatch}/22 बैच</span>
           </div>
           <div className="w-full bg-zinc-800 rounded-full h-1">
             <div
               className="bg-amber-500 h-1 rounded-full transition-all duration-500"
-              style={{ width: `${(constitutionBatch / 11) * 100}%` }}
+              style={{ width: `${(constitutionBatch / 22) * 100}%` }}
             />
           </div>
           <p className="text-amber-700/80 text-xs">
-            {constitutionBatch === 1  && "धारा १–२८ — प्रारम्भिक, नागरिकता, मौलिक हकहरू सुरु"}
-            {constitutionBatch === 2  && "धारा २९–५६ — मौलिक हक, निर्देशक सिद्धान्त"}
-            {constitutionBatch === 3  && "धारा ५७–८४ — राज्य संरचना, राष्ट्रपति, कार्यपालिका"}
-            {constitutionBatch === 4  && "धारा ८५–११२ — व्यवस्थापिका (संसद)"}
-            {constitutionBatch === 5  && "धारा ११३–१४० — व्यवस्थापकीय कार्यविधि"}
-            {constitutionBatch === 6  && "धारा १४१–१६८ — आर्थिक, न्यायपालिका"}
-            {constitutionBatch === 7  && "धारा १६९–१९६ — संघीय आयोग, प्रदेश"}
-            {constitutionBatch === 8  && "धारा १९७–२२४ — प्रदेश व्यवस्थापिका, स्थानीय"}
-            {constitutionBatch === 9  && "धारा २२५–२५२ — अन्तरसम्बन्ध, निर्वाचन"}
-            {constitutionBatch === 10 && "धारा २५३–२८० — संवैधानिक आयोगहरू"}
-            {constitutionBatch === 11 && "धारा २८१–३०८ — मानव अधिकार, संशोधन, विविध"}
+            {constitutionBatch === 1  && "धारा १–१४ — राज्यको परिभाषा, भौगोलिक क्षेत्र"}
+            {constitutionBatch === 2  && "धारा १५–२८ — नागरिकता"}
+            {constitutionBatch === 3  && "धारा २९–४२ — मौलिक हक (जीवन, स्वतन्त्रता)"}
+            {constitutionBatch === 4  && "धारा ४३–५६ — मौलिक हक (स्वास्थ्य, शिक्षा)"}
+            {constitutionBatch === 5  && "धारा ५७–७० — राज्य शक्ति बाँडफाँड, निर्देशक सिद्धान्त"}
+            {constitutionBatch === 6  && "धारा ७१–८४ — राज्यको दायित्व, राष्ट्रपति"}
+            {constitutionBatch === 7  && "धारा ८५–९८ — संघीय संसद (प्रतिनिधिसभा)"}
+            {constitutionBatch === 8  && "धारा ९९–११२ — राष्ट्रिय सभा, व्यवस्थापिका"}
+            {constitutionBatch === 9  && "धारा ११३–१२६ — संघीय कानून निर्माण प्रक्रिया"}
+            {constitutionBatch === 10 && "धारा १२७–१४० — प्रधानमन्त्री, मन्त्रिपरिषद्"}
+            {constitutionBatch === 11 && "धारा १४१–१५४ — अख्तियार, महालेखा"}
+            {constitutionBatch === 12 && "धारा १५५–१६८ — न्यायपालिका (सर्वोच्च अदालत)"}
+            {constitutionBatch === 13 && "धारा १६९–१८२ — उच्च अदालत, जिल्ला अदालत"}
+            {constitutionBatch === 14 && "धारा १८३–१९६ — न्याय परिषद्, प्रदेश सुरु"}
+            {constitutionBatch === 15 && "धारा १९७–२१० — प्रदेश कार्यपालिका"}
+            {constitutionBatch === 16 && "धारा २११–२२४ — प्रदेश न्यायपालिका, स्थानीय"}
+            {constitutionBatch === 17 && "धारा २२५–२३८ — संघ-प्रदेश-स्थानीय अन्तरसम्बन्ध"}
+            {constitutionBatch === 18 && "धारा २३९–२५२ — सुरक्षा परिषद्, निर्वाचन आयोग"}
+            {constitutionBatch === 19 && "धारा २५३–२६६ — लोक सेवा, संवैधानिक निकाय"}
+            {constitutionBatch === 20 && "धारा २६७–२८० — महिला, दलित, आदिवासी आयोग"}
+            {constitutionBatch === 21 && "धारा २८१–२९४ — मानव अधिकार, राजस्व आयोग"}
+            {constitutionBatch === 22 && "धारा २९५–३०८ — संविधान संशोधन, संक्रमणकालीन व्यवस्था"}
             {constitutionBatch === 0  && "सुरु गर्दैछ…"}
           </p>
           {constitutionCount > 0 && (

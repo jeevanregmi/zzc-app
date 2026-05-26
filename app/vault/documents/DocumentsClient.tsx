@@ -700,32 +700,67 @@ export default function DocumentsClient() {
     }
   };
 
-  // ── Constitution Framework extraction — 11 batches by article number (28 articles each) ─
-  // Batching by article number (not part number) ensures uniform output size per batch,
-  // avoiding Cloudflare 30s timeout caused by dense parts like Parliament (Part 8, ~74 articles).
+  // ── Constitution Framework extraction — 22 batches × 14 articles ──────────
+  // 14 articles/batch keeps each Gemini call well under Cloudflare's 30s CPU limit.
+  // Resume logic: pre-fetch existing articleIds for this doc; skip any batch whose
+  // first article is already saved — safe to re-run without creating duplicates.
   const handleExtractConstitution = async (doc: IntelligenceDocument) => {
     if (!user?.uid) return;
     setExtractingConstitutionId(doc.id);
 
     const BATCHES = [
-      { articleRange: "1-28",    label: "धारा १–२८"    },
-      { articleRange: "29-56",   label: "धारा २९–५६"   },
-      { articleRange: "57-84",   label: "धारा ५७–८४"   },
-      { articleRange: "85-112",  label: "धारा ८५–११२"  },
-      { articleRange: "113-140", label: "धारा ११३–१४०" },
-      { articleRange: "141-168", label: "धारा १४१–१६८" },
-      { articleRange: "169-196", label: "धारा १६९–१९६" },
-      { articleRange: "197-224", label: "धारा १९७–२२४" },
-      { articleRange: "225-252", label: "धारा २२५–२५२" },
-      { articleRange: "253-280", label: "धारा २५३–२८०" },
-      { articleRange: "281-308", label: "धारा २८१–३०८" },
+      { articleRange: "1-14",    label: "धारा १–१४"    },
+      { articleRange: "15-28",   label: "धारा १५–२८"   },
+      { articleRange: "29-42",   label: "धारा २९–४२"   },
+      { articleRange: "43-56",   label: "धारा ४३–५६"   },
+      { articleRange: "57-70",   label: "धारा ५७–७०"   },
+      { articleRange: "71-84",   label: "धारा ७१–८४"   },
+      { articleRange: "85-98",   label: "धारा ८५–९८"   },
+      { articleRange: "99-112",  label: "धारा ९९–११२"  },
+      { articleRange: "113-126", label: "धारा ११३–१२६" },
+      { articleRange: "127-140", label: "धारा १२७–१४०" },
+      { articleRange: "141-154", label: "धारा १४१–१५४" },
+      { articleRange: "155-168", label: "धारा १५५–१६८" },
+      { articleRange: "169-182", label: "धारा १६९–१८२" },
+      { articleRange: "183-196", label: "धारा १८३–१९६" },
+      { articleRange: "197-210", label: "धारा १९७–२१०" },
+      { articleRange: "211-224", label: "धारा २११–२२४" },
+      { articleRange: "225-238", label: "धारा २२५–२३८" },
+      { articleRange: "239-252", label: "धारा २३९–२५२" },
+      { articleRange: "253-266", label: "धारा २५३–२६६" },
+      { articleRange: "267-280", label: "धारा २६७–२८०" },
+      { articleRange: "281-294", label: "धारा २८१–२९४" },
+      { articleRange: "295-308", label: "धारा २९५–३०८" },
     ];
 
-    let totalSaved = 0;
-
     try {
+      // Pre-fetch all already-saved article numbers for this doc (resume safety)
+      const existingSnap = await getDocs(query(
+        collection(db, "constitutional_framework"),
+        where("sourceDocId", "==", doc.id),
+        where("ownerId",     "==", user.uid),
+        limit(500),
+      ));
+      const existingArticles = new Set<number>();
+      existingSnap.docs.forEach(d => {
+        const art = (d.data() as Record<string, unknown>).article as number;
+        if (typeof art === "number") existingArticles.add(art);
+      });
+
+      let totalSaved = existingSnap.size;
+      if (totalSaved > 0) {
+        setConstitutionCountByDoc(prev => ({ ...prev, [doc.id]: totalSaved }));
+      }
+
       for (let i = 0; i < BATCHES.length; i++) {
         const batch = BATCHES[i];
+        const batchStart = parseInt(batch.articleRange.split("-")[0], 10);
+
+        // Skip batch if its first article is already in Firestore
+        if (existingArticles.has(batchStart)) {
+          continue;
+        }
+
         setConstitutionBatch(i + 1);
 
         let res: Response;
@@ -763,7 +798,6 @@ export default function DocumentsClient() {
 
         const records = data.records as Record<string, unknown>[] | undefined;
         if (!records?.length) {
-          // Empty batch is fine (some article ranges may not have content) — keep going
           continue;
         }
 
