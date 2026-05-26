@@ -330,6 +330,7 @@ export default function ConstitutionAdminClient() {
   const [records,  setRecords]  = useState<ConstitutionalFrameworkRecord[]>([]);
   const [loading,  setLoading]  = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [deduping, setDeduping] = useState(false);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -375,6 +376,44 @@ export default function ConstitutionAdminClient() {
     }
   };
 
+  const handleDedup = async () => {
+    // Group by articleId; keep newest createdAt, delete older duplicates
+    const byArticleId = new Map<string, ConstitutionalFrameworkRecord[]>();
+    records.forEach(r => {
+      const key = r.articleId || `art-${r.article}${r.clause ? `-${r.clause}` : ""}`;
+      if (!byArticleId.has(key)) byArticleId.set(key, []);
+      byArticleId.get(key)!.push(r);
+    });
+
+    const toDelete: string[] = [];
+    byArticleId.forEach(group => {
+      if (group.length <= 1) return;
+      // Sort newest first — keep index 0, delete the rest
+      group.sort((a, b) =>
+        String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? ""))
+      );
+      group.slice(1).forEach(r => { if (r.id) toDelete.push(r.id); });
+    });
+
+    if (toDelete.length === 0) {
+      alert("कुनै duplicate records फेला परेन।");
+      return;
+    }
+
+    if (!confirm(`${toDelete.length} duplicate records DELETE गर्ने?\n\nनयाँ extraction राखिन्छ, पुराना हटाइन्छन्।`)) return;
+
+    setDeduping(true);
+    try {
+      await Promise.all(toDelete.map(id => deleteDoc(doc(db, "constitutional_framework", id))));
+      setRecords(prev => prev.filter(r => !toDelete.includes(r.id!)));
+      alert(`✅ Dedup सम्पन्न! ${toDelete.length} duplicate records हटाइए।`);
+    } catch (err) {
+      alert(`Dedup failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setDeduping(false);
+    }
+  };
+
   const handleDeleteAll = async () => {
     if (!confirm(`सबै ${records.length} constitutional framework records DELETE गर्ने? यो reversible छैन।`)) return;
     try {
@@ -416,13 +455,22 @@ export default function ConstitutionAdminClient() {
             <h1 className="text-2xl font-black text-white tracking-tight">नेपालको संविधान</h1>
             <p className="text-zinc-600 text-sm mt-1">२०७२ सालको संविधान · संवैधानिक मूल ढाँचा</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Link
               href="/constitution"
               className="text-xs font-bold px-3 py-1.5 rounded-xl bg-amber-900/40 border border-amber-800 text-amber-400 hover:bg-amber-900/60 transition-colors"
             >
               🌳 Tree UI →
             </Link>
+            {records.length > 0 && (
+              <button
+                onClick={handleDedup}
+                disabled={deduping}
+                className="text-xs font-bold px-3 py-1.5 rounded-xl bg-blue-950/60 border border-blue-800 text-blue-400 hover:bg-blue-900/40 transition-colors disabled:opacity-50"
+              >
+                {deduping ? "Dedup हुँदैछ…" : "🔁 Duplicate हटाउनुस्"}
+              </button>
+            )}
             {records.length > 0 && (
               <button
                 onClick={handleDeleteAll}
