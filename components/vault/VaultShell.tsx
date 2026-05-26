@@ -10,6 +10,7 @@ import { useIntelligenceDocs } from "../../hooks/vault/useIntelligenceDocs";
 import { useQueueItems } from "../../hooks/vault/useQueueItems";
 import { useSourceSignals } from "../../hooks/vault/useSourceSignals";
 import { LearningModeProvider, useLearningMode } from "../../contexts/LearningModeContext";
+import { FounderModeProvider, useFounderMode } from "../../contexts/FounderModeContext";
 import { CTOAssistant } from "./CTOAssistant";
 
 // ─── Primary nav — always visible ─────────────────────────────────────────────
@@ -81,6 +82,35 @@ export const VAULT_NAV = [
   ...PRIMARY_NAV,
   ...ADVANCED_GROUPS.flatMap(g => g.items),
 ];
+
+// ─── Founder / Debug mode toggle ─────────────────────────────────────────────
+
+function FounderModeToggle() {
+  const { isDebug, toggle } = useFounderMode();
+  return (
+    <button
+      onClick={toggle}
+      title={isDebug
+        ? "Founder Mode मा फर्कनुहोस् — simplified, guided, Nepali-first"
+        : "Debug Mode — raw counts, collection names, developer detail"}
+      className={
+        "w-full flex items-center gap-2 px-3 py-2 text-xs transition-all rounded-xl border " +
+        (isDebug
+          ? "text-orange-300 bg-orange-950/50 border-orange-800 hover:bg-orange-950/70"
+          : "text-zinc-500 bg-zinc-900/50 border-zinc-800 hover:text-zinc-300 hover:border-zinc-700")
+      }
+    >
+      <span className="text-sm shrink-0">{isDebug ? "🛠" : "🧠"}</span>
+      <div className="flex-1 text-left min-w-0">
+        <span className="font-bold block leading-none">{isDebug ? "Debug Mode" : "Founder Mode"}</span>
+        <span className={`text-[9px] leading-none mt-0.5 block ${isDebug ? "text-orange-500" : "text-zinc-700"}`}>
+          {isDebug ? "Technical detail सक्रिय" : "Guided · Nepali-first"}
+        </span>
+      </div>
+      {isDebug && <span className="shrink-0 w-2 h-2 rounded-full bg-orange-400" />}
+    </button>
+  );
+}
 
 // ─── Learning mode toggle ─────────────────────────────────────────────────────
 
@@ -227,6 +257,7 @@ export function VaultShell({ children }: { children: React.ReactNode }) {
 
   return (
     <LearningModeProvider>
+    <FounderModeProvider>
     <div className="min-h-screen bg-black text-white flex">
 
       {/* ── Desktop sidebar ──────────────────────────────────────────────────── */}
@@ -246,6 +277,7 @@ export function VaultShell({ children }: { children: React.ReactNode }) {
         </nav>
 
         <div className="p-2 border-t border-zinc-900 space-y-0.5">
+          <FounderModeToggle />
           <LearningModeToggle />
           <Link
             href="/"
@@ -308,6 +340,7 @@ export function VaultShell({ children }: { children: React.ReactNode }) {
       {/* ── CTO Assistant — persistent floating dock ──────────────────────── */}
       <CTOAssistant uid={user?.uid ?? null} />
     </div>
+    </FounderModeProvider>
     </LearningModeProvider>
   );
 }

@@ -5,26 +5,27 @@ import Link from "next/link";
 import { useCTOInsights } from "../../hooks/vault/useCTOInsights";
 import { systemHealthStatus } from "../../lib/vault/ctoEngine";
 import type { CTOInsight, InsightPriority } from "../../lib/vault/ctoEngine";
+import { useFounderMode } from "../../contexts/FounderModeContext";
+import { readLastSession } from "../../hooks/vault/useSessionTracker";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const DISMISS_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const DISMISS_TTL_MS = 24 * 60 * 60 * 1000;
 const DISMISS_KEY    = "zzc_cto_dismissed_v2";
 const OPEN_KEY       = "zzc_cto_open";
 
 // ── Dismiss storage helpers ───────────────────────────────────────────────────
 
 function readDismissed(): Record<string, number> {
-  try {
-    return JSON.parse(localStorage.getItem(DISMISS_KEY) ?? "{}") as Record<string, number>;
-  } catch { return {}; }
+  try { return JSON.parse(localStorage.getItem(DISMISS_KEY) ?? "{}") as Record<string, number>; }
+  catch { return {}; }
 }
 
 function writeDismissed(map: Record<string, number>) {
   try { localStorage.setItem(DISMISS_KEY, JSON.stringify(map)); } catch { /* ignore */ }
 }
 
-function isDismissed(id: string): boolean {
+function isDismissedFn(id: string): boolean {
   const map = readDismissed();
   const ts  = map[id];
   if (!ts) return false;
@@ -33,27 +34,32 @@ function isDismissed(id: string): boolean {
 }
 
 function dismissInsight(id: string) {
-  const map = readDismissed();
-  map[id] = Date.now();
-  writeDismissed(map);
+  const map = readDismissed(); map[id] = Date.now(); writeDismissed(map);
 }
 
 // ── Style maps ────────────────────────────────────────────────────────────────
 
 const STYLE: Record<InsightPriority, {
-  bg: string; border: string; text: string; dot: string; badge: string;
+  bg: string; border: string; text: string; dot: string;
 }> = {
-  critical: { bg: "bg-red-950/70",   border: "border-red-800",    text: "text-red-400",    dot: "bg-red-500",    badge: "bg-red-600 text-white"    },
-  high:     { bg: "bg-amber-950/60", border: "border-amber-800",  text: "text-amber-400",  dot: "bg-amber-500",  badge: "bg-amber-500 text-black"  },
-  medium:   { bg: "bg-blue-950/40",  border: "border-blue-900",   text: "text-blue-400",   dot: "bg-blue-500",   badge: "bg-blue-900 text-blue-300" },
-  low:      { bg: "bg-zinc-900/50",  border: "border-zinc-800",   text: "text-zinc-400",   dot: "bg-zinc-500",   badge: "bg-zinc-800 text-zinc-400" },
+  critical: { bg: "bg-red-950/60",   border: "border-red-800/70",   text: "text-red-400",    dot: "bg-red-500"    },
+  high:     { bg: "bg-amber-950/50", border: "border-amber-800/60", text: "text-amber-400",  dot: "bg-amber-500"  },
+  medium:   { bg: "bg-zinc-900/60",  border: "border-zinc-800",     text: "text-blue-400",   dot: "bg-blue-500"   },
+  low:      { bg: "bg-zinc-900/40",  border: "border-zinc-800",     text: "text-zinc-400",   dot: "bg-zinc-500"   },
 };
 
 const HEALTH_META = {
-  critical:  { np: "Critical — तुरुन्त हेर्नुस्", dot: "bg-red-500",    text: "text-red-400"   },
-  attention: { np: "ध्यान दिनुस्",                dot: "bg-amber-500",  text: "text-amber-400" },
-  progress:  { np: "Progress मा छ",               dot: "bg-blue-400",   text: "text-blue-400"  },
-  healthy:   { np: "System राम्रो छ",             dot: "bg-green-500",  text: "text-green-400" },
+  critical:  { np: "तुरुन्त हेर्नुस्",  dot: "bg-red-500",   text: "text-red-400"   },
+  attention: { np: "ध्यान दिनुस्",      dot: "bg-amber-500", text: "text-amber-400" },
+  progress:  { np: "राम्रो progress",   dot: "bg-blue-400",  text: "text-blue-400"  },
+  healthy:   { np: "System राम्रो छ",   dot: "bg-green-500", text: "text-green-400" },
+};
+
+const PRIORITY_LABEL: Record<InsightPriority, string> = {
+  critical: "🚨 तुरुन्त action चाहिन्छ",
+  high:     "⚡ अहिलेको सबैभन्दा महत्त्वपूर्ण काम",
+  medium:   "📋 अर्को recommended step",
+  low:      "💡 हेर्नुस्",
 };
 
 // ── Primary insight card ──────────────────────────────────────────────────────
@@ -61,18 +67,15 @@ const HEALTH_META = {
 function PrimaryCard({
   insight,
   onDismiss,
+  isDebug,
 }: {
   insight:   CTOInsight;
   onDismiss: (id: string) => void;
+  isDebug:   boolean;
 }) {
   const s = STYLE[insight.priority];
   const [showWhy,  setShowWhy]  = useState(false);
   const [showCost, setShowCost] = useState(false);
-
-  const priorityLabel =
-    insight.priority === "critical" ? "🚨 Critical — तुरुन्त action चाहिन्छ" :
-    insight.priority === "high"     ? "⚡ अहिलेको सबैभन्दा महत्त्वपूर्ण काम" :
-    insight.priority === "medium"   ? "📋 Recommended next step"              : "💡 हेर्नुस्";
 
   return (
     <div className={`rounded-2xl border p-4 space-y-3 ${s.bg} ${s.border}`}>
@@ -81,18 +84,23 @@ function PrimaryCard({
         <div className="flex items-center gap-1.5">
           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.dot}`} />
           <span className={`text-[9px] font-black uppercase tracking-widest ${s.text}`}>
-            {priorityLabel}
+            {PRIORITY_LABEL[insight.priority]}
           </span>
         </div>
-        {insight.dismissable && (
-          <button
-            onClick={() => onDismiss(insight.id)}
-            className="text-[9px] text-zinc-700 hover:text-zinc-500 transition-colors"
-            title="24 घण्टाको लागि dismiss गर्नुस्"
-          >
-            ✓ review गरें
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {isDebug && (
+            <span className="text-[8px] text-zinc-700 font-mono">{insight.type}</span>
+          )}
+          {insight.dismissable && (
+            <button
+              onClick={() => onDismiss(insight.id)}
+              className="text-[9px] text-zinc-700 hover:text-zinc-500 transition-colors"
+              title="24 घण्टाको लागि dismiss गर्नुस्"
+            >
+              ✓ review गरें
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Icon + title + body */}
@@ -104,7 +112,7 @@ function PrimaryCard({
         </div>
       </div>
 
-      {/* Cost warning — shown inline before action */}
+      {/* Cost guard — shown inline before AI actions */}
       {insight.costWarning && (
         <div className="bg-amber-950/40 border border-amber-800/50 rounded-xl px-3 py-2">
           <div className="flex items-start gap-2">
@@ -114,7 +122,7 @@ function PrimaryCard({
         </div>
       )}
 
-      {/* Primary action button */}
+      {/* Primary action — two-click for AI-cost actions */}
       {insight.actionHref && insight.actionLabel && (
         insight.costWarning ? (
           showCost ? (
@@ -142,7 +150,7 @@ function PrimaryCard({
         )
       )}
 
-      {/* "Why am I seeing this?" */}
+      {/* "यो किन देखिँदैछ?" expandable */}
       <button
         onClick={() => setShowWhy(p => !p)}
         className="w-full text-left text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors flex items-center gap-1"
@@ -153,6 +161,9 @@ function PrimaryCard({
       {showWhy && (
         <div className="bg-zinc-900/60 border border-zinc-800/60 rounded-xl px-3 py-2.5">
           <p className="text-zinc-400 text-[10px] leading-relaxed">{insight.whyNp}</p>
+          {isDebug && (
+            <p className="text-zinc-700 text-[9px] font-mono mt-2">id: {insight.id} · priority: {insight.priority}</p>
+          )}
         </div>
       )}
     </div>
@@ -164,9 +175,11 @@ function PrimaryCard({
 function CompactCard({
   insight,
   onDismiss,
+  isDebug,
 }: {
   insight:   CTOInsight;
   onDismiss: (id: string) => void;
+  isDebug:   boolean;
 }) {
   const s = STYLE[insight.priority];
   const [showWhy, setShowWhy] = useState(false);
@@ -184,18 +197,10 @@ function CompactCard({
             <Link href={insight.actionHref} className={`text-[11px] font-black hover:opacity-80 ${s.text}`}>→</Link>
           )}
           {insight.dismissable && (
-            <button
-              onClick={() => onDismiss(insight.id)}
-              className="text-[9px] text-zinc-700 hover:text-zinc-500"
-              title="24 घण्टाको लागि dismiss"
-            >
-              ✓
-            </button>
+            <button onClick={() => onDismiss(insight.id)} className="text-[9px] text-zinc-700 hover:text-zinc-500" title="dismiss">✓</button>
           )}
         </div>
       </div>
-
-      {/* Why explanation */}
       <button
         onClick={() => setShowWhy(p => !p)}
         className="text-[9px] text-zinc-700 hover:text-zinc-500 transition-colors flex items-center gap-1 ml-4"
@@ -208,6 +213,9 @@ function CompactCard({
           <p className="text-zinc-500 text-[10px] leading-relaxed">{insight.whyNp}</p>
           {insight.costWarning && (
             <p className="text-amber-500/70 text-[10px] mt-1 leading-relaxed">💰 {insight.costWarning}</p>
+          )}
+          {isDebug && (
+            <p className="text-zinc-700 text-[9px] font-mono mt-1">id: {insight.id}</p>
           )}
         </div>
       )}
@@ -237,15 +245,42 @@ function HealthyCard({ insight }: { insight: CTOInsight }) {
   );
 }
 
+// ── Debug snapshot panel ──────────────────────────────────────────────────────
+
+function DebugPanel({ snapshot }: { snapshot: NonNullable<ReturnType<typeof useCTOInsights>["snapshot"]> }) {
+  return (
+    <div className="rounded-xl border border-orange-900/50 bg-orange-950/10 p-3 space-y-1.5">
+      <p className="text-[9px] text-orange-500 uppercase tracking-widest font-black mb-2">🛠 Debug Snapshot</p>
+      {[
+        ["vault_documents",        snapshot.docsTotal],
+        ["janta_intelligence",     snapshot.totalIntel],
+        ["constitutional_framework", snapshot.totalFramework],
+        ["broken partNumber=0",    snapshot.brokenFrameworkRecords],
+        ["janta_relationships",    snapshot.totalRelationships],
+        ["low confidence intel",   snapshot.lowConfidenceIntel],
+        ["empty parts",            snapshot.emptyParts.length],
+        ["days since signal",      snapshot.daysSinceLastSignal ?? "—"],
+      ].map(([label, val]) => (
+        <div key={String(label)} className="flex items-center justify-between">
+          <span className="text-zinc-600 text-[9px] font-mono">{label}</span>
+          <span className="text-orange-300 text-[9px] font-black">{String(val)}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function CTOAssistant({ uid }: { uid: string | null }) {
   const [open,      setOpen]      = useState(false);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [lastSession, setLastSession] = useState<ReturnType<typeof readLastSession>>(null);
 
+  const { isDebug, isFounder } = useFounderMode();
   const { insights: rawInsights, snapshot, loading, lastRefresh, refresh } = useCTOInsights(uid);
 
-  // Restore panel state on mount
+  // Restore panel open state
   useEffect(() => {
     try { if (localStorage.getItem(OPEN_KEY) === "true") setOpen(true); } catch { /* ignore */ }
   }, []);
@@ -254,7 +289,20 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
     try { localStorage.setItem(OPEN_KEY, String(open)); } catch { /* ignore */ }
   }, [open]);
 
-  // Filter dismissed insights (non-critical only)
+  // Read last session when panel opens
+  useEffect(() => {
+    if (open) setLastSession(readLastSession());
+  }, [open]);
+
+  // Sync dismissed from storage on mount
+  useEffect(() => {
+    const map = readDismissed();
+    const active = Object.entries(map)
+      .filter(([, ts]) => Date.now() - ts < DISMISS_TTL_MS)
+      .map(([id]) => id);
+    if (active.length > 0) setDismissed(new Set(active));
+  }, []);
+
   const insights = rawInsights.filter(i => i.priority === "critical" || !dismissed.has(i.id));
 
   const handleDismiss = useCallback((id: string) => {
@@ -270,13 +318,17 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
   const highCount     = insights.filter(i => i.priority === "high").length;
   const urgentCount   = criticalCount + highCount;
 
-  const isHealthy   = insights.length === 1 && insights[0]?.type === "system_healthy";
-  const topInsight  = insights[0] ?? null;
+  const isHealthy    = insights.length === 1 && insights[0]?.type === "system_healthy";
+  const topInsight   = insights[0] ?? null;
   const restInsights = insights.slice(1);
 
   const minutesSince = lastRefresh
     ? Math.floor((Date.now() - lastRefresh.getTime()) / 60_000)
     : null;
+
+  // Last session is only worth showing if it's >15 min old (not the current active page)
+  const sessionAge = lastSession ? Math.floor((Date.now() - lastSession.ts) / 60_000) : null;
+  const showSession = lastSession && sessionAge !== null && sessionAge > 15;
 
   return (
     <>
@@ -301,25 +353,21 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
           <span className="text-[11px] font-black tracking-wide">Founder Cockpit</span>
           <span className={`text-[9px] font-semibold mt-0.5 ${hl.text}`}>{hl.np}</span>
         </div>
-        {urgentCount > 0 && (
+        {urgentCount > 0 ? (
           <span className={`
             text-[10px] font-black px-1.5 py-0.5 rounded-full leading-none shrink-0
             ${criticalCount > 0 ? "bg-red-600 text-white animate-pulse" : "bg-amber-500 text-black"}
           `}>
             {urgentCount}
           </span>
-        )}
-        {urgentCount === 0 && (
+        ) : (
           <span className={`w-2 h-2 rounded-full shrink-0 ${hl.dot} ${loading ? "animate-pulse" : ""}`} />
         )}
       </button>
 
       {/* ── Mobile overlay ─────────────────────────────────────────────────── */}
       {open && (
-        <div
-          className="fixed inset-0 z-30 lg:hidden bg-black/70"
-          onClick={() => setOpen(false)}
-        />
+        <div className="fixed inset-0 z-30 lg:hidden bg-black/70" onClick={() => setOpen(false)} />
       )}
 
       {/* ── Side panel ───────────────────────────────────────────────────── */}
@@ -335,6 +383,9 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className={`w-1.5 h-1.5 rounded-full ${hl.dot}`} />
                   <span className={`text-[10px] font-bold ${hl.text}`}>{hl.np}</span>
+                  {isDebug && (
+                    <span className="text-[9px] text-orange-500 border border-orange-800/60 rounded px-1 py-0.5 ml-1">🛠 Debug</span>
+                  )}
                 </div>
               </div>
             </div>
@@ -347,10 +398,7 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
               >
                 {loading ? "⟳" : "↺"}
               </button>
-              <button
-                onClick={() => setOpen(false)}
-                className="text-zinc-600 hover:text-white text-xl leading-none transition-colors"
-              >
+              <button onClick={() => setOpen(false)} className="text-zinc-600 hover:text-white text-xl leading-none transition-colors">
                 ×
               </button>
             </div>
@@ -358,6 +406,22 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
 
           {/* Scrollable content */}
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
+
+            {/* Last session continuity banner */}
+            {showSession && (
+              <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 px-3 py-2.5 flex items-center gap-2.5">
+                <span className="text-base shrink-0">🕐</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-zinc-500 text-[9px] uppercase tracking-widest font-black">
+                    अघिल्लो session — {sessionAge! < 60 ? `${sessionAge} min` : `${Math.floor(sessionAge! / 60)} घण्टा`} अगाडि
+                  </p>
+                  <p className="text-zinc-300 text-xs font-bold mt-0.5 leading-snug">{lastSession!.labelNp}</p>
+                </div>
+                <Link href={lastSession!.href} className="shrink-0 text-[10px] text-zinc-500 hover:text-white transition-colors font-black">
+                  जाने →
+                </Link>
+              </div>
+            )}
 
             {/* Loading */}
             {loading && !snapshot && (
@@ -371,13 +435,14 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
             {snapshot && (
               <div className="grid grid-cols-3 gap-1.5">
                 {[
-                  { label: "Documents",    value: snapshot.docsTotal,     color: "text-white"                                              },
-                  { label: "Intelligence", value: snapshot.totalIntel,     color: snapshot.totalIntel > 0     ? "text-blue-400"  : "text-zinc-600" },
-                  { label: "Framework",   value: snapshot.totalFramework, color: snapshot.totalFramework > 0 ? "text-green-400" : "text-zinc-600" },
+                  { label: "Documents",   sub: isDebug ? "vault_documents" : "uploaded",         value: snapshot.docsTotal,     color: "text-white"                                               },
+                  { label: "Intelligence", sub: isDebug ? "janta_intelligence" : "records",       value: snapshot.totalIntel,    color: snapshot.totalIntel > 0     ? "text-blue-400"  : "text-zinc-600" },
+                  { label: "Branches",    sub: isDebug ? "constitutional_framework" : `${snapshot.partsWithData}/35`, value: snapshot.partsWithData, color: snapshot.partsWithData > 0 ? "text-green-400" : "text-zinc-600" },
                 ].map(s => (
                   <div key={s.label} className="bg-zinc-900 border border-zinc-800/60 rounded-xl p-2.5 text-center">
                     <p className={`text-lg font-black ${s.color}`}>{s.value}</p>
                     <p className="text-zinc-600 text-[9px] mt-0.5 uppercase tracking-wide">{s.label}</p>
+                    {isDebug && <p className="text-zinc-700 text-[8px] font-mono mt-0.5 truncate">{s.sub}</p>}
                   </div>
                 ))}
               </div>
@@ -388,26 +453,21 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
 
             {/* Active insights */}
             {!isHealthy && topInsight && (
-              <PrimaryCard insight={topInsight} onDismiss={handleDismiss} />
+              <PrimaryCard insight={topInsight} onDismiss={handleDismiss} isDebug={isDebug} />
             )}
             {!isHealthy && restInsights.length > 0 && (
               <div className="space-y-2">
-                <p className="text-[9px] text-zinc-700 uppercase tracking-widest font-bold px-0.5">
-                  अरू सुझाव
-                </p>
+                <p className="text-[9px] text-zinc-700 uppercase tracking-widest font-bold px-0.5">अरू सुझाव</p>
                 {restInsights.map(ins => (
-                  <CompactCard key={ins.id} insight={ins} onDismiss={handleDismiss} />
+                  <CompactCard key={ins.id} insight={ins} onDismiss={handleDismiss} isDebug={isDebug} />
                 ))}
               </div>
             )}
 
-            {/* Dismissed count (if any) */}
+            {/* Dismissed count */}
             {dismissed.size > 0 && (
               <button
-                onClick={() => {
-                  writeDismissed({});
-                  setDismissed(new Set());
-                }}
+                onClick={() => { writeDismissed({}); setDismissed(new Set()); }}
                 className="w-full text-[10px] text-zinc-700 hover:text-zinc-500 transition-colors py-1"
               >
                 {dismissed.size} suggestion dismiss गरिएको — reset गर्नुस्
@@ -419,11 +479,9 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
               <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-3 space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-bold">
-                    Constitutional Branches
+                    {isDebug ? "constitutional_framework — Branches" : "संविधान Branches"}
                   </p>
-                  <Link href="/vault/constitution/health" className="text-[10px] text-zinc-600 hover:text-white transition-colors">
-                    Health →
-                  </Link>
+                  <Link href="/vault/constitution/health" className="text-[10px] text-zinc-600 hover:text-white transition-colors">Health →</Link>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex-1 bg-zinc-800 rounded-full h-2 overflow-hidden">
@@ -434,7 +492,13 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
                   </div>
                   <span className="text-xs font-black text-white shrink-0">{snapshot.partsWithData}/35</span>
                 </div>
-                {snapshot.emptyParts.length > 0 && (
+                {snapshot.brokenFrameworkRecords > 0 && (
+                  <p className="text-amber-600 text-[10px]">
+                    {snapshot.brokenFrameworkRecords} धाराहरू सही भागमा पुगेका छैनन् —
+                    <Link href="/vault/constitution" className="text-amber-400 ml-1 hover:text-amber-300">मिलाउनुस् →</Link>
+                  </p>
+                )}
+                {snapshot.emptyParts.length > 0 && snapshot.brokenFrameworkRecords === 0 && (
                   <p className="text-zinc-600 text-[10px]">
                     खाली: भाग {snapshot.emptyParts.slice(0, 6).join(", ")}
                     {snapshot.emptyParts.length > 6 ? ` +${snapshot.emptyParts.length - 6} थप` : ""}
@@ -443,35 +507,39 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
               </div>
             )}
 
-            {/* Quick explain glossary */}
-            <details className="group">
-              <summary className="text-[10px] text-zinc-700 hover:text-zinc-500 cursor-pointer transition-colors list-none flex items-center gap-1 px-0.5 py-1">
-                <span className="group-open:hidden">▸</span>
-                <span className="hidden group-open:inline">▾</span>
-                Terms को अर्थ बुझ्नुस्
-              </summary>
-              <div className="mt-2 space-y-1.5">
-                {[
-                  { term: "constitutional_framework", np: "Layer 1 — संविधानका धाराहरू, भागहरू, अधिकारहरू। Constitution PDF बाट एकपटक extract गर्नुस्।" },
-                  { term: "janta_intelligence",       np: "Layer 2 — सरकारी documents बाट निकालिएका policy points, promises, facts।" },
-                  { term: "Deep Extract",             np: "Approved document बाट Janta cards, policy points र relationships निकाल्ने process। AI cost लाग्छ।" },
-                  { term: "Admin Review",             np: "AI output verify गर्ने step — approve नगरी Deep Extract र Public Tree हुँदैन।" },
-                  { term: "Branch Health",            np: "प्रत्येक constitutional भाग (१–३५) मा कति intelligence छ — कमजोर branches identify गर्न।" },
-                ].map(({ term, np }) => (
-                  <div key={term} className="bg-zinc-900/50 border border-zinc-800/50 rounded-xl px-3 py-2">
-                    <p className="text-zinc-300 text-[10px] font-bold">{term}</p>
-                    <p className="text-zinc-600 text-[10px] mt-0.5 leading-relaxed">{np}</p>
-                  </div>
-                ))}
-              </div>
-            </details>
+            {/* Debug raw snapshot */}
+            {isDebug && snapshot && <DebugPanel snapshot={snapshot} />}
+
+            {/* Glossary — founder mode shows plain Nepali only */}
+            {isFounder && (
+              <details className="group">
+                <summary className="text-[10px] text-zinc-700 hover:text-zinc-500 cursor-pointer transition-colors list-none flex items-center gap-1 px-0.5 py-1">
+                  <span className="group-open:hidden">▸</span>
+                  <span className="hidden group-open:inline">▾</span>
+                  Terms को अर्थ बुझ्नुस्
+                </summary>
+                <div className="mt-2 space-y-1.5">
+                  {[
+                    { term: "Documents",    np: "Vault मा upload गरिएका सरकारी documents — Budget, Policy, संविधान आदि।" },
+                    { term: "Intelligence", np: "Documents बाट निकालिएका policy points, हकहरू, promises, facts — जनताका लागि।" },
+                    { term: "Branches",     np: "संविधानका ३५ भागहरू — प्रत्येक भागमा कति intelligence छ भन्ने मापन।" },
+                    { term: "Deep Extract", np: "Approved document बाट Intelligence cards र connections निकाल्ने step। AI cost लाग्छ।" },
+                    { term: "Admin Review", np: "AI output verify गर्ने step — approve नगरी Intelligence public हुँदैन।" },
+                  ].map(({ term, np }) => (
+                    <div key={term} className="bg-zinc-900/50 border border-zinc-800/50 rounded-xl px-3 py-2">
+                      <p className="text-zinc-300 text-[10px] font-bold">{term}</p>
+                      <p className="text-zinc-600 text-[10px] mt-0.5 leading-relaxed">{np}</p>
+                    </div>
+                  ))}
+                </div>
+              </details>
+            )}
           </div>
 
           {/* Footer */}
           <div className="px-4 py-2.5 border-t border-zinc-800 flex items-center justify-between shrink-0">
             <p className="text-zinc-700 text-[10px]">
-              {loading
-                ? "Refreshing…"
+              {loading ? "Refreshing…"
                 : minutesSince === 0 ? "भर्खरै"
                 : minutesSince !== null ? `${minutesSince} min अगाडि`
                 : "—"}

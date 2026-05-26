@@ -7,6 +7,8 @@ import { useVaultAuth } from "../../../hooks/vault/useVaultAuth";
 import type { ConstitutionalFrameworkRecord } from "../../../lib/types/constitutional-framework";
 import Link from "next/link";
 import { WorkflowGuide, CONSTITUTION_EXTRACT_STEPS } from "../../../components/vault/WorkflowGuide";
+import { useFounderMode } from "../../../contexts/FounderModeContext";
+import { useSessionTracker } from "../../../hooks/vault/useSessionTracker";
 
 // ─── Stats Panel ───────────────────────────────────────────────────────────────
 
@@ -327,6 +329,7 @@ function PartSection({
 
 export default function ConstitutionAdminClient() {
   const { user, loading: authLoading, isOwner } = useVaultAuth();
+  const { isDebug } = useFounderMode();
 
   const [records,   setRecords]   = useState<ConstitutionalFrameworkRecord[]>([]);
   const [loading,   setLoading]   = useState(true);
@@ -491,6 +494,12 @@ export default function ConstitutionAdminClient() {
   // Derived state — how many records have partNumber=0
   const brokenCount = records.filter(r => (r.partNumber ?? 0) === 0).length;
 
+  // Track active task for Founder Cockpit "last session" continuity
+  useSessionTracker(brokenCount > 0 ? {
+    labelNp: `${brokenCount} धाराहरू सही संविधान भागमा मिलाउन बाँकी छ`,
+    href:    "/vault/constitution",
+  } : null);
+
   // WorkflowGuide steps — override repair step with live count + callback
   const constitutionSteps = useMemo(
     () => CONSTITUTION_EXTRACT_STEPS.map(s =>
@@ -527,21 +536,22 @@ export default function ConstitutionAdminClient() {
         {records.length > 0 && (
           <span className="text-zinc-700 text-xs">· {records.length} धाराहरू · {parts.length} भागहरू</span>
         )}
-        {/* Secondary actions — small, unobtrusive */}
+        {/* Nav actions */}
         <div className="ml-auto flex items-center gap-2">
-          <Link href="/vault/constitution/health" className="text-xs font-bold px-2.5 py-1 rounded-lg bg-green-950/40 border border-green-900 text-green-400 hover:bg-green-900/40 transition-colors">🩺 Health</Link>
-          <Link href="/constitution" className="text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-900/30 border border-amber-900 text-amber-400 hover:bg-amber-900/40 transition-colors">🌳 Tree</Link>
-          {records.length > 0 && (
-            <button onClick={handleDedup} disabled={deduping}
-              className="text-xs px-2.5 py-1 rounded-lg border border-zinc-800 text-zinc-500 hover:text-blue-400 hover:border-blue-900 transition-colors disabled:opacity-40"
-            >
-              {deduping ? "…" : "Dedup"}
-            </button>
-          )}
-          {records.length > 0 && (
-            <button onClick={handleDeleteAll}
-              className="text-xs text-zinc-700 hover:text-red-500 transition-colors px-1"
-            >सबै मेटाउनुस्</button>
+          <Link href="/vault/constitution/health" className="text-xs font-bold px-2.5 py-1 rounded-lg bg-green-950/40 border border-green-900 text-green-400 hover:bg-green-900/40 transition-colors">🩺 Branch Health</Link>
+          <Link href="/constitution" className="text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-900/30 border border-amber-900 text-amber-400 hover:bg-amber-900/40 transition-colors">🌳 Public Tree</Link>
+          {/* Debug-only dangerous actions */}
+          {isDebug && records.length > 0 && (
+            <>
+              <button onClick={handleDedup} disabled={deduping}
+                className="text-xs px-2.5 py-1 rounded-lg border border-orange-900/50 text-orange-500 hover:border-orange-700 transition-colors disabled:opacity-40"
+              >
+                {deduping ? "…" : "🛠 Dedup"}
+              </button>
+              <button onClick={handleDeleteAll}
+                className="text-xs text-zinc-700 hover:text-red-500 transition-colors px-1"
+              >सबै मेटाउनुस्</button>
+            </>
           )}
         </div>
       </nav>
@@ -554,58 +564,57 @@ export default function ConstitutionAdminClient() {
           <p className="text-zinc-500 text-sm mt-0.5">२०७२ सालको संविधान · संवैधानिक मूल ढाँचा (Layer 1)</p>
         </div>
 
-        {/* ── Founder Cockpit Card — shows ONLY when action is needed ── */}
+        {/* ── Action needed: धाराहरू सही भागमा पुगेका छैनन् ── */}
         {!loading && brokenCount > 0 && (
-          <div className="rounded-2xl border border-amber-800 bg-amber-950/30 p-5 space-y-4">
-            {/* What is wrong */}
+          <div className="rounded-2xl border border-amber-800/70 bg-amber-950/25 p-5 space-y-4">
+
+            {/* What is happening */}
             <div className="flex items-start gap-3">
-              <span className="text-2xl shrink-0">🔧</span>
+              <span className="text-2xl shrink-0">⚠️</span>
               <div className="min-w-0">
                 <p className="text-amber-400 font-black text-base leading-snug">
-                  {brokenCount} धाराहरू "भाग ०" मा अड्किएका छन्
+                  {brokenCount} धाराहरू सही संविधान भागमा पुगेका छैनन्
                 </p>
                 <p className="text-zinc-400 text-xs leading-relaxed mt-1">
-                  AI ले देवनागरी अंकहरू गलत पढ्यो — "भाग ३" भन्ने "भाग 0" बन्यो।
-                  Branch Health ले यी {brokenCount} records देख्दैन, त्यसैले सबै भागहरू खाली देखिन्छन्।
+                  AI ले देवनागरी अंकहरू गलत पढ्यो — "भाग ३" भन्ने सिस्टमले "भाग ०" मा राख्यो।
+                  यी {brokenCount} धाराहरू Branch Health ले देख्दैन।
                 </p>
               </div>
             </div>
 
             {/* Why it matters */}
-            <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 space-y-1.5">
-              <p className="text-zinc-300 text-xs font-black">यो किन महत्त्वपूर्ण छ?</p>
+            <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl px-4 py-3">
+              <p className="text-zinc-300 text-xs font-black mb-1">यो मिलाएपछि के हुन्छ?</p>
               <p className="text-zinc-500 text-xs leading-relaxed">
-                Repair नगरेसम्म Branch Health page मा सबै ३५ भागहरू "खाली" देखिन्छन् —
-                Constitution Tree काम गर्दैन।
-                Pipeline को यो एउटा step सकियो भने system पूरा ready हुन्छ।
+                Branch Health मा सबै ३५ भागहरू देखिन्छन् — Constitution Tree सही काम गर्छ।
+                Pipeline को यो step सकियो भने system पूरा ready हुन्छ।
               </p>
             </div>
 
-            {/* Stats grid */}
-            <div className="grid grid-cols-4 gap-2">
+            {/* Action plan — 4 dimensions */}
+            <div className="grid grid-cols-2 gap-2">
               {[
-                { label: "भाग-० records",  value: brokenCount,        color: "text-amber-400" },
-                { label: "Total records",   value: records.length,     color: "text-white"     },
-                { label: "AI cost",         value: "₀",                color: "text-green-400" },
-                { label: "Repair समय",      value: "~30s",             color: "text-blue-400"  },
+                { label: "उद्देश्य",  value: "धाराहरू सही भागमा मिलाउनु",           color: "text-zinc-300" },
+                { label: "खर्च",     value: "₀ — AI call हुँदैन",                   color: "text-green-400" },
+                { label: "नतिजा",    value: "Branch Health मा ३५ भाग देखिन्छन्",    color: "text-zinc-300" },
+                { label: "लाग्ने समय", value: "~३० सेकेन्ड",                        color: "text-blue-400" },
               ].map(s => (
-                <div key={s.label} className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-2.5 text-center">
-                  <p className={`text-base font-black ${s.color}`}>{s.value}</p>
-                  <p className="text-zinc-600 text-[9px] mt-0.5 uppercase tracking-wide">{s.label}</p>
+                <div key={s.label} className="bg-zinc-900/70 border border-zinc-800 rounded-xl p-3">
+                  <p className="text-zinc-600 text-[9px] uppercase tracking-widest font-black mb-1">{s.label}</p>
+                  <p className={`text-xs font-bold ${s.color}`}>{s.value}</p>
                 </div>
               ))}
             </div>
 
-            {/* Safety checklist */}
+            {/* Safety */}
             <div className="space-y-1">
               {[
-                { ok: true,  text: "Content बदलिँदैन — केवल part number assign हुन्छ" },
-                { ok: true,  text: "Re-extraction हुँदैन — `part` field को text बाट number निकालिन्छ" },
-                { ok: true,  text: "AI call छैन — Firestore update मात्र (cost = ₀)" },
-                { ok: true,  text: "Safe — undo गर्न नमिले पनि content intact रहन्छ" },
-              ].map(({ ok, text }) => (
+                "Content बदलिँदैन — केवल भाग number सुधार हुन्छ",
+                "AI फेरि चल्दैन — यो केवल संरचना मिलाउने काम हो",
+                "Document सुरक्षित छ — कुनै data हराउँदैन",
+              ].map(text => (
                 <div key={text} className="flex items-start gap-2">
-                  <span className={`text-xs shrink-0 mt-0.5 ${ok ? "text-green-400" : "text-red-400"}`}>{ok ? "✓" : "✗"}</span>
+                  <span className="text-green-400 text-xs shrink-0 mt-0.5">✓</span>
                   <p className="text-zinc-400 text-xs leading-relaxed">{text}</p>
                 </div>
               ))}
@@ -618,12 +627,22 @@ export default function ConstitutionAdminClient() {
               className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black font-black py-3 rounded-xl text-sm transition-colors"
             >
               {repairing
-                ? "Repair हुँदैछ…"
-                : `${brokenCount} भाग-० धाराहरूलाई सही भागमा मिलाउनुहोस् →`}
+                ? "मिलाइँदैछ…"
+                : `${brokenCount} धाराहरू सही भागमा मिलाउनुहोस् →`}
             </button>
-            <p className="text-zinc-600 text-[10px] text-center">
-              Repair सकिएपछि Branch Health page मा सबै ३५ भागहरू देखिन्छन्।
+            <p className="text-zinc-700 text-[10px] text-center">
+              यो सकियो भने Branch Health page मा सबै ३५ भाग देखिन्छन्
             </p>
+
+            {/* Debug info — only in debug mode */}
+            {isDebug && (
+              <div className="bg-orange-950/20 border border-orange-900/40 rounded-xl px-3 py-2 space-y-1">
+                <p className="text-orange-500 text-[9px] font-black uppercase tracking-widest">🛠 Debug</p>
+                <p className="text-zinc-600 text-[10px] font-mono">collection: constitutional_framework</p>
+                <p className="text-zinc-600 text-[10px] font-mono">filter: partNumber === 0 ({brokenCount} records)</p>
+                <p className="text-zinc-600 text-[10px] font-mono">fix: parseInt(devanagari) from `part` field</p>
+              </div>
+            )}
           </div>
         )}
 
