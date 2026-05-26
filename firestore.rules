@@ -387,6 +387,16 @@ service cloud.firestore {
       allow delete: if isOwner(resource.data.ownerId);
     }
 
+    // ── MEDIA: expression layer atoms (script/prompt/caption wrappers) ────────
+    // media_atoms reference constitutional_framework / janta_intelligence records.
+    // They never store intelligence — only publication metadata.
+    match /media_atoms/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+
     // ── Deny all other paths (catch-all) ─────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;

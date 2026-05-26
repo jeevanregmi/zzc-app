@@ -3,7 +3,8 @@
 import { useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import type { UploadDocMeta } from "../../../hooks/vault/useDocumentUpload";
-import type { DocUploadTask, DocCategory } from "../../../lib/types/documents";
+import type { DocUploadTask, DocCategory, GovFolder } from "../../../lib/types/documents";
+import { GOV_FOLDER_META } from "../../../lib/types/documents";
 import { createIntelligenceDoc } from "../../../lib/vault/firestore";
 import { ActionLearnCard, type ActionLearnData } from "../../vault/LearnTip";
 
@@ -109,12 +110,14 @@ function UploadFlowBar() {
 }
 
 interface Props {
-  tasks:      DocUploadTask[];
-  onUpload:   (file: File, meta: UploadDocMeta) => void;
-  onClear:    () => void;
-  onClose:    () => void;
-  onDismiss?: (localId: string) => void;
-  ownerId?:   string;
+  tasks:           DocUploadTask[];
+  onUpload:        (file: File, meta: UploadDocMeta) => void;
+  onClear:         () => void;
+  onClose:         () => void;
+  onDismiss?:      (localId: string) => void;
+  ownerId?:        string;
+  initialGovFolder?: GovFolder;
+  initialTags?:    string;
 }
 
 // ── URL ingest result preview ─────────────────────────────────────────────────
@@ -338,7 +341,7 @@ function UploadActionIntel({ fileCount, category }: { fileCount: number; categor
   return <ActionLearnCard actions={[uploadAction]} />;
 }
 
-export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismiss, ownerId }: Props) {
+export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismiss, ownerId, initialGovFolder, initialTags }: Props) {
   const inputRef   = useRef<HTMLInputElement>(null);
   const [tab,      setTab]     = useState<"file" | "url">("file");
   const [dragging, setDragging] = useState(false);
@@ -348,7 +351,8 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismi
     description: "",
     category:    "strategy",
     folder:      "",
-    tags:        "",
+    tags:        initialTags ?? "",
+    govFolder:   initialGovFolder,
   });
 
   const addFiles = (files: File[]) => {
@@ -516,6 +520,25 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismi
                 </div>
                 <p className="text-zinc-600 text-xs">उदाहरण: {selectedCatInfo.examples}</p>
               </div>
+            )}
+          </div>
+
+          {/* Civic Library Folder — govFolder */}
+          <div className="space-y-1.5">
+            <label className="text-zinc-400 text-xs font-semibold px-1">Civic Library फोल्डर</label>
+            <select
+              value={meta.govFolder ?? ""}
+              onChange={e => setMeta(p => ({ ...p, govFolder: (e.target.value as GovFolder) || undefined }))}
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-white focus:outline-none focus:border-green-500"
+            >
+              <option value="">— फोल्डर छान्नुहोस् (optional) —</option>
+              {(Object.keys(GOV_FOLDER_META) as GovFolder[]).map(k => {
+                const m = GOV_FOLDER_META[k];
+                return <option key={k} value={k}>{m.icon} {m.np}</option>;
+              })}
+            </select>
+            {meta.govFolder && (
+              <p className="text-zinc-600 text-xs px-1">{GOV_FOLDER_META[meta.govFolder].desc}</p>
             )}
           </div>
 

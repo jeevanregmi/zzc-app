@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import MediaClient from "./MediaClient";
 
 export const metadata: Metadata = {
-  title: "Media Vault",
+  title: "Media Workspace — ZZC",
   robots: { index: false, follow: false },
 };
 

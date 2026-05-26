@@ -84,11 +84,18 @@ export default function DocumentsClient() {
   const [search,       setSearch]      = useState("");
   const [filter,       setFilter]      = useState<FilterCategory>("all");
   const [viewMode,     setViewMode]    = useState<"recent" | "library">("recent");
-  const [showUpload,    setShowUpload]   = useState(false);
+  const [showUpload,      setShowUpload]      = useState(false);
+  const [uploadGovFolder, setUploadGovFolder] = useState<GovFolder | undefined>(undefined);
+  const [uploadInitTags,  setUploadInitTags]  = useState<string>("");
 
-  // Auto-open upload modal when navigated from health page with ?upload=1
+  // Auto-open upload modal — reads ?upload=1&govFolder=...&tags=... from URL
   useEffect(() => {
     if (typeof window !== "undefined" && window.location.search.includes("upload=1")) {
+      const params = new URLSearchParams(window.location.search);
+      const gf = params.get("govFolder") as GovFolder | null;
+      const tags = params.get("tags") ?? "";
+      if (gf && gf in GOV_FOLDER_META) setUploadGovFolder(gf);
+      if (tags) setUploadInitTags(tags);
       setShowUpload(true);
       window.history.replaceState({}, "", window.location.pathname);
     }
@@ -929,8 +936,10 @@ export default function DocumentsClient() {
           onUpload={uploadDoc}
           onClear={clearDone}
           onDismiss={dismissTask}
-          onClose={() => setShowUpload(false)}
+          onClose={() => { setShowUpload(false); setUploadGovFolder(undefined); setUploadInitTags(""); }}
           ownerId={user?.uid}
+          initialGovFolder={uploadGovFolder}
+          initialTags={uploadInitTags}
         />
       )}
 
