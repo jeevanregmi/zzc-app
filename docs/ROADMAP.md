@@ -1,8 +1,9 @@
 # ZZC Roadmap
 
-> Last updated: 2026-05-26
+> Last updated: 2026-05-27
 > Single owner system — Jeevan Regmi is the only admin.
 > Update this file whenever priorities shift.
+> Architecture: see docs/ARCHITECTURE_PHILOSOPHY.md — city model, not minimal dashboard.
 
 ---
 
@@ -23,28 +24,30 @@
 - [x] Document Library view (govFolder-grouped)
 - [x] GovFolder classification system (9 civic library folders)
 - [x] ZZC Copilot Memory System (AGENTS.md, CLAUDE.md, docs/)
+- [x] govFolder picker in DocumentUploadModal + URL param auto-fill
+- [x] Context-aware upload links (Branch Health → upload modal pre-filled)
+- [x] Media Workspace (`/vault/media`) — script/narration/visual/caption workflow
+- [x] Media atoms type + hook + Firestore rule (`media_atoms`)
+- [x] Script generation CF function (Gemini Flash → scriptNepali, narrationText, visualPrompt, captionText)
+- [x] Architecture Philosophy doc — city model (docs/ARCHITECTURE_PHILOSOPHY.md)
+- [x] Founder Warehouse design doc (docs/FOUNDER_WAREHOUSE.md)
 
 ---
 
 ## 🔴 Immediate (Do this week)
 
-### 1. Run PartNumber Repair on production data
+### 1. Run PartNumber Repair on production data ← DO THIS FIRST
 - Go to `/vault/constitution`
 - Click "🔧 PartNumber Repair"
 - Verify Branch Health shows all 35 parts with data
 
-### 2. DocumentUploadModal govFolder picker
-- Add dropdown for `govFolder` selection in upload modal
-- Read URL params `?govFolder=constitution&parts=1&tags=constitution` for auto-fill
-- When coming from a WorkflowGuide recommendation, form should pre-fill
+### 2. ~~DocumentUploadModal govFolder picker~~ ✅ Done
+### 3. ~~FounderGuidancePanel upload links~~ ✅ Done
 
-### 3. FounderGuidancePanel upload links
-- "📤 Upload →" links in Branch Health should pass `govFolder` + `parts` as URL params
-- e.g., `/vault/documents?govFolder=constitution&parts=3&tags=fundamental-rights`
-
-### 4. QA: 10 real documents through full pipeline
+### 4. QA: 10 real documents through full pipeline ← HIGHEST LEVERAGE
 - Upload → Analyze → Review → Deep Extract → Verify in Branch Health
-- No new features until this passes
+- No new expression layer features until this passes
+- This validates the atom graph before adding organization layers on top
 
 ---
 
@@ -72,52 +75,85 @@
 
 ---
 
-## 🔵 Later (Next quarter)
+## 🔵 Later (Next quarter) — City Expansion
 
-### 9. Living Constitution — Branch decay detection
+### 9. Civic Campaigns — first-class civic missions
+- `civic_campaigns` Firestore collection + firestore.rules entry
+- `/vault/campaigns` page — create campaign, link atoms/docs/media
+- Campaign contains: `docIds[]`, `intelIds[]`, `mediaAtomIds[]`, `linkedParts[]`
+- See `docs/FOUNDER_WAREHOUSE.md` for full schema + evolution path
+- Can grow into: topic universe, research room, media pipeline, public engagement hub
+
+### 10. Founder Warehouse Navigation
+- Sidebar reorganization: Intelligence / Library / Pipeline / System districts
+- Smart collection views: "Needs media", "High-value atoms", "Missing narratives"
+- "Recently worked on" (from localStorage session tracker — already built)
+- See `docs/FOUNDER_WAREHOUSE.md` for full vision
+
+### 11. Living Constitution — Branch decay detection
 - AI monitors intelligence freshness
 - Documents older than 12 months flagged as "potentially outdated"
 - Signals from Parliament trigger branch re-health-checks
 
-### 10. Public Constitution Tree advanced features
+### 12. Signal Intelligence pipeline — Signal Center
+- Automated NRB, MoF, Parliament signal ingestion working reliably
+- Signal → Admin review → janta_intelligence pipeline
+- New signal → suggest media atom draft automatically
+
+### 13. Relationship Explorer
+- Visual graph: which atoms relate to which
+- "Underexplored branches" — parts with framework but no janta_intelligence
+- "Cluster view" — atom groups by topic/sector
+
+### 14. Media Atom Engine — Phase 2 + 3
+- Phase 2: Generated asset tracking (imageUrl, audioUrl, videoUrl in media_atoms)
+- Phase 3: Video assembly + multi-platform publish pipeline
+- Architecture: see `docs/MEDIA_ATOM_ENGINE.md`
+
+### 15. Public Constitution Tree advanced features
 - Full-text search across all intelligence records
 - "Which policies affect me?" filter by sector, income level, province
-- Share specific articles on social media
+- Branch health states visible on public tree
 
-### 11. Janta mobile app (React Native)
-- Same civic intelligence, optimized for mobile
-- Push notifications for new government policies
-- Offline-capable for rural users
-
-### 12. Multilingual support
-- Nepali (current) + English + Maithili (major second language)
+### 16. Multilingual support
+- Nepali (current) + English + Maithili
 - Translation via AI with human review gate
 
-### 13. Media Atom Engine — Civic intelligence → short clips
-- Architecture: see `docs/MEDIA_ATOM_ENGINE.md`
-- Media atoms are an EXPRESSION LAYER on top of existing intelligence atoms
-- `media_atoms` Firestore collection references `constitutional_framework` / `janta_intelligence` — never duplicates
-- Phase 1: Script generation (Gemini Flash) + admin approve → caption export
-- Phase 2: Visual prompt + AI image generation
-- Phase 3: TTS narration + video assembly + TikTok/YouTube Shorts publish
-- **Prerequisite:** QA sprint (#4) + stable intel pipeline + Signal Intelligence (#6) + AI cost dashboard (#8)
-- Safe media only: AI-generated visuals, own animations, CC0, government footage
+### 17. Election / Crisis / Archive Modes
+- Runtime context switching — no new collections needed
+- Election mode: filter everything through election-relevant atoms
+- Crisis mode: surface urgent civic intelligence
+- Archive mode: historical document timeline view
 
 ---
 
-## ⛔ Not Now (Explicitly deferred)
+## Future Rooms (Open Architecture — not deferred, just phased)
 
-These are good ideas that would distract from the core mission right now:
+These are part of the city vision. Not now, but designed to be addable.
 
-| Feature | Why deferred |
+| Room | What it is | When |
+|---|---|---|
+| Research Lab | Cross-document analysis, gap detection, source tracking | Phase 4 |
+| AI Copilot Studio | LLM reasoning on top of rule engine | Phase 6 |
+| Simulation Layer | Policy impact modeling | Phase 5 |
+| Public Campaign Pages | Citizen-facing campaign views on `/janta/campaigns/` | Phase 5 |
+| Educational Tracks | Sequences of constitutional concepts for citizens | Phase 5 |
+| Citizen API | Public API over the atom graph | Phase 6 |
+| Multi-contributor | Trusted researchers as contributors (manual ID verification) | Phase 6 |
+
+---
+
+## ⛔ Permanently Deferred
+
+Only things that violate the ONE brain principle or quality gate:
+
+| Feature | Why permanently deferred |
 |---|---|
-| Math Verification Vault | Needs dedicated QA system; deferred until calculator is stable |
-| Taxonomy Governance | AI tag suggestions need admin review gate before canonical use |
-| Social Membership System | Open signups break quality gate; manual verification too expensive now |
-| Generic LLM chatbot | Not the goal — rule-based CTO engine is the right foundation |
-| Public editor / contribute mode | Trust problem — anonymous contributions could inject false data |
+| Duplicate intelligence collections | Violates ONE brain principle |
+| Open signups / public contributor access | Trust problem — no anonymous contributions |
+| Generic LLM chatbot | Not the goal — rule-based CTO engine is the foundation |
 | Revenue / monetization | Too early — build quality first |
-| Mobile app | Web must be excellent first |
+| Auto-generate video without approval | Cost explosion + quality risk |
 
 ---
 

@@ -48,9 +48,11 @@ Same atoms. Multiple organized views. Zero duplication.
 
 ---
 
-## The ONE New Structure: Civic Campaign
+## The First New Room: Civic Campaign (First-Class System)
 
-A Campaign is a **smart playlist** — it groups existing atoms by civic topic without moving or duplicating anything.
+A Campaign is not a lightweight playlist. It is a **first-class civic mission** — a room that can evolve into a topic universe, a research room, a media production pipeline, or a public engagement hub. Starting small, growing deep.
+
+Campaigns organize existing atoms without moving or duplicating them.
 
 ### Collection: `civic_campaigns`
 
@@ -211,12 +213,29 @@ These are UI views to build — each queries existing collections differently:
 
 ---
 
+## Campaign Evolution Path
+
+Campaigns can grow over time into any of these:
+
+| Form | What it means |
+|---|---|
+| **Smart playlist** | Start: group atoms/docs by topic |
+| **Topic universe** | Add: all atoms + relationships + signals for a topic |
+| **Research room** | Add: cross-document analysis, gap detection, source tracking |
+| **Media production pipeline** | Add: atom → script → approve → export → publish flow |
+| **Public engagement hub** | Add: public-facing campaign page on `/janta/campaigns/education` |
+| **Educational track** | Add: sequence of constitutional concepts for citizen learning |
+| **Civic mission** | Full: source → intelligence → media → public → signal monitoring |
+
+Always: references only. ONE brain.
+
+---
+
 ## What NOT to Build
 
 | Temptation | Why Not |
 |---|---|
-| Separate media file storage collection | `vault_documents` already handles files; `media_atoms` handles expressions |
-| Nested subcollections in Firestore | Flat collections with `ownerId` filter are cheaper and safer |
+| Store intelligence summaries inside campaigns | Campaigns = ID references only — ONE brain |
+| Nested Firestore subcollections | Flat collections with `ownerId` filter are cheaper and safer |
 | Auto-upload from external tools | Founder manually controls what enters the warehouse |
-| Duplicate atom data inside campaigns | Campaign = ID references only. ONE brain. |
-| Complex folder hierarchy in Firestore | govFolder + linkedParts is enough hierarchy |
+| Build a campaign feature that can't grow | Campaign must be extensible — design for evolution |

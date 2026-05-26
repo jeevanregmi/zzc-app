@@ -20,29 +20,49 @@ This file has current context, founder preferences, and session continuity.
 
 ## Core System Philosophy
 
-ZZC must evolve like a **calm, durable civic operating system** — not a fast-growing startup dashboard.
+ZZC is a **perpetual civic intelligence operating system** — not a minimal SaaS dashboard.
+It is designed like a city: many districts, rooms, and layers — all connected to one atom graph.
+See `docs/ARCHITECTURE_PHILOSOPHY.md` for the full city blueprint.
 
-### The ONE Brain Principle (most important architectural rule)
+### The ONE Brain Principle (absolute, non-negotiable)
 
-**Outputs can multiply. The brain must remain singular.**
+**Outputs can multiply. Intelligence must remain singular.**
 
-Every media output, social post, signal, reel, narration, infographic, or public content must trace back to an existing intelligence atom. If the intelligence already exists in `constitutional_framework` or `janta_intelligence` — reference it. Never duplicate it.
+All civic intelligence lives in:
+- `constitutional_framework` (Layer 1 — static)
+- `janta_intelligence` (Layer 2 — dynamic)
+- `janta_relationships` (graph edges)
+- `vault_documents` (source material)
 
-- Before creating a new Firestore collection: ask "can this reference an existing atom?"
-- Before a new AI pipeline: ask "does this extract to the same collections?"
-- Before a new page: ask "does this consume the same intelligence graph?"
+Everything else — media atoms, campaigns, feeds, timelines, modes — **references** these collections. Never duplicates them.
 
-Future layers (media atoms, signal alerts, social content) are **expression layers** — not parallel brains.
+- New Firestore collection? → must reference atoms, not store intelligence independently
+- New AI pipeline? → must extract to existing collections, not create parallel stores
+- New page? → must discover or express patterns from the existing atom graph
 
-### Consolidation Over Expansion
+### Open-Armed Architecture (encouraged)
 
-Current sprint philosophy: stabilize before extending.
+New rooms, layers, and organizational systems are WELCOME.
 
-- Do not create disconnected systems
-- Do not add pages that don't connect to the intelligence graph
-- Do not extract intelligence into new isolated collections
-- Every new feature must consume or extend the existing pipeline:
-  `Document → AI Analyze → Admin Review → Intelligence → Relationships → Branch Health → Public Tree`
+ZZC should grow toward: **Notion + Bloomberg + Civic OS + Knowledge Warehouse + AI Studio**
+
+Planned rooms (not yet built — see `docs/ARCHITECTURE_PHILOSOPHY.md`):
+- `civic_campaigns` — first-class civic missions, not lightweight playlists
+- Signal Center — live government monitoring
+- Research Lab — cross-document pattern discovery
+- Election/Crisis/Archive modes — runtime context switching
+- Relationship explorer — visual atom graph navigation
+- AI Copilot Studio — LLM reasoning layer on top of rule engine
+
+These are not fragmentation. They are organized expression of the same atom graph.
+Fear only: intelligence duplication, disconnected pipelines, orphaned data.
+
+### QA Stability (current sprint constraint)
+
+Until 10 real documents have passed through the full pipeline (ROADMAP #4):
+- Every new feature must be anchored to the existing atom graph
+- No new AI pipelines that haven't been tested on real data
+- Founder must run the QA sprint before building new expression layers on top
 
 ---
 
