@@ -38,11 +38,16 @@ function formatUploadError(err: unknown): string {
 // ── Public types ──────────────────────────────────────────────────────────────
 
 export interface UploadDocMeta {
-  title:       string;
-  description: string;
-  category:    DocCategory;
-  folder:      string;
-  tags:        string;   // comma-separated
+  title:             string;
+  description:       string;
+  category:          DocCategory;
+  folder:            string;
+  tags:              string;   // comma-separated
+  // Civic Library metadata — makes every doc a structured intelligence source
+  govFolder?:        import("../../lib/types/documents").GovFolder;
+  institutionName?:  string;
+  docYear?:          number | null;
+  constitutionalParts?: number[];
 }
 
 export interface UploadSummary {
@@ -90,12 +95,16 @@ export function useDocumentUpload(ownerId: string) {
         fileSize:         size,
         storagePath:      r2Key,       // R2 object key (was Firebase Storage path)
         downloadUrl,                   // /api/r2-serve?key=... (was Firebase download URL)
-        folder:           meta.folder,
-        tags:             tagList,
-        category:         meta.category,
-        processingStatus: "ready",
-        uploadedAt:       new Date().toISOString(),
-        updatedAt:        new Date().toISOString(),
+        folder:              meta.folder,
+        tags:                tagList,
+        category:            meta.category,
+        processingStatus:    "ready",
+        uploadedAt:          new Date().toISOString(),
+        updatedAt:           new Date().toISOString(),
+        ...(meta.govFolder         ? { govFolder:          meta.govFolder         } : {}),
+        ...(meta.institutionName   ? { institutionName:    meta.institutionName   } : {}),
+        ...(meta.docYear != null   ? { docYear:            meta.docYear           } : {}),
+        ...(meta.constitutionalParts?.length ? { constitutionalParts: meta.constitutionalParts } : {}),
       });
 
       console.log("[upload] done", { docId, r2Key, size });

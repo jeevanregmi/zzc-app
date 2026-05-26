@@ -12,6 +12,31 @@ export type DocCategory =
   | "intelligence"
   | "other";
 
+// Civic governance library folder — determines where a document lives in the
+// National Civic Intelligence Library. Every uploaded document should have one.
+export type GovFolder =
+  | "constitution"          // संविधान — Constitution text, amendments, explanations
+  | "budget-economy"        // बजेट र अर्थव्यवस्था — Annual budgets, monetary policy, revenue
+  | "policy-planning"       // नीति र योजना — Periodic plans, ministry strategies, sector frameworks
+  | "parliament"            // संसद — Bills, committee reports, parliamentary proceedings
+  | "judiciary"             // न्यायपालिका — Court decisions, legal interpretations, AG reports
+  | "local-governance"      // स्थानीय शासन — Municipality budgets, ward reports, local plans
+  | "citizen-intelligence"  // नागरिक सूचना — Complaints, surveys, civic feedback, field reports
+  | "media-signals"         // मिडिया र संकेत — News, URL signals, RSS intelligence
+  | "other";                // अन्य — Uncategorized
+
+export const GOV_FOLDER_META: Record<GovFolder, { np: string; icon: string; desc: string }> = {
+  "constitution":         { np: "संविधान",             icon: "📜", desc: "Constitution text, amendments, constitutional explanations" },
+  "budget-economy":       { np: "बजेट र अर्थव्यवस्था", icon: "💰", desc: "Annual budget, monetary policy, economic survey, revenue reports" },
+  "policy-planning":      { np: "नीति र योजना",        icon: "📋", desc: "Policy & Programs, Periodic Plans, ministry strategies" },
+  "parliament":           { np: "संसद",                icon: "🏛", desc: "Bills, committee reports, parliamentary discussions" },
+  "judiciary":            { np: "न्यायपालिका",          icon: "⚖", desc: "Supreme Court decisions, constitutional bench, legal interpretations" },
+  "local-governance":     { np: "स्थानीय शासन",        icon: "🏘", desc: "Municipality budgets, ward reports, local plans" },
+  "citizen-intelligence": { np: "नागरिक सूचना",        icon: "👥", desc: "Complaints, surveys, civic feedback, field reports" },
+  "media-signals":        { np: "मिडिया र संकेत",      icon: "📡", desc: "News, URL signals, RSS intelligence" },
+  "other":                { np: "अन्य",                icon: "📁", desc: "Other civic documents not in the above categories" },
+};
+
 /**
  * Upload is ALWAYS separate from AI analysis. A document in any status below
  * is guaranteed to be safely stored in R2 — status only reflects AI pipeline state.
@@ -82,6 +107,14 @@ export interface IntelligenceDocument {
   aiProcessingError?:  string;
   // ── Janta public media ────────────────────────────────────────────────────
   heroImageUrl?:       string;   // Firebase Storage URL — shown on /janta card
+  // ── Civic Library classification ──────────────────────────────────────────
+  // These fields make every document a structured civic intelligence source,
+  // not just a stored file.
+  govFolder?:           GovFolder;     // which folder in the Civic Intelligence Library
+  constitutionalParts?: number[];      // which constitutional parts (1-35) this doc covers
+  institutionName?:     string;        // source institution: "Nepal Rastra Bank", "Ministry of Finance", etc.
+  docYear?:             number | null; // fiscal/calendar year of the document
+  docType?:             string;        // specific type: "Annual Budget", "Court Decision", "Policy", etc.
   // ── Metadata ──────────────────────────────────────────────────────────────
   pageCount?:          number;
   language?:           string;

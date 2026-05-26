@@ -17,9 +17,7 @@ import {
   type PartStructuralProfile,
 } from "../../../../lib/constitution/structuralComputer";
 import type { IntelligenceRecord } from "../../../../lib/types/intelligence-record";
-import type { CivicAtom } from "../../../../lib/types/atoms";
 import type { ConstitutionalFrameworkRecord } from "../../../../lib/types/constitutional-framework";
-import { atomsToIntelRecords } from "../../../../lib/vault/atomToIntelBridge";
 import { PARTS_META } from "./partsMeta";
 import { UPLOAD_GUIDANCE, type VaultCategory, type UploadRecommendation } from "../../../../lib/constitution/uploadGuidance";
 import {
@@ -101,18 +99,38 @@ function computeCompleteness(
 // ─── Analytics dashboard ──────────────────────────────────────────────────────
 
 interface AnalyticsStat {
-  label: string;
-  value: string | number;
-  color: string;
-  sub?: string;
+  label:    string;
+  value:    string | number;
+  color:    string;
+  sub?:     string;
+  // Actionable zero-state info
+  what?:    string;  // What is this metric?
+  why0?:    string;  // Why might it be 0?
+  fix?:     string;  // What to do
+  fixHref?: string;  // Where to go
+  fixLabel?:string;
 }
 
 function StatCard({ s }: { s: AnalyticsStat }) {
+  const [open, setOpen] = useState(false);
+  const isZero = s.value === 0 || s.value === "0" || String(s.value).startsWith("0/");
   return (
-    <div style={{ background: "rgba(255,255,255,0.03)", border: `1px solid ${s.color}25`, borderRadius: "10px", padding: "14px 16px", minWidth: "100px" }}>
-      <p style={{ fontSize: "24px", fontWeight: 900, color: s.color, margin: 0, lineHeight: 1 }}>{s.value}</p>
+    <div
+      onClick={() => setOpen(p => !p)}
+      style={{ background: isZero ? "rgba(248,113,113,0.04)" : "rgba(255,255,255,0.03)", border: `1px solid ${isZero ? "rgba(248,113,113,0.18)" : s.color + "25"}`, borderRadius: "10px", padding: "14px 16px", minWidth: "100px", cursor: s.what ? "pointer" : "default", transition: "border-color 0.15s" }}
+    >
+      <p style={{ fontSize: "24px", fontWeight: 900, color: isZero ? "#f87171" : s.color, margin: 0, lineHeight: 1 }}>{s.value}</p>
       <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.35)", margin: "4px 0 0", lineHeight: 1.4 }}>{s.label}</p>
       {s.sub && <p style={{ fontSize: "9px", color: "rgba(255,255,255,0.18)", margin: "2px 0 0" }}>{s.sub}</p>}
+      {isZero && s.what && <p style={{ fontSize: "8px", color: "rgba(248,113,113,0.60)", margin: "4px 0 0", fontWeight: 700 }}>ⓘ किन? थिच्नुस्</p>}
+      {open && s.what && (
+        <div style={{ marginTop: "10px", borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: "10px" }}>
+          {s.what  && <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.55)", margin: "0 0 5px", lineHeight: 1.5 }}><strong style={{ color: "#fbbf24" }}>के हो:</strong> {s.what}</p>}
+          {s.why0  && <p style={{ fontSize: "10px", color: "rgba(248,113,113,0.80)", margin: "0 0 5px", lineHeight: 1.5 }}><strong>किन ०:</strong> {s.why0}</p>}
+          {s.fix   && <p style={{ fontSize: "10px", color: "rgba(74,222,128,0.80)", margin: "0 0 6px", lineHeight: 1.5 }}><strong>के गर्ने:</strong> {s.fix}</p>}
+          {s.fixHref && <a href={s.fixHref} style={{ fontSize: "10px", fontWeight: 700, color: "#4ade80", background: "rgba(74,222,128,0.10)", border: "1px solid rgba(74,222,128,0.25)", borderRadius: "6px", padding: "4px 10px", textDecoration: "none", display: "inline-block" }}>{s.fixLabel ?? "→ जानुस्"}</a>}
+        </div>
+      )}
     </div>
   );
 }
@@ -184,14 +202,41 @@ function AnalyticsDashboard(p: AnalyticsDashboardProps) {
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
               {([
-                { label: "⚛ Civic Atoms",           value: p.totalCivicAtoms,   color: "#67e8f9", sub: "vault_civic_atoms" },
-                { label: "📋 Janta Intelligence",    value: p.totalJanta,        color: "#4ade80", sub: "janta_intelligence" },
-                { label: "📜 Constitution Framework",value: p.totalFramework,    color: "#c084fc", sub: "constitutional_framework" },
-                { label: "⬡ Constitution Atoms",     value: p.totalConstitAtoms, color: "#a78bfa", sub: "constitutional_atoms" },
-                { label: "🔗 Relationships",          value: p.totalRelationships,color: "#38bdf8", sub: "constitutional_relationships" },
-                { label: "📡 Civic Signals",          value: p.totalSignals,      color: "#f472b6", sub: "civic_signals" },
-                { label: "डेटा भएका भागहरू",         value: `${p.withData}/35`,  color: "#fbbf24", sub: "parts with data" },
-                { label: "औसत स्वास्थ्य अंक",       value: `${p.avgScore}/100`, color: "#60a5fa", sub: "overall score" },
+                {
+                  label: "📜 Constitution Framework", value: p.totalFramework, color: "#c084fc", sub: "constitutional_framework",
+                  what: "नेपालको संविधानका ३०८ धाराहरू — AI ले PDF बाट निकालेका structured records।",
+                  why0: "Extract गर्दा Devanagari numeral bug छ (partNumber=0 save भयो), वा extraction नै गरिएको छैन।",
+                  fix: "Documents पेजमा गएर संविधान PDF को 'Extract Framework' click गर्नुस्, अनि यहाँ Framework → PartNumber Repair थिच्नुस्।",
+                  fixHref: "/vault/constitution", fixLabel: "📜 Framework → Repair",
+                },
+                {
+                  label: "📋 Janta Intelligence", value: p.totalJanta, color: "#4ade80", sub: "janta_intelligence",
+                  what: "Upload गरिएका documents बाट AI ले निकालेका intelligence records — नीति, बजेट, प्रतिबद्धता, प्रगति।",
+                  why0: "अझैसम्म कुनै document upload भएर 'AI Extract' गरिएको छैन, वा approve गरिएको छैन।",
+                  fix: "Documents पेजमा जानुस् → PDF upload गर्नुस् → AI Analyze → Approve गर्नुस्।",
+                  fixHref: "/vault/documents", fixLabel: "📄 Documents →",
+                },
+                {
+                  label: "📡 Civic Signals", value: p.totalSignals, color: "#f472b6", sub: "civic_signals",
+                  what: "News, RSS, वा URL बाट live civic monitoring signals — Layer 2 को live feed।",
+                  why0: "Signal Feed मा कुनै URL/source add गरिएको छैन।",
+                  fix: "Signal Feed पेजमा गएर news URL वा RSS source add गर्नुस्।",
+                  fixHref: "/vault/system-map", fixLabel: "🗺 System Map →",
+                },
+                {
+                  label: "डेटा भएका भागहरू", value: `${p.withData}/35`, color: "#fbbf24", sub: "parts with data",
+                  what: "संविधानका ३५ भागहरूमध्ये कतिमा live intelligence data छ। Branch Health को core metric।",
+                  why0: "Constitutional framework records को partNumber=0 छ — repair नगरिएसम्म ३५ भाग देखिँदैन।",
+                  fix: "Framework पेजमा गएर PartNumber Repair click गर्नुस् — re-extraction नलाग्ने, data fix मात्र हुन्छ।",
+                  fixHref: "/vault/constitution", fixLabel: "🔧 PartNumber Repair →",
+                },
+                {
+                  label: "औसत स्वास्थ्य अंक", value: `${p.avgScore}/100`, color: "#60a5fa", sub: "overall score",
+                  what: "सबै ३५ भागको average health score। तह १ + तह २ दुवैको presence बाट गणना हुन्छ।",
+                  why0: "Parts with Data = 0 भएसम्म यो पनि 0 हुन्छ। PartNumber Repair र documents upload गर्नुस्।",
+                  fix: "पहिले PartNumber Repair, त्यसपछि जता-जता खाली छ त्यहाँ documents upload गर्दै जानुस्।",
+                  fixHref: "/vault/constitution", fixLabel: "🔧 Framework →",
+                },
               ] as AnalyticsStat[]).map(s => <StatCard key={s.label} s={s} />)}
             </div>
             {/* Promise vs Reality gap */}
@@ -759,16 +804,73 @@ function PartRoadmapCard({
 }
 
 // ─── Founder Guidance Panel ───────────────────────────────────────────────────
-// Surfaces the most urgent upload gaps across all 35 parts in one view.
-// Answers: empty branches, weak branches, top priority next uploads.
+// Three-tier recommendation awareness:
+//   1. Auto-satisfied  — Layer 1 exists for a part → constitution rec marked done automatically
+//   2. Manual dismiss  — admin clicks "✓ भयो" → stored in localStorage, hidden from list
+//   3. Vault cross-check — uploaded doc titles/tags matched against rec tags (via vaultTags prop)
 
 interface FounderGuidancePanelProps {
-  healthMap:  Map<number, BranchHealth>;
-  structMap:  Map<number, PartStructuralProfile>;
+  healthMap:       Map<number, BranchHealth>;
+  structMap:       Map<number, PartStructuralProfile>;
+  vaultTags:       Set<string>;  // all tags from uploaded vault docs, lowercase
+  totalFramework:  number;       // total constitutional_framework records across all parts
 }
 
-function FounderGuidancePanel({ healthMap, structMap }: FounderGuidancePanelProps) {
+const LS_KEY = "zzc_rec_done_v1";
+
+function recKey(partNumber: number, rec: UploadRecommendation) {
+  return `${partNumber}__${rec.titleEn}`;
+}
+
+// A rec is auto-satisfied when its content already exists in the system.
+// Uses three signals, most generous first:
+// 1. ANY constitutional_framework records exist → constitution-text recs are done globally
+// 2. Layer 1 per-part has data → that part's constitution rec is done
+// 3. Vault document tags overlap with rec tags → that specific rec is covered
+function autoSatisfied(
+  partNumber: number,
+  rec: UploadRecommendation,
+  structMap: Map<number, PartStructuralProfile>,
+  vaultTags: Set<string>,
+  totalFramework: number,
+): boolean {
+  const isConstitutionRec = rec.tags.includes("constitution") || rec.tags.includes("fundamental-law");
+  // Signal 1: any framework records = constitution is uploaded and extracted
+  if (isConstitutionRec && totalFramework > 0) return true;
+  // Signal 2: per-part Layer 1 data (works after PartNumber Repair)
+  if (isConstitutionRec && (structMap.get(partNumber)?.atomCount ?? 0) > 0) return true;
+  // Signal 3: vault doc tag overlap
+  return rec.tags.some(t => vaultTags.has(t.toLowerCase()));
+}
+
+function FounderGuidancePanel({ healthMap, structMap, vaultTags, totalFramework }: FounderGuidancePanelProps) {
   const [tab, setTab] = useState<"empty" | "weak" | "uploads">("uploads");
+
+  // Manual dismiss — persisted in localStorage
+  const [dismissed, setDismissed] = useState<Set<string>>(() => {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      return raw ? new Set<string>(JSON.parse(raw) as string[]) : new Set<string>();
+    } catch { return new Set<string>(); }
+  });
+
+  const dismiss = (partNumber: number, rec: UploadRecommendation) => {
+    const k = recKey(partNumber, rec);
+    setDismissed(prev => {
+      const next = new Set(prev);
+      next.add(k);
+      try { localStorage.setItem(LS_KEY, JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  };
+
+  const undismissAll = () => {
+    setDismissed(new Set());
+    try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
+  };
+
+  const isHidden = (partNumber: number, rec: UploadRecommendation) =>
+    dismissed.has(recKey(partNumber, rec)) || autoSatisfied(partNumber, rec, structMap, vaultTags, totalFramework);
 
   // Empty branches: Layer 2 = 0 records
   const emptyParts = PART_NUMBERS.filter(n => {
@@ -783,16 +885,18 @@ function FounderGuidancePanel({ healthMap, structMap }: FounderGuidancePanelProp
   }).sort((a, b) => (healthMap.get(a)!.healthScore) - (healthMap.get(b)!.healthScore));
 
   // Top upload priorities: high-priority recs from empty parts first, then weak
-  const urgentUploads: Array<{ partNumber: number; rec: UploadRecommendation; isEmpty: boolean }> = [];
+  // Build full list first, then split into active/done
+  const allCandidates: Array<{ partNumber: number; rec: UploadRecommendation; isEmpty: boolean }> = [];
   const priorityParts = [...emptyParts, ...weakParts.filter(n => !emptyParts.includes(n))];
   for (const n of priorityParts) {
     const recs = UPLOAD_GUIDANCE[n] ?? [];
     for (const rec of recs.filter(r => r.priority === "high")) {
-      urgentUploads.push({ partNumber: n, rec, isEmpty: emptyParts.includes(n) });
-      if (urgentUploads.length >= 12) break;
+      allCandidates.push({ partNumber: n, rec, isEmpty: emptyParts.includes(n) });
     }
-    if (urgentUploads.length >= 12) break;
   }
+
+  const urgentUploads = allCandidates.filter(({ partNumber, rec }) => !isHidden(partNumber, rec)).slice(0, 12);
+  const doneCount     = allCandidates.filter(({ partNumber, rec }) => isHidden(partNumber, rec)).length;
 
   const TABS = [
     { id: "uploads" as const, label: "📥 अर्को Upload",  count: urgentUploads.length },
@@ -828,39 +932,67 @@ function FounderGuidancePanel({ healthMap, structMap }: FounderGuidancePanelProp
 
         {/* ── Tab: Top priority uploads ── */}
         {tab === "uploads" && (
-          urgentUploads.length === 0 ? (
-            <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.30)", fontStyle: "italic", margin: 0 }}>सबै शाखामा high-priority documents छन् — excellent!</p>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.28)", margin: "0 0 4px" }}>
-                खाली शाखाबाट high-priority recommendations — यीनलाई पहिले upload गर्नुस्
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+
+            {/* Done summary bar */}
+            {doneCount > 0 && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 12px", background: "rgba(74,222,128,0.06)", border: "1px solid rgba(74,222,128,0.18)", borderRadius: "8px" }}>
+                <p style={{ fontSize: "11px", color: "#4ade80", margin: 0, fontWeight: 700 }}>
+                  ✓ {doneCount} recommendations पहिले नै पूरा — system ले detect गर्यो
+                </p>
+                <button
+                  onClick={undismissAll}
+                  style={{ fontSize: "9px", color: "rgba(255,255,255,0.30)", background: "transparent", border: "none", cursor: "pointer", padding: "2px 6px", borderRadius: "4px" }}
+                >
+                  सबै reset
+                </button>
+              </div>
+            )}
+
+            {urgentUploads.length === 0 ? (
+              <p style={{ fontSize: "12px", color: "#4ade80", fontWeight: 700, margin: 0 }}>
+                ✓ सबै high-priority documents पूरा — excellent!
               </p>
-              {urgentUploads.map(({ partNumber, rec, isEmpty }, i) => (
-                <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "10px", padding: "10px 12px", background: isEmpty ? "rgba(239,68,68,0.05)" : "rgba(251,191,36,0.04)", border: `1px solid ${isEmpty ? "rgba(239,68,68,0.15)" : "rgba(251,191,36,0.12)"}`, borderRadius: "9px" }}>
-                  <div style={{ flexShrink: 0, textAlign: "center", minWidth: "42px" }}>
-                    <p style={{ fontSize: "9px", fontWeight: 700, color: "#fbbf24", background: "rgba(251,191,36,0.12)", padding: "2px 6px", borderRadius: "6px", margin: 0, whiteSpace: "nowrap" }}>भाग {partNumber}</p>
-                    <p style={{ fontSize: "8px", color: isEmpty ? "#ef4444" : "#fbbf24", margin: "3px 0 0", fontWeight: 700 }}>{isEmpty ? "खाली" : "कमजोर"}</p>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: "12px", fontWeight: 700, color: "#e2e8f0", margin: "0 0 1px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{rec.title}</p>
-                    <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.35)", margin: "0 0 5px" }}>{rec.titleEn}</p>
-                    <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
-                      <span style={{ fontSize: "9px", color: CATEGORY_COLOR[rec.category], background: `${CATEGORY_COLOR[rec.category]}18`, border: `1px solid ${CATEGORY_COLOR[rec.category]}28`, borderRadius: "4px", padding: "1px 6px", fontWeight: 700 }}>{rec.category}</span>
-                      {rec.tags.slice(0, 3).map(tag => (
-                        <span key={tag} style={{ fontSize: "9px", color: "rgba(255,255,255,0.28)", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "4px", padding: "1px 5px", fontFamily: "monospace" }}>#{tag}</span>
-                      ))}
+            ) : (
+              <>
+                <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.28)", margin: "0 0 2px" }}>
+                  खाली शाखाबाट high-priority recommendations — यीनलाई पहिले upload गर्नुस्
+                </p>
+                {urgentUploads.map(({ partNumber, rec, isEmpty }, i) => (
+                  <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: "10px", padding: "10px 12px", background: isEmpty ? "rgba(239,68,68,0.05)" : "rgba(251,191,36,0.04)", border: `1px solid ${isEmpty ? "rgba(239,68,68,0.15)" : "rgba(251,191,36,0.12)"}`, borderRadius: "9px" }}>
+                    <div style={{ flexShrink: 0, textAlign: "center", minWidth: "42px" }}>
+                      <p style={{ fontSize: "9px", fontWeight: 700, color: "#fbbf24", background: "rgba(251,191,36,0.12)", padding: "2px 6px", borderRadius: "6px", margin: 0, whiteSpace: "nowrap" }}>भाग {partNumber}</p>
+                      <p style={{ fontSize: "8px", color: isEmpty ? "#ef4444" : "#fbbf24", margin: "3px 0 0", fontWeight: 700 }}>{isEmpty ? "खाली" : "कमजोर"}</p>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: "12px", fontWeight: 700, color: "#e2e8f0", margin: "0 0 1px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{rec.title}</p>
+                      <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.35)", margin: "0 0 5px" }}>{rec.titleEn}</p>
+                      <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+                        <span style={{ fontSize: "9px", color: CATEGORY_COLOR[rec.category], background: `${CATEGORY_COLOR[rec.category]}18`, border: `1px solid ${CATEGORY_COLOR[rec.category]}28`, borderRadius: "4px", padding: "1px 6px", fontWeight: 700 }}>{rec.category}</span>
+                        {rec.tags.slice(0, 3).map(tag => (
+                          <span key={tag} style={{ fontSize: "9px", color: "rgba(255,255,255,0.28)", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "4px", padding: "1px 5px", fontFamily: "monospace" }}>#{tag}</span>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "5px", flexShrink: 0, alignSelf: "center" }}>
+                      <a
+                        href="/vault/documents?upload=1"
+                        style={{ fontSize: "10px", fontWeight: 700, color: "#4ade80", background: "rgba(74,222,128,0.10)", border: "1px solid rgba(74,222,128,0.25)", borderRadius: "7px", padding: "6px 10px", textDecoration: "none", whiteSpace: "nowrap", textAlign: "center" }}
+                      >
+                        📤 Upload →
+                      </a>
+                      <button
+                        onClick={() => dismiss(partNumber, rec)}
+                        style={{ fontSize: "9px", color: "rgba(255,255,255,0.28)", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.10)", borderRadius: "5px", padding: "4px 8px", cursor: "pointer", whiteSpace: "nowrap" }}
+                      >
+                        ✓ भइसक्यो
+                      </button>
                     </div>
                   </div>
-                  <a
-                    href={`/vault/documents?upload=1`}
-                    style={{ flexShrink: 0, fontSize: "10px", fontWeight: 700, color: "#4ade80", background: "rgba(74,222,128,0.10)", border: "1px solid rgba(74,222,128,0.25)", borderRadius: "7px", padding: "6px 10px", textDecoration: "none", whiteSpace: "nowrap", alignSelf: "center" }}
-                  >
-                    📤 Upload →
-                  </a>
-                </div>
-              ))}
-            </div>
-          )
+                ))}
+              </>
+            )}
+          </div>
         )}
 
         {/* ── Tab: Empty branches ── */}
@@ -967,6 +1099,7 @@ export default function HealthDebugClient() {
   const [structMap,        setStructMap]        = useState<Map<number, PartStructuralProfile>>(new Map());
   const [deepLearnMap,     setDeepLearnMap]     = useState<Map<number, PartDeepLearnProfile>>(new Map());
   const [civicAtomsByPart, setCivicAtomsByPart] = useState<Map<number, number>>(new Map());
+  const [vaultTags,        setVaultTags]        = useState<Set<string>>(new Set());
   const [loading,          setLoading]          = useState(true);
 
   const [totalCivicAtoms,    setTotalCivicAtoms]    = useState(0);
@@ -979,57 +1112,71 @@ export default function HealthDebugClient() {
   useEffect(() => {
     if (!user) return;
 
+    // ── Consolidated data loader — each collection has its own catch so one
+    // failure never zeros out the rest. Phantom collections (constitutional_atoms,
+    // constitutional_relationships, vault_civic_atoms) removed — never written to.
+    // janta_intelligence MUST use ownerId filter — its rule has no isSignedIn()
+    // and an unfiltered query causes Firestore to reject the whole Promise.all.
+
+    const uid = user.uid;
+
+    const safe = <T,>(p: Promise<T>, fallback: T): Promise<T> => p.catch(e => {
+      console.warn("[HealthDebug] collection read failed:", e?.code ?? e);
+      return fallback;
+    });
+
+    const EMPTY_SNAP = { docs: [], size: 0 } as unknown as import("firebase/firestore").QuerySnapshot;
+
     Promise.all([
-      // ── Layer 2: Living intelligence ──────────────────────────────────────
-      getDocs(collection(db, "vault_civic_atoms")),           // new atom system
-      getDocs(collection(db, "janta_intelligence")),          // ALL janta records (no filter — fixes 0 count bug)
-      getDocs(collection(db, "civic_signals")),               // civic signals feed
+      // Layer 1: constitutional structure (isSignedIn() rule — safe unfiltered)
+      safe(getDocs(query(collection(db, "constitutional_framework"), where("ownerId", "==", uid))), EMPTY_SNAP),
 
-      // ── Layer 1: Constitutional structure ──────────────────────────────────
-      getDocs(collection(db, "constitutional_framework")),    // ALL framework records (no filter)
-      getDocs(collection(db, "constitutional_atoms")),        // separate atom collection if exists
-      getDocs(collection(db, "constitutional_relationships")),// cross-article relationships
+      // Layer 2: janta intelligence (owner-only rule — MUST filter by ownerId)
+      safe(getDocs(query(collection(db, "janta_intelligence"),       where("ownerId", "==", uid))), EMPTY_SNAP),
+
+      // Layer 2: civic signals (isSignedIn() rule — filter by owner for consistency)
+      safe(getDocs(query(collection(db, "civic_signals"),            where("ownerId", "==", uid))), EMPTY_SNAP),
+
+      // Vault documents — for recommendation satisfaction tag-matching
+      safe(getDocs(query(collection(db, "vault_documents"),          where("ownerId", "==", uid))), EMPTY_SNAP),
     ])
-      .then(([civicSnap, jantaSnap, signalsSnap, frameworkSnap, constitAtomsSnap, relsSnap]) => {
+      .then(([frameworkSnap, jantaSnap, signalsSnap, vaultSnap]) => {
 
-        // Layer 2 data
-        const civicAtoms   = civicSnap.docs.map(d => ({ id: d.id, ...d.data() } as CivicAtom));
-        const jantaRecs    = jantaSnap.docs.map(d => ({ id: d.id, ...d.data() } as IntelligenceRecord));
+        // Layer 1 — constitutional structure
+        const frameworkRecs = frameworkSnap.docs.map(d => ({ id: d.id, ...d.data() } as ConstitutionalFrameworkRecord));
 
-        // Layer 1 data: merge constitutional_framework + constitutional_atoms
-        const frameworkRecs   = frameworkSnap.docs.map(d => ({ id: d.id, ...d.data() } as ConstitutionalFrameworkRecord));
-        const constitAtomRecs = constitAtomsSnap.docs.map(d => ({ id: d.id, ...d.data() } as ConstitutionalFrameworkRecord));
-        const allConstRecs    = [...frameworkRecs, ...constitAtomRecs];
-
-        // Build intelligence signal list: bridge atoms + janta records
-        const bridged    = atomsToIntelRecords(civicAtoms);
-        // Filter janta to only published ones for health scoring, but count all
+        // Layer 2 — janta intelligence
+        const jantaRecs = jantaSnap.docs.map(d => ({ id: d.id, ...d.data() } as IntelligenceRecord));
+        // Only published records feed into health scoring; count all for the stat card
         const publishedJanta = jantaRecs.filter(r => r.publishToJanta === true);
-        const allIntel   = [...bridged, ...publishedJanta];
 
-        // Civic atoms per part (for completeness scoring)
-        const byPart = new Map<number, number>();
-        for (const atom of civicAtoms) {
-          for (const part of (atom.constitutionalParts ?? [])) {
-            byPart.set(part, (byPart.get(part) ?? 0) + 1);
+        // Vault document tags — for recommendation satisfaction cross-check
+        const allVaultTags = new Set<string>();
+        for (const d of vaultSnap.docs) {
+          const data = d.data() as Record<string, unknown>;
+          if (Array.isArray(data.tags)) {
+            (data.tags as unknown[]).forEach(t => { if (typeof t === "string") allVaultTags.add(t.toLowerCase()); });
           }
+          if (typeof data.category === "string") allVaultTags.add(data.category.toLowerCase());
         }
+        setVaultTags(allVaultTags);
 
-        // Update counts
-        setTotalCivicAtoms(civicAtoms.length);
-        setTotalJanta(jantaRecs.length);
+        // Update raw counts (all used by StatCards)
         setTotalFramework(frameworkRecs.length);
-        setTotalConstitAtoms(constitAtomRecs.length);
-        setTotalRelationships(relsSnap.size);
+        setTotalJanta(jantaRecs.length);
         setTotalSignals(signalsSnap.size);
-        setCivicAtomsByPart(byPart);
+        // Phantom collections — always 0 (removed from queries; kept as state for backward compat)
+        setTotalCivicAtoms(0);
+        setTotalConstitAtoms(0);
+        setTotalRelationships(0);
+        setCivicAtomsByPart(new Map());
 
         // Compute maps
-        setHealthMap(computeAllPartsHealth(PART_NUMBERS, allIntel));
-        setStructMap(computeAllStructuralProfiles(PART_NUMBERS, allConstRecs));
-        setDeepLearnMap(computeAllDeepLearnProfiles(PART_NUMBERS, allConstRecs));
+        setHealthMap(computeAllPartsHealth(PART_NUMBERS, publishedJanta));
+        setStructMap(computeAllStructuralProfiles(PART_NUMBERS, frameworkRecs));
+        setDeepLearnMap(computeAllDeepLearnProfiles(PART_NUMBERS, frameworkRecs));
       })
-      .catch(err => console.error("[HealthDebug]", err))
+      .catch(err => console.error("[HealthDebug] fatal:", err))
       .finally(() => setLoading(false));
   }, [user]);
 
@@ -1111,6 +1258,34 @@ export default function HealthDebugClient() {
         </Link>
       </div>
 
+      {/* ── Plain Nepali explanation (for anyone who doesn't know what this page is) ── */}
+      <div style={{ margin: "16px 24px 0", background: "rgba(251,191,36,0.05)", border: "1px solid rgba(251,191,36,0.15)", borderRadius: "12px", padding: "14px 18px" }}>
+        <p style={{ fontSize: "12px", fontWeight: 800, color: "#fbbf24", margin: "0 0 6px" }}>📖 यो पेज के हो? (सजिलो भाषामा)</p>
+        <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.60)", margin: "0 0 10px", lineHeight: 1.7 }}>
+          नेपालको संविधानका <strong style={{ color: "#fff" }}>३५ वटा भागहरू</strong> छन् — शिक्षा, स्वास्थ्य, न्याय, अर्थव्यवस्था आदि।<br/>
+          यो पेजले देखाउँछ: <strong style={{ color: "#4ade80" }}>तह १</strong> = संविधानले के भन्छ (PDF बाट AI ले पढेको),
+          <strong style={{ color: "#60a5fa" }}> तह २</strong> = वास्तवमा के भइरहेको छ (सरकारी documents, news, reports बाट)।<br/>
+          दुई तहको फरक = <strong style={{ color: "#f87171" }}>governance gap</strong> — जहाँ वाचा र हकिकत मेल खाँदैन।
+        </p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", fontSize: "11px" }}>
+          <span style={{ color: "rgba(255,255,255,0.35)" }}>
+            <span style={{ color: "#fbbf24", fontWeight: 700 }}>अङ्क सबै ० देखियो?</span> → Documents पेजमा गएर संविधान re-extract गर्नुस्, अनि यहाँ "🔧 PartNumber Repair" थिच्नुस्
+          </span>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", marginTop: "10px" }}>
+          {[
+            { href: "/vault/documents",        label: "📄 Documents — PDF upload गर्ने ठाउँ",    color: "#60a5fa" },
+            { href: "/vault/constitution",     label: "📜 Framework — सबै धाराहरू",              color: "#a78bfa" },
+            { href: "/vault/admin",            label: "👁 Review — AI निकालेको intelligence",    color: "#fb923c" },
+            { href: "/constitution",           label: "🌳 Public Tree — नागरिकले देख्ने पेज",   color: "#fbbf24" },
+          ].map(n => (
+            <Link key={n.href} href={n.href} style={{ fontSize: "11px", color: n.color, textDecoration: "underline", fontWeight: 700 }}>
+              {n.label}
+            </Link>
+          ))}
+        </div>
+      </div>
+
       {/* ── Header ── */}
       <div style={{ padding: "28px 24px 20px", borderBottom: "1px solid rgba(255,255,255,0.07)", background: "rgba(0,0,0,0.28)" }}>
         <p style={{ fontSize: "10px", color: "rgba(253,230,138,0.35)", letterSpacing: "0.14em", fontWeight: 700, margin: "0 0 5px" }}>VAULT · CONSTITUTION · HEALTH</p>
@@ -1121,7 +1296,7 @@ export default function HealthDebugClient() {
         {loading && (
           <p style={{ fontSize: "12px", color: "rgba(255,255,255,0.22)", margin: "12px 0 0", fontStyle: "italic" }}>सबै तह लोड गर्दै…</p>
         )}
-        <div style={{ marginTop: "12px" }}>
+        <div style={{ marginTop: "12px", display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "center" }}>
           <button
             onClick={handleDedup}
             disabled={deduping}
@@ -1129,8 +1304,11 @@ export default function HealthDebugClient() {
           >
             {deduping ? "🧹 Duplicate हटाउँदैछ…" : "🧹 Duplicate Records हटाउनुस्"}
           </button>
-          <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)", marginLeft: "10px" }}>
-            Extraction दोहोरियो भने यहाँ click गर्नुस् — पुरानो records राखेर नयाँ हटाउँछ
+          <Link href="/vault/constitution" style={{ fontSize: "11px", fontWeight: 700, padding: "6px 14px", borderRadius: "20px", border: "1px solid rgba(167,139,250,0.50)", color: "#a78bfa", background: "rgba(167,139,250,0.08)", textDecoration: "none", whiteSpace: "nowrap" }}>
+            🔧 Framework मा जानुस् → PartNumber Repair
+          </Link>
+          <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)" }}>
+            अङ्क ० देखिन्छ? → Framework पेजमा गएर repair button थिच्नुस्
           </span>
         </div>
       </div>
@@ -1172,6 +1350,8 @@ export default function HealthDebugClient() {
         <FounderGuidancePanel
           healthMap={healthMap}
           structMap={structMap}
+          vaultTags={vaultTags}
+          totalFramework={totalFramework}
         />
       )}
 

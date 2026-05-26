@@ -138,8 +138,19 @@ function toStrArray(v: unknown): string[] {
   return v.filter(x => typeof x === "string").map(x => (x as string).slice(0, 60));
 }
 
+// Converts Devanagari numerals ("३") or mixed strings ("भाग ३") to an integer.
+// parseInt("३", 10) returns NaN — this handles that case correctly.
+function devanagariToInt(v: unknown): number {
+  if (typeof v === "number") return isNaN(v) ? 0 : Math.floor(v);
+  const s = String(v ?? "0")
+    .replace(/[०-९]/g, d => String(d.charCodeAt(0) - 0x0966))
+    .replace(/[^\d]/g, "");
+  const n = parseInt(s, 10);
+  return isNaN(n) ? 0 : n;
+}
+
 function normalizeRecord(r: RawRecord, docId: string, docTitle: string, ownerId: string, now: string) {
-  const article = typeof r.article === "number" ? r.article : parseInt(String(r.article ?? "0"), 10);
+  const article = devanagariToInt(r.article);
   const clause  = r.clause != null && r.clause !== "" ? String(r.clause) : null;
   const articleId = (typeof r.articleId === "string" && r.articleId.trim())
     ? r.articleId.trim()
@@ -148,7 +159,7 @@ function normalizeRecord(r: RawRecord, docId: string, docTitle: string, ownerId:
   return {
     articleId,
     part:                  String(r.part               ?? "").slice(0, 100),
-    partNumber:            typeof r.partNumber === "number" ? r.partNumber : parseInt(String(r.partNumber ?? "0"), 10),
+    partNumber:            devanagariToInt(r.partNumber),
     article,
     clause,
     titleEnglish:          String(r.titleEnglish        ?? "").slice(0, 120),

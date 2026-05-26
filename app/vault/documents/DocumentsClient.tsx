@@ -18,7 +18,9 @@ import { DocumentViewer } from "../../../components/vault/documents/DocumentView
 import { LearnBlock } from "../../../components/vault/LearnTip";
 import { CivicIntelligencePipeline } from "../../../components/vault/CivicIntelligencePipeline";
 import { useLearningMode } from "../../../contexts/LearningModeContext";
-import type { IntelligenceDocument } from "../../../lib/types/documents";
+import type { IntelligenceDocument, GovFolder } from "../../../lib/types/documents";
+import { GOV_FOLDER_META } from "../../../lib/types/documents";
+import { WorkflowGuide, DOC_INTEL_STEPS, docIntelStep } from "../../../components/vault/WorkflowGuide";
 import type { QueueContentType, QueuePlatform } from "../../../lib/types/queue";
 
 function inferContentType(idea: string): QueueContentType {
@@ -81,6 +83,7 @@ export default function DocumentsClient() {
 
   const [search,       setSearch]      = useState("");
   const [filter,       setFilter]      = useState<FilterCategory>("all");
+  const [viewMode,     setViewMode]    = useState<"recent" | "library">("recent");
   const [showUpload,    setShowUpload]   = useState(false);
 
   // Auto-open upload modal when navigated from health page with ?upload=1
@@ -169,6 +172,22 @@ export default function DocumentsClient() {
       || d.detectedTopics?.some(t => t.toLowerCase().includes(q));
     return matchCat && matchSearch;
   });
+
+  // Library view: group filtered docs by govFolder, unclassified under "other"
+  const govFolderGroups = useMemo(() => {
+    const ORDER: GovFolder[] = [
+      "constitution", "budget-economy", "policy-planning", "parliament",
+      "judiciary", "local-governance", "citizen-intelligence", "media-signals", "other",
+    ];
+    const map = new Map<GovFolder, IntelligenceDocument[]>();
+    ORDER.forEach(f => map.set(f, []));
+    filtered.forEach(doc => {
+      const f: GovFolder = doc.govFolder ?? "other";
+      map.get(f)?.push(doc);
+    });
+    return ORDER.filter(f => (map.get(f)?.length ?? 0) > 0)
+      .map(f => ({ folder: f, docs: map.get(f)! }));
+  }, [filtered]);
 
   // Reset a stuck doc (processing_ai with no active session) back to "ready" so it can be retried
   const handleResetStuck = async (doc: IntelligenceDocument) => {
@@ -1014,6 +1033,34 @@ export default function DocumentsClient() {
           currentPage="documents"
         />
 
+        {/* Workflow guide — shown when any document is mid-pipeline */}
+        {(() => {
+          // Find the first doc that needs attention (not done)
+          const inProgress = docs.find(d =>
+            !((d as unknown as Record<string,unknown>).archived) &&
+            d.adminApprovalStatus !== "approved"
+          );
+          if (!inProgress) return null;
+          const step = docIntelStep(inProgress);
+
+          // Wire actionCallbacks for steps that need JS (analyze, extract)
+          const steps = DOC_INTEL_STEPS.map((s, i) => {
+            if (i === 1 && step === 1) return { ...s, actionCallback: () => handleProcess(inProgress) };
+            if (i === 3 && step === 3) return { ...s, actionCallback: () => handleRequestExtractIntel(inProgress) };
+            return s;
+          });
+
+          return (
+            <WorkflowGuide
+              workflowType="document-intelligence"
+              titleNp={`"${inProgress.title.slice(0, 40)}" — Document Intelligence Pipeline`}
+              steps={steps}
+              currentStep={step}
+              className="mb-5"
+            />
+          );
+        })()}
+
         {/* Upload toast */}
         {uploadToast && (
           <div className={`mb-4 border rounded-2xl px-5 py-3 flex items-center justify-between gap-4 transition-all ${
@@ -1217,14 +1264,34 @@ export default function DocumentsClient() {
 
         {/* Search + filter */}
         <div className="flex flex-col gap-2 mb-5">
-          <input
-            type="text"
-            placeholder="Document खोज्नुहोस् — title, topic, वा tag…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-600"
-          />
-          {/* Horizontal-scroll filter chips */}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Document खोज्नुहोस् — title, topic, वा tag…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-600"
+            />
+            {/* View toggle */}
+            <div className="flex rounded-xl border border-zinc-800 overflow-hidden shrink-0">
+              <button
+                onClick={() => setViewMode("recent")}
+                title="Recent view — chronological"
+                className={`px-3 py-2 text-xs font-bold transition-colors ${viewMode === "recent" ? "bg-white text-black" : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800"}`}
+              >
+                📋
+              </button>
+              <button
+                onClick={() => setViewMode("library")}
+                title="Library view — grouped by folder"
+                className={`px-3 py-2 text-xs font-bold transition-colors border-l border-zinc-800 ${viewMode === "library" ? "bg-amber-400 text-black" : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800"}`}
+              >
+                📁
+              </button>
+            </div>
+          </div>
+          {/* Horizontal-scroll filter chips — only shown in recent view */}
+          {viewMode === "recent" && (
           <div className="flex gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
             {ALL_CATEGORIES.map(cat => (
               <button
@@ -1240,6 +1307,7 @@ export default function DocumentsClient() {
               </button>
             ))}
           </div>
+          )}
           {/* Learning mode: what to upload per category */}
           {learn && filter !== "all" && CAT_EXAMPLES[filter] && (
             <div className="flex items-center gap-2 flex-wrap pt-1">
@@ -1333,6 +1401,63 @@ export default function DocumentsClient() {
                 </button>
               </div>
             )}
+          </div>
+        ) : viewMode === "library" ? (
+          /* ── Library view — grouped by govFolder ── */
+          <div className="space-y-6">
+            {govFolderGroups.length === 0 ? (
+              <p className="text-zinc-500 text-sm text-center py-8">कुनै document फेला परेन।</p>
+            ) : govFolderGroups.map(({ folder, docs: groupDocs }) => {
+              const meta = GOV_FOLDER_META[folder];
+              return (
+                <div key={folder} className="space-y-3">
+                  {/* Folder header */}
+                  <div className="flex items-center gap-2 pb-1 border-b border-zinc-800">
+                    <span className="text-lg">{meta.icon}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-black text-white">{meta.np}</p>
+                      <p className="text-zinc-600 text-[10px]">{meta.desc}</p>
+                    </div>
+                    <span className="text-zinc-600 text-xs font-semibold shrink-0">{groupDocs.length} docs</span>
+                  </div>
+                  {/* Docs in this folder */}
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {groupDocs.map(doc => (
+                      <DocumentCard
+                        key={doc.id}
+                        doc={doc}
+                        isProcessing={processingId === doc.id}
+                        queueCount={queueCountByDoc[doc.id] ?? 0}
+                        onView={setViewing}
+                        onProcess={handleProcess}
+                        onDelete={handleDelete}
+                        onGenerateQueue={handleGenerateQueueItems}
+                        onResetStuck={handleResetStuck}
+                        onExtractIntel={handleRequestExtractIntel}
+                        onExtractPoints={handleExtractPoints}
+                        onExtractPromises={handleExtractPromises}
+                        onExtractConstitution={handleExtractConstitution}
+                        onGenerateImage={handleGenerateImage}
+                        onArchive={handleArchive}
+                        isExtractingIntel={extractingIntelId === doc.id}
+                        isMatchingIntel={matchingIntelId === doc.id}
+                        isExtractingPoints={extractingPointsId === doc.id}
+                        isExtractingPromises={extractingPromisesId === doc.id}
+                        isExtractingConstitution={extractingConstitutionId === doc.id}
+                        isGeneratingImage={generatingImageId === doc.id}
+                        isArchiving={archivingId === doc.id}
+                        intelCount={intelCountByDoc[doc.id] ?? 0}
+                        pointCount={pointCountByDoc[doc.id] ?? 0}
+                        promiseCount={promiseCountByDoc[doc.id] ?? 0}
+                        relCount={relCountByDoc[doc.id] ?? 0}
+                        constitutionCount={constitutionCountByDoc[doc.id] ?? 0}
+                        constitutionBatch={extractingConstitutionId === doc.id ? constitutionBatch : 0}
+                      />
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">

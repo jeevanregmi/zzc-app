@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { collection, query, where, getDocs, deleteDoc, doc } from "firebase/firestore";
+import { collection, query, where, getDocs, deleteDoc, doc, updateDoc } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useVaultAuth } from "../../../hooks/vault/useVaultAuth";
 import type { ConstitutionalFrameworkRecord } from "../../../lib/types/constitutional-framework";
 import Link from "next/link";
+import { WorkflowGuide, CONSTITUTION_EXTRACT_STEPS } from "../../../components/vault/WorkflowGuide";
 
 // ─── Stats Panel ───────────────────────────────────────────────────────────────
 
@@ -327,10 +328,11 @@ function PartSection({
 export default function ConstitutionAdminClient() {
   const { user, loading: authLoading, isOwner } = useVaultAuth();
 
-  const [records,  setRecords]  = useState<ConstitutionalFrameworkRecord[]>([]);
-  const [loading,  setLoading]  = useState(true);
-  const [deleting, setDeleting] = useState<string | null>(null);
-  const [deduping, setDeduping] = useState(false);
+  const [records,   setRecords]   = useState<ConstitutionalFrameworkRecord[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [deleting,  setDeleting]  = useState<string | null>(null);
+  const [deduping,  setDeduping]  = useState(false);
+  const [repairing, setRepairing] = useState(false);
 
   useEffect(() => {
     if (!user?.uid) return;
@@ -414,6 +416,60 @@ export default function ConstitutionAdminClient() {
     }
   };
 
+  // Repair records where partNumber=0 or article=0 without re-extracting.
+  // Extracts the correct number from the `part` string ("भाग ३" → 3) and
+  // the `articleId` field ("art-18" → 18) stored by the extraction pipeline.
+  const handleRepairPartNumbers = async () => {
+    const broken = records.filter(r => (r.partNumber ?? 0) === 0 || (r.article ?? 0) === 0);
+    if (broken.length === 0) {
+      alert("✅ सबै records मा सही partNumber र article छ — repair आवश्यक छैन।");
+      return;
+    }
+    if (!confirm(`${broken.length} records मा partNumber=0 वा article=0 छ। Firestore data repair गर्ने?\n\nRe-extraction हुँदैन — केवल existing data बाट सही number निकालिनेछ।`)) return;
+
+    function devanagariToInt(s: string): number {
+      const converted = s.replace(/[०-९]/g, d => String(d.charCodeAt(0) - 0x0966)).replace(/[^\d]/g, "");
+      const n = parseInt(converted, 10);
+      return isNaN(n) ? 0 : n;
+    }
+
+    setRepairing(true);
+    let fixed = 0;
+    try {
+      for (const r of broken) {
+        if (!r.id) continue;
+        const updates: Record<string, number> = {};
+
+        if ((r.partNumber ?? 0) === 0 && r.part) {
+          const pn = devanagariToInt(r.part);
+          if (pn > 0) updates.partNumber = pn;
+        }
+
+        if ((r.article ?? 0) === 0 && r.articleId) {
+          // articleId format: "art-18" or "art-18-a"
+          const match = r.articleId.match(/^art-(\d+)/);
+          if (match) {
+            const an = parseInt(match[1], 10);
+            if (!isNaN(an) && an > 0) updates.article = an;
+          }
+        }
+
+        if (Object.keys(updates).length > 0) {
+          await updateDoc(doc(db, "constitutional_framework", r.id), updates);
+          setRecords(prev => prev.map(rec =>
+            rec.id === r.id ? { ...rec, ...updates } : rec
+          ));
+          fixed++;
+        }
+      }
+      alert(`✅ Repair सम्पन्न! ${fixed} records ठीक गरियो।\n\nBranch Health page refresh गर्नुस् — अब data देखिनेछ।`);
+    } catch (err) {
+      alert(`Repair failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setRepairing(false);
+    }
+  };
+
   const handleDeleteAll = async () => {
     if (!confirm(`सबै ${records.length} constitutional framework records DELETE गर्ने? यो reversible छैन।`)) return;
     try {
@@ -457,11 +513,26 @@ export default function ConstitutionAdminClient() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Link
+              href="/vault/constitution/health"
+              className="text-xs font-bold px-3 py-1.5 rounded-xl bg-green-950/40 border border-green-800 text-green-400 hover:bg-green-900/60 transition-colors"
+            >
+              🩺 Branch Health →
+            </Link>
+            <Link
               href="/constitution"
               className="text-xs font-bold px-3 py-1.5 rounded-xl bg-amber-900/40 border border-amber-800 text-amber-400 hover:bg-amber-900/60 transition-colors"
             >
               🌳 Tree UI →
             </Link>
+            {records.length > 0 && (
+              <button
+                onClick={handleRepairPartNumbers}
+                disabled={repairing}
+                className="text-xs font-bold px-3 py-1.5 rounded-xl bg-purple-950/60 border border-purple-800 text-purple-400 hover:bg-purple-900/40 transition-colors disabled:opacity-50"
+              >
+                {repairing ? "Repair हुँदैछ…" : "🔧 PartNumber Repair"}
+              </button>
+            )}
             {records.length > 0 && (
               <button
                 onClick={handleDedup}
@@ -482,18 +553,51 @@ export default function ConstitutionAdminClient() {
           </div>
         </div>
 
+        {/* Plain Nepali page explanation */}
+        <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 space-y-2">
+          <p className="text-amber-400 font-black text-sm">📖 यो पेज के हो?</p>
+          <p className="text-zinc-300 text-xs leading-relaxed">
+            यहाँ नेपालको <strong className="text-white">संविधान २०७२</strong> का सबै धाराहरू (articles) देखिन्छन् — AI ले PDF पढेर निकालेको।
+            प्रत्येक धारामा के अधिकार छ, कुन संस्थाको उल्लेख छ, कुन नागरिक समूहलाई असर गर्छ — यी सबै हेर्न सकिन्छ।
+          </p>
+          <div className="flex flex-wrap gap-3 pt-1">
+            <div className="text-zinc-500 text-xs">
+              <span className="text-green-400 font-bold">🔧 PartNumber Repair</span> — कुनै धाराको भाग नम्बर सही नभए यो थिच्नुस् (re-extraction हुँदैन, data ठीक मात्र हुन्छ)
+            </div>
+            <div className="text-zinc-500 text-xs">
+              <span className="text-blue-400 font-bold">🔁 Duplicate हटाउनुस्</span> — एकै धारा दुईपटक देखियो भने यो थिच्नुस्
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Link href="/vault/documents" className="text-xs text-blue-400 hover:text-blue-300 underline">📄 Documents (PDF upload गर्ने ठाउँ)</Link>
+            <span className="text-zinc-700">·</span>
+            <Link href="/vault/constitution/health" className="text-xs text-green-400 hover:text-green-300 underline">🩺 Branch Health (प्रत्येक भागको स्वास्थ्य)</Link>
+            <span className="text-zinc-700">·</span>
+            <Link href="/constitution" className="text-xs text-amber-400 hover:text-amber-300 underline">🌳 Public Tree (नागरिकले देख्ने पेज)</Link>
+          </div>
+        </div>
+
+        {/* Workflow guide — constitution extraction pipeline */}
+        {!loading && (
+          <WorkflowGuide
+            workflowType="constitution-extraction"
+            titleNp="संविधान Extraction Pipeline"
+            steps={CONSTITUTION_EXTRACT_STEPS}
+            currentStep={records.length === 0 ? 0 : records.some(r => (r.partNumber ?? 0) === 0) ? 2 : 3}
+            className="mb-2"
+          />
+        )}
+
         {/* Stats */}
         {!loading && records.length > 0 && <StatsPanel records={records} />}
 
         {/* Empty state */}
         {!loading && records.length === 0 && (
-          <div className="border border-dashed border-zinc-800 rounded-2xl p-12 text-center space-y-4">
-            <p className="text-5xl">📜</p>
-            <p className="text-white font-bold text-lg">संवैधानिक ढाँचा खाली छ</p>
+          <div className="border border-dashed border-zinc-800 rounded-2xl p-8 text-center space-y-3">
+            <p className="text-3xl">📜</p>
+            <p className="text-white font-bold">संवैधानिक ढाँचा खाली छ</p>
             <p className="text-zinc-600 text-sm max-w-sm mx-auto">
-              Vault मा Constitution PDF upload गरेर{" "}
-              <span className="text-amber-400 font-semibold">"📜 संविधान Framework निकाल्नुहोस्"</span>{" "}
-              button click गर्नुस्।
+              Vault Documents मा Constitution PDF upload गरेर &ldquo;📜 संविधान Framework निकाल्नुहोस्&rdquo; button click गर्नुस् — माथिको workflow guide follow गर्नुस्।
             </p>
             <Link
               href="/vault/documents"
