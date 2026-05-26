@@ -55,10 +55,13 @@ export function useCTOInsights(uid: string | null) {
 
       // ── Constitutional parts ──────────────────────────────────────────────
       const partCounts = new Map<number, number>();
+      let brokenFrameworkRecords = 0;
       (frameworkSnap.docs ?? []).forEach(d => {
         const pn = (d.data() as Record<string, unknown>).partNumber as number | undefined;
         if (typeof pn === "number" && pn > 0) {
           partCounts.set(pn, (partCounts.get(pn) ?? 0) + 1);
+        } else {
+          brokenFrameworkRecords++;
         }
       });
       const emptyParts: number[] = [];
@@ -96,6 +99,7 @@ export function useCTOInsights(uid: string | null) {
         approvedNoExtractTitles: approvedNoExtract.slice(0, 2).map(d => String(d.title ?? "Untitled")),
         docsPaused:              paused.length,
         totalFramework:          frameworkSnap.size ?? 0,
+        brokenFrameworkRecords,
         emptyParts,
         partsWithData,
         totalIntel:              intelSnap.size ?? 0,

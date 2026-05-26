@@ -56,6 +56,7 @@ export interface SystemSnapshot {
   approvedNoExtractTitles: string[];
   docsPaused:              number;
   totalFramework:          number;
+  brokenFrameworkRecords:  number;   // partNumber === 0 — need PartNumber Repair
   emptyParts:              number[];
   partsWithData:           number;
   totalIntel:              number;
@@ -152,6 +153,25 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
       costWarning: snap.docsTotal > 0
         ? "Constitution extraction ले 22 batch API calls लाग्छ। एकपटक सकिएपछि re-extract आवश्यक हुँदैन।"
         : undefined,
+    });
+  }
+
+  // ── Constitution: partNumber=0 broken records ──────────────────────────────
+  // These records exist but Branch Health can't read them — they look like empty parts.
+  if (snap.brokenFrameworkRecords > 0 && snap.totalFramework > 0) {
+    pool.push({
+      id:          "broken_framework",
+      type:        "constitution_gap",
+      priority:    snap.brokenFrameworkRecords > 50 ? "high" : "medium",
+      icon:        "🔧",
+      titleNp:     `${snap.brokenFrameworkRecords} धाराहरू "भाग ०" मा अड्किएका छन्`,
+      bodyNp:      `AI ले देवनागरी अंक ("भाग ३" → "भाग 0") पढ्न सकेन। Branch Health ले यी records देख्दैन — सबै parts खाली देखिन्छन्।`,
+      whyNp:       "Extraction को bug: `parseInt(\"३\", 10)` = NaN = 0। Repair ले `part` field बाट सही number निकाल्छ — re-extraction हुँदैन, AI cost छैन, content बदलिँदैन। ३०–६० seconds लाग्छ।",
+      actionLabel: "PartNumber Repair → /vault/constitution",
+      actionHref:  "/vault/constitution",
+      count:       snap.brokenFrameworkRecords,
+      dismissable: false,
+      costWarning: undefined, // explicitly safe — no AI, no re-extraction
     });
   }
 

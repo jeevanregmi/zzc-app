@@ -488,6 +488,32 @@ export default function ConstitutionAdminClient() {
     );
   }
 
+  // Derived state — how many records have partNumber=0
+  const brokenCount = records.filter(r => (r.partNumber ?? 0) === 0).length;
+
+  // WorkflowGuide steps — override repair step with live count + callback
+  const constitutionSteps = useMemo(
+    () => CONSTITUTION_EXTRACT_STEPS.map(s =>
+      s.id !== "repair" ? s : {
+        ...s,
+        labelNp:        brokenCount > 0 ? `PartNumber Repair (${brokenCount} records)` : "PartNumber Repair",
+        whyNp:          `AI ले देवनागरी अंक ("भाग ३" → parseInt("३",10) = NaN = 0) पढ्न सकेन। ${brokenCount} धाराहरू "भाग ०" मा छन् — Branch Health ले देख्दैन। Repair ले "part" field बाट सही भाग निकाल्छ। AI call छैन, content बदलिँदैन, ३०–६० sec लाग्छ।`,
+        actionLabel:    brokenCount > 0
+          ? `${brokenCount} भाग-० धाराहरूलाई सही भागमा मिलाउनुहोस्`
+          : "Repair गर्नुहोस्",
+        actionCallback: handleRepairPartNumbers,
+        actionHref:     undefined,
+      }
+    ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [brokenCount]
+  );
+
+  // WorkflowGuide step index
+  const constitutionStep = records.length === 0 ? 0
+    : brokenCount > 0                           ? 2
+    :                                             3;
+
   return (
     <div className="min-h-screen bg-black text-white">
 
@@ -501,89 +527,133 @@ export default function ConstitutionAdminClient() {
         {records.length > 0 && (
           <span className="text-zinc-700 text-xs">· {records.length} धाराहरू · {parts.length} भागहरू</span>
         )}
+        {/* Secondary actions — small, unobtrusive */}
+        <div className="ml-auto flex items-center gap-2">
+          <Link href="/vault/constitution/health" className="text-xs font-bold px-2.5 py-1 rounded-lg bg-green-950/40 border border-green-900 text-green-400 hover:bg-green-900/40 transition-colors">🩺 Health</Link>
+          <Link href="/constitution" className="text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-900/30 border border-amber-900 text-amber-400 hover:bg-amber-900/40 transition-colors">🌳 Tree</Link>
+          {records.length > 0 && (
+            <button onClick={handleDedup} disabled={deduping}
+              className="text-xs px-2.5 py-1 rounded-lg border border-zinc-800 text-zinc-500 hover:text-blue-400 hover:border-blue-900 transition-colors disabled:opacity-40"
+            >
+              {deduping ? "…" : "Dedup"}
+            </button>
+          )}
+          {records.length > 0 && (
+            <button onClick={handleDeleteAll}
+              className="text-xs text-zinc-700 hover:text-red-500 transition-colors px-1"
+            >सबै मेटाउनुस्</button>
+          )}
+        </div>
       </nav>
 
-      <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
+      <div className="max-w-4xl mx-auto px-4 py-6 space-y-5">
 
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-2xl font-black text-white tracking-tight">नेपालको संविधान</h1>
-            <p className="text-zinc-600 text-sm mt-1">२०७२ सालको संविधान · संवैधानिक मूल ढाँचा</p>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <Link
-              href="/vault/constitution/health"
-              className="text-xs font-bold px-3 py-1.5 rounded-xl bg-green-950/40 border border-green-800 text-green-400 hover:bg-green-900/60 transition-colors"
-            >
-              🩺 Branch Health →
-            </Link>
-            <Link
-              href="/constitution"
-              className="text-xs font-bold px-3 py-1.5 rounded-xl bg-amber-900/40 border border-amber-800 text-amber-400 hover:bg-amber-900/60 transition-colors"
-            >
-              🌳 Tree UI →
-            </Link>
-            {records.length > 0 && (
-              <button
-                onClick={handleRepairPartNumbers}
-                disabled={repairing}
-                className="text-xs font-bold px-3 py-1.5 rounded-xl bg-purple-950/60 border border-purple-800 text-purple-400 hover:bg-purple-900/40 transition-colors disabled:opacity-50"
-              >
-                {repairing ? "Repair हुँदैछ…" : "🔧 PartNumber Repair"}
-              </button>
-            )}
-            {records.length > 0 && (
-              <button
-                onClick={handleDedup}
-                disabled={deduping}
-                className="text-xs font-bold px-3 py-1.5 rounded-xl bg-blue-950/60 border border-blue-800 text-blue-400 hover:bg-blue-900/40 transition-colors disabled:opacity-50"
-              >
-                {deduping ? "Dedup हुँदैछ…" : "🔁 Duplicate हटाउनुस्"}
-              </button>
-            )}
-            {records.length > 0 && (
-              <button
-                onClick={handleDeleteAll}
-                className="text-xs text-zinc-700 hover:text-red-500 transition-colors px-2 py-1"
-              >
-                सबै मेटाउनुस्
-              </button>
-            )}
-          </div>
+        <div>
+          <h1 className="text-2xl font-black text-white tracking-tight">नेपालको संविधान</h1>
+          <p className="text-zinc-500 text-sm mt-0.5">२०७२ सालको संविधान · संवैधानिक मूल ढाँचा (Layer 1)</p>
         </div>
 
-        {/* Plain Nepali page explanation */}
-        <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-4 space-y-2">
-          <p className="text-amber-400 font-black text-sm">📖 यो पेज के हो?</p>
-          <p className="text-zinc-300 text-xs leading-relaxed">
-            यहाँ नेपालको <strong className="text-white">संविधान २०७२</strong> का सबै धाराहरू (articles) देखिन्छन् — AI ले PDF पढेर निकालेको।
-            प्रत्येक धारामा के अधिकार छ, कुन संस्थाको उल्लेख छ, कुन नागरिक समूहलाई असर गर्छ — यी सबै हेर्न सकिन्छ।
-          </p>
-          <div className="flex flex-wrap gap-3 pt-1">
-            <div className="text-zinc-500 text-xs">
-              <span className="text-green-400 font-bold">🔧 PartNumber Repair</span> — कुनै धाराको भाग नम्बर सही नभए यो थिच्नुस् (re-extraction हुँदैन, data ठीक मात्र हुन्छ)
+        {/* ── Founder Cockpit Card — shows ONLY when action is needed ── */}
+        {!loading && brokenCount > 0 && (
+          <div className="rounded-2xl border border-amber-800 bg-amber-950/30 p-5 space-y-4">
+            {/* What is wrong */}
+            <div className="flex items-start gap-3">
+              <span className="text-2xl shrink-0">🔧</span>
+              <div className="min-w-0">
+                <p className="text-amber-400 font-black text-base leading-snug">
+                  {brokenCount} धाराहरू "भाग ०" मा अड्किएका छन्
+                </p>
+                <p className="text-zinc-400 text-xs leading-relaxed mt-1">
+                  AI ले देवनागरी अंकहरू गलत पढ्यो — "भाग ३" भन्ने "भाग 0" बन्यो।
+                  Branch Health ले यी {brokenCount} records देख्दैन, त्यसैले सबै भागहरू खाली देखिन्छन्।
+                </p>
+              </div>
             </div>
-            <div className="text-zinc-500 text-xs">
-              <span className="text-blue-400 font-bold">🔁 Duplicate हटाउनुस्</span> — एकै धारा दुईपटक देखियो भने यो थिच्नुस्
+
+            {/* Why it matters */}
+            <div className="bg-zinc-900/70 border border-zinc-800 rounded-xl px-4 py-3 space-y-1.5">
+              <p className="text-zinc-300 text-xs font-black">यो किन महत्त्वपूर्ण छ?</p>
+              <p className="text-zinc-500 text-xs leading-relaxed">
+                Repair नगरेसम्म Branch Health page मा सबै ३५ भागहरू "खाली" देखिन्छन् —
+                Constitution Tree काम गर्दैन।
+                Pipeline को यो एउटा step सकियो भने system पूरा ready हुन्छ।
+              </p>
             </div>
+
+            {/* Stats grid */}
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { label: "भाग-० records",  value: brokenCount,        color: "text-amber-400" },
+                { label: "Total records",   value: records.length,     color: "text-white"     },
+                { label: "AI cost",         value: "₀",                color: "text-green-400" },
+                { label: "Repair समय",      value: "~30s",             color: "text-blue-400"  },
+              ].map(s => (
+                <div key={s.label} className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-2.5 text-center">
+                  <p className={`text-base font-black ${s.color}`}>{s.value}</p>
+                  <p className="text-zinc-600 text-[9px] mt-0.5 uppercase tracking-wide">{s.label}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Safety checklist */}
+            <div className="space-y-1">
+              {[
+                { ok: true,  text: "Content बदलिँदैन — केवल part number assign हुन्छ" },
+                { ok: true,  text: "Re-extraction हुँदैन — `part` field को text बाट number निकालिन्छ" },
+                { ok: true,  text: "AI call छैन — Firestore update मात्र (cost = ₀)" },
+                { ok: true,  text: "Safe — undo गर्न नमिले पनि content intact रहन्छ" },
+              ].map(({ ok, text }) => (
+                <div key={text} className="flex items-start gap-2">
+                  <span className={`text-xs shrink-0 mt-0.5 ${ok ? "text-green-400" : "text-red-400"}`}>{ok ? "✓" : "✗"}</span>
+                  <p className="text-zinc-400 text-xs leading-relaxed">{text}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Primary action */}
+            <button
+              onClick={handleRepairPartNumbers}
+              disabled={repairing}
+              className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-50 text-black font-black py-3 rounded-xl text-sm transition-colors"
+            >
+              {repairing
+                ? "Repair हुँदैछ…"
+                : `${brokenCount} भाग-० धाराहरूलाई सही भागमा मिलाउनुहोस् →`}
+            </button>
+            <p className="text-zinc-600 text-[10px] text-center">
+              Repair सकिएपछि Branch Health page मा सबै ३५ भागहरू देखिन्छन्।
+            </p>
           </div>
-          <div className="flex flex-wrap gap-2 pt-1">
-            <Link href="/vault/documents" className="text-xs text-blue-400 hover:text-blue-300 underline">📄 Documents (PDF upload गर्ने ठाउँ)</Link>
-            <span className="text-zinc-700">·</span>
-            <Link href="/vault/constitution/health" className="text-xs text-green-400 hover:text-green-300 underline">🩺 Branch Health (प्रत्येक भागको स्वास्थ्य)</Link>
-            <span className="text-zinc-700">·</span>
-            <Link href="/constitution" className="text-xs text-amber-400 hover:text-amber-300 underline">🌳 Public Tree (नागरिकले देख्ने पेज)</Link>
+        )}
+
+        {/* ── All good: show pipeline progress ── */}
+        {!loading && records.length > 0 && brokenCount === 0 && (
+          <div className="rounded-2xl border border-green-900 bg-green-950/20 p-4 flex items-center gap-3">
+            <span className="text-2xl">✅</span>
+            <div>
+              <p className="text-green-400 font-black text-sm">Constitution Framework ready!</p>
+              <p className="text-zinc-500 text-xs mt-0.5">
+                सबै {records.length} धाराहरू correct part number सहित save भए।
+                Branch Health page मा verify गर्नुस्।
+              </p>
+            </div>
+            <Link
+              href="/vault/constitution/health"
+              className="ml-auto shrink-0 text-xs font-black px-3 py-2 rounded-xl bg-green-900/40 border border-green-800 text-green-400 hover:bg-green-900/60 transition-colors"
+            >
+              Branch Health →
+            </Link>
           </div>
-        </div>
+        )}
 
         {/* Workflow guide — constitution extraction pipeline */}
         {!loading && (
           <WorkflowGuide
             workflowType="constitution-extraction"
             titleNp="संविधान Extraction Pipeline"
-            steps={CONSTITUTION_EXTRACT_STEPS}
-            currentStep={records.length === 0 ? 0 : records.some(r => (r.partNumber ?? 0) === 0) ? 2 : 3}
+            steps={constitutionSteps}
+            currentStep={constitutionStep}
             className="mb-2"
           />
         )}
