@@ -571,6 +571,7 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
   }, []);
 
   const insights = rawInsights.filter(i => i.priority === "critical" || !dismissed.has(i.id));
+  const [panelTab, setPanelTab] = useState<"insights" | "commands">("insights");
 
   const handleDismiss = useCallback((id: string) => {
     dismissInsight(id);
@@ -584,8 +585,6 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
   const criticalCount = insights.filter(i => i.priority === "critical").length;
   const highCount     = insights.filter(i => i.priority === "high").length;
   const urgentCount   = criticalCount + highCount;
-
-  const [panelTab, setPanelTab] = useState<"insights" | "commands">("insights");
 
   const isHealthy    = insights.length === 1 && insights[0]?.type === "system_healthy";
   const topInsight   = insights[0] ?? null;
