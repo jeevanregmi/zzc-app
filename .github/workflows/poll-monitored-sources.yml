@@ -4,8 +4,8 @@ name: Poll Monitored Sources
 # No Bedrock dependency. Writes raw SourceSignals only; admin validates in vault.
 on:
   schedule:
-    # Hourly at :30, offset from update-rates (:15) to avoid burst
-    - cron: "30 * * * *"
+    # Every 6 hours — conserves Firestore free-tier quota
+    - cron: "30 0,6,12,18 * * *"
   workflow_dispatch:
 
 jobs:

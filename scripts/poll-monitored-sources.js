@@ -231,6 +231,11 @@ async function main() {
   const sources = snap.docs.map(d => ({ _docId: d.id, ...d.data() }));
   console.log(`Found ${sources.length} active monitored source(s)`);
 
+  if (sources.length === 0) {
+    console.log("No active sources — exiting early (no further Firestore reads).");
+    process.exit(0);
+  }
+
   // Load routes once — shared across all signals this run
   const routes = await loadActiveRoutes();
   console.log(`Loaded ${routes.length} active signal route(s)\n`);
