@@ -423,7 +423,7 @@ export default function ConstitutionAdminClient() {
   // Extracts the correct number from the `part` string ("भाग ३" → 3) and
   // the `articleId` field ("art-18" → 18) stored by the extraction pipeline.
   const handleRepairPartNumbers = async () => {
-    const broken = records.filter(r => (r.partNumber ?? 0) === 0 || (r.article ?? 0) === 0);
+    const broken = records.filter(r => r.partNumber === 0 || r.article === 0);
     if (broken.length === 0) {
       alert("✅ सबै records मा सही partNumber र article छ — repair आवश्यक छैन।");
       return;
@@ -491,12 +491,16 @@ export default function ConstitutionAdminClient() {
     );
   }
 
-  // Derived state — how many records have partNumber=0
-  const brokenCount = records.filter(r => (r.partNumber ?? 0) === 0).length;
+  // Records where partNumber is exactly 0 AND a `part` string exists — these CAN be auto-repaired.
+  const repairableCount   = records.filter(r => r.partNumber === 0 && !!r.part).length;
+  // Records with no partNumber at all — need manual constitutional review, cannot be auto-repaired.
+  const unclassifiedCount = records.filter(r => r.partNumber == null).length;
+  // Combined for session tracker / workflow guide
+  const brokenCount = repairableCount + unclassifiedCount;
 
   // Track active task for Founder Cockpit "last session" continuity
   useSessionTracker(brokenCount > 0 ? {
-    labelNp: `${brokenCount} धाराहरू सही संविधान भागमा मिलाउन बाँकी छ`,
+    labelNp: `${brokenCount} धाराहरू constitutional review आवश्यक`,
     href:    "/vault/constitution",
   } : null);
 
@@ -505,22 +509,24 @@ export default function ConstitutionAdminClient() {
     () => CONSTITUTION_EXTRACT_STEPS.map(s =>
       s.id !== "repair" ? s : {
         ...s,
-        labelNp:        brokenCount > 0 ? `PartNumber Repair (${brokenCount} records)` : "PartNumber Repair",
-        whyNp:          `AI ले देवनागरी अंक ("भाग ३" → parseInt("३",10) = NaN = 0) पढ्न सकेन। ${brokenCount} धाराहरू "भाग ०" मा छन् — Branch Health ले देख्दैन। Repair ले "part" field बाट सही भाग निकाल्छ। AI call छैन, content बदलिँदैन, ३०–६० sec लाग्छ।`,
-        actionLabel:    brokenCount > 0
-          ? `${brokenCount} भाग-० धाराहरूलाई सही भागमा मिलाउनुहोस्`
-          : "Repair गर्नुहोस्",
-        actionCallback: handleRepairPartNumbers,
+        labelNp:        repairableCount > 0 ? `PartNumber Repair (${repairableCount} records)` : "PartNumber Repair",
+        whyNp:          repairableCount > 0
+          ? `AI ले देवनागरी अंक ("भाग ३" → parseInt("३",10) = NaN = 0) पढ्न सकेन। ${repairableCount} धाराहरू "भाग ०" मा छन् — Branch Health ले देख्दैन। Repair ले "part" field बाट सही भाग निकाल्छ। AI call छैन, content बदलिँदैन, ३०–६० sec लाग्छ।`
+          : "सबै repairable records ठीक भए।",
+        actionLabel:    repairableCount > 0
+          ? `${repairableCount} भाग-० धाराहरूलाई सही भागमा मिलाउनुहोस्`
+          : "Repair सकियो",
+        actionCallback: repairableCount > 0 ? handleRepairPartNumbers : undefined,
         actionHref:     undefined,
       }
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [brokenCount]
+    [repairableCount]
   );
 
   // WorkflowGuide step index
   const constitutionStep = records.length === 0 ? 0
-    : brokenCount > 0                           ? 2
+    : repairableCount > 0                       ? 2
     :                                             3;
 
   return (
@@ -564,8 +570,8 @@ export default function ConstitutionAdminClient() {
           <p className="text-zinc-500 text-sm mt-0.5">२०७२ सालको संविधान · संवैधानिक मूल ढाँचा (Layer 1)</p>
         </div>
 
-        {/* ── Action needed: धाराहरू सही भागमा पुगेका छैनन् ── */}
-        {!loading && brokenCount > 0 && (
+        {/* ── Auto-repairable records ── */}
+        {!loading && repairableCount > 0 && (
           <div className="rounded-2xl border border-amber-800/70 bg-amber-950/25 p-5 space-y-4">
 
             {/* What is happening */}
@@ -573,11 +579,11 @@ export default function ConstitutionAdminClient() {
               <span className="text-2xl shrink-0">⚠️</span>
               <div className="min-w-0">
                 <p className="text-amber-400 font-black text-base leading-snug">
-                  {brokenCount} धाराहरू सही संविधान भागमा पुगेका छैनन्
+                  {repairableCount} धाराहरू सही संविधान भागमा पुगेका छैनन् — Auto-repair सम्भव छ
                 </p>
                 <p className="text-zinc-400 text-xs leading-relaxed mt-1">
                   AI ले देवनागरी अंकहरू गलत पढ्यो — "भाग ३" भन्ने सिस्टमले "भाग ०" मा राख्यो।
-                  यी {brokenCount} धाराहरू Branch Health ले देख्दैन।
+                  यी {repairableCount} धाराहरू Branch Health ले देख्दैन। Repair गर्न सकिन्छ।
                 </p>
               </div>
             </div>
@@ -628,7 +634,7 @@ export default function ConstitutionAdminClient() {
             >
               {repairing
                 ? "मिलाइँदैछ…"
-                : `${brokenCount} धाराहरू सही भागमा मिलाउनुहोस् →`}
+                : `${repairableCount} धाराहरू सही भागमा मिलाउनुहोस् →`}
             </button>
             <p className="text-zinc-700 text-[10px] text-center">
               यो सकियो भने Branch Health page मा सबै ३५ भाग देखिन्छन्
@@ -639,10 +645,42 @@ export default function ConstitutionAdminClient() {
               <div className="bg-orange-950/20 border border-orange-900/40 rounded-xl px-3 py-2 space-y-1">
                 <p className="text-orange-500 text-[9px] font-black uppercase tracking-widest">🛠 Debug</p>
                 <p className="text-zinc-600 text-[10px] font-mono">collection: constitutional_framework</p>
-                <p className="text-zinc-600 text-[10px] font-mono">filter: partNumber === 0 ({brokenCount} records)</p>
+                <p className="text-zinc-600 text-[10px] font-mono">filter: partNumber === 0 ({repairableCount} records)</p>
                 <p className="text-zinc-600 text-[10px] font-mono">fix: parseInt(devanagari) from `part` field</p>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── Unclassified records — need manual constitutional review ── */}
+        {!loading && unclassifiedCount > 0 && (
+          <div className="rounded-2xl border border-zinc-700/50 bg-zinc-900/20 p-4 space-y-3">
+            <div className="flex items-start gap-3">
+              <span className="text-xl shrink-0">📋</span>
+              <div className="min-w-0">
+                <p className="text-zinc-300 font-black text-sm">
+                  {unclassifiedCount} records — Manual Constitutional Review आवश्यक
+                </p>
+                <p className="text-zinc-600 text-xs mt-1 leading-relaxed">
+                  यी records मा Part number नै छैन — automatic repair सम्भव छैन।
+                  Constitutional Master Review workflow (Phase 6) मा handle हुनेछ।
+                </p>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              {records.filter(r => r.partNumber == null).slice(0, 3).map(r => (
+                <div key={r.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-2.5 space-y-0.5">
+                  <p className="text-zinc-600 text-[10px] font-mono">{r.articleId ?? r.id}</p>
+                  <p className="text-zinc-400 text-xs">{r.titleEnglish || r.titleNepali || "No title"}</p>
+                  {r.part && (
+                    <p className="text-zinc-700 text-[10px]">Raw part field: {r.part}</p>
+                  )}
+                </div>
+              ))}
+              {unclassifiedCount > 3 && (
+                <p className="text-zinc-700 text-[10px] text-center">… र {unclassifiedCount - 3} अरू records</p>
+              )}
+            </div>
           </div>
         )}
 
