@@ -189,7 +189,9 @@ export async function buildCopilotContext(
     const pn = (d.data() as Record<string, unknown>).partNumber as number | undefined;
     if (typeof pn === "number" && pn > 0) {
       partCounts.set(pn, (partCounts.get(pn) ?? 0) + 1);
-    } else {
+    } else if (pn === 0) {
+      // Only count explicit 0 as broken — these are the ones Repair can actually fix.
+      // undefined/null records have no parseable part field and cannot be repaired.
       brokenFramework++;
     }
   });
@@ -432,7 +434,7 @@ function buildPageHints(parts: {
 
   // /vault/constitution
   const constHints: string[] = [];
-  if (intelligence.brokenFramework > 0) constHints.push(`${intelligence.brokenFramework} framework records repair गर्नुहोस् — Repair button थिच्नुहोस्।`);
+  if (intelligence.brokenFramework > 0) constHints.push(`${intelligence.brokenFramework} framework records partNumber=0 — Repair button थिच्नुहोस्।`);
   if (intelligence.frameworkCount === 0) constHints.push("संविधान PDF upload र extract गरिएको छैन।");
   else constHints.push(`${intelligence.frameworkCount} framework records, ${branchHealth.partsWithData}/35 branches active।`);
   hints["/vault/constitution"] = constHints;

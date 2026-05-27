@@ -167,8 +167,9 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
   }
 
   // ── 5. Constitution: broken branch mapping ────────────────────────────────
-  // Blocks: records exist but are invisible to Branch Health (show root cause first).
-  if (snap.brokenFrameworkRecords > 0 && snap.totalFramework > 0) {
+  // Only fire when there are genuinely repairable records (partNumber === 0).
+  // Threshold: 5+ to avoid noise from isolated edge cases.
+  if (snap.brokenFrameworkRecords >= 5 && snap.totalFramework > 0) {
     pool.push({
       id:          "broken_framework",
       type:        "constitution_gap",
@@ -180,7 +181,7 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
       actionLabel: "भाग-संरचना सुधार → Constitution",
       actionHref:  "/vault/constitution",
       count:       snap.brokenFrameworkRecords,
-      dismissable: false,
+      dismissable: true,
     });
   }
 
