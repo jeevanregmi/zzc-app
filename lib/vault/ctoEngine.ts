@@ -34,6 +34,8 @@ export interface CTOInsight {
   icon:         string;
   titleNp:      string;
   bodyNp:       string;
+  impactNp:     string;   // "मलाई असर पर्छ?" — one sentence
+  nextStepNp:   string;   // "अब मैले के गर्ने?" — one specific action
   // "यो किन देखिँदैछ?" — expanded, shown on demand
   whyNp:        string;
   actionLabel?: string;
@@ -92,6 +94,8 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
       bodyNp:      snap.docsNeverAnalyzed === 1
         ? `"${snap.neverAnalyzedTitles[0] ?? "Document"}" upload भयो तर AI ले अझै पढेको छैन।`
         : `${sample}${snap.docsNeverAnalyzed > 2 ? ` लगायत ${snap.docsNeverAnalyzed} documents` : ""} — AI analyze नगरे intelligence निकाल्न सकिँदैन।`,
+      impactNp:    "Constitution Tree मा यो document देखिँदैन। जनताले यो information पाउँदैनन्।",
+      nextStepNp:  "Documents page खोल्नुस् → document card मा AI Analyze button थिच्नुस्।",
       whyNp:       "AI analyze नगरी document बाट topics, rights, institutions, र promises निकाल्न सकिँदैन। यो pipeline को पहिलो step हो — यो नभई Constitution Tree मा केही थपिँदैन।",
       actionLabel: "Documents → AI Analyze",
       actionHref:  "/vault/documents",
@@ -110,6 +114,8 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
       icon:        "👁",
       titleNp:     `${snap.docsPendingReview} document review पर्खिरहेको — intelligence अड्किएको छ`,
       bodyNp:      "AI analysis सकियो। तपाईंको review नभई यो intelligence जनतासम्म पुग्दैन।",
+      impactNp:    "AI ले निकालेको information quarantine मा छ — जनतासम्म पुग्न सक्दैन।",
+      nextStepNp:  "Admin Vault खोल्नुस् → document हेर्नुस् → Approve button थिच्नुस्।",
       whyNp:       "AI कहिलेकाहीँ गलत पनि हुन्छ — गलत civic intelligence publish हुन नदिन Admin Review gate राखिएको हो। Approve नगरी Deep Extract र Public Tree access खुल्दैन।",
       actionLabel: "Admin Vault → Review",
       actionHref:  "/vault/admin?tab=documents",
@@ -131,6 +137,8 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
       bodyNp:      snap.docsApprovedNoExtract === 1
         ? `"${first}" approve भएको छ। Intelligence निकाले Janta cards र connections तयार हुन्छन्।`
         : `${snap.docsApprovedNoExtract} documents approve भए तर Intelligence अझै निकालिएन।`,
+      impactNp:    "Document approve भयो तर Janta cards अझै बनेका छैनन् — जनताले content पाउँदैनन्।",
+      nextStepNp:  "Documents page खोल्नुस् → approved document मा Intelligence Extract button थिच्नुस्।",
       whyNp:       "Approve गरेपछि पनि document static छ — Intelligence निकालेपछि मात्र Janta cards, policy points, र cross-document connections बन्छन्। यो step नगरे जनताले document बाट केही पाउँदैनन्।",
       actionLabel: "Documents → Intelligence निकाल्नुहोस्",
       actionHref:  "/vault/documents",
@@ -154,6 +162,10 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
       bodyNp:      snap.docsTotal > 0
         ? "Constitution PDF छ तर धाराहरू निकालिएनन्। Public Tree मा केही देखिँदैन।"
         : "संविधान २०७२ PDF upload गर्नुस् — यो पूरा civic intelligence system को जग हो।",
+      impactNp:    "Public Constitution Tree पूरै खाली छ — जनताले कुनै धारा हेर्न पाउँदैनन्।",
+      nextStepNp:  snap.docsTotal > 0
+        ? "Documents page खोल्नुस् → संविधान PDF मा Constitution Extract button थिच्नुस्।"
+        : "संविधान PDF upload गर्नुस् र extraction एकपटक चलाउनुस्।",
       whyNp:       "Constitutional Framework (Layer 1) बिना Constitution Tree खाली हुन्छ। ३५ भागका धाराहरू, अधिकारहरू, र institutions — सबै यही बाट आउँछन्। एकपटक निकाले पुग्छ।",
       actionLabel: snap.docsTotal > 0 ? "Documents → संविधान निकाल्नुहोस्" : "संविधान Upload गर्नुस्",
       actionHref:  snap.docsTotal > 0
@@ -177,6 +189,8 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
       icon:        "🔧",
       titleNp:     `${snap.brokenFrameworkRecords} धाराहरू सही भागमा पुगेका छैनन्`,
       bodyNp:      `AI ले देवनागरी अंक गलत पढ्यो — यी ${snap.brokenFrameworkRecords} धाराहरू Branch Health ले देख्दैन र सबै भाग खाली देखिन्छन्।`,
+      impactNp:    "Branch Health मा गलत data देखिन्छ — केही branches अनावश्यक रूपमा खाली देखिन्छन्।",
+      nextStepNp:  "Constitution page खोल्नुस् → Repair button थिच्नुस् (३० सेकेन्ड, free)।",
       whyNp:       "भाग mapping गलत भएकाले Branch Health page मा सबै ३५ भाग 'खाली' देखिन्छन् — Constitution Tree सही काम गर्दैन। यो मिलाउँदा AI फेरि चल्दैन, content बदलिँदैन, ~३० सेकेन्ड लाग्छ।",
       actionLabel: "भाग-संरचना सुधार → Constitution",
       actionHref:  "/vault/constitution",
@@ -203,6 +217,8 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
         icon:        "🌿",
         titleNp:     `${importantEmpty.length} महत्त्वपूर्ण संवैधानिक भाग मा intelligence छैन`,
         bodyNp:      `भाग ${importantEmpty.slice(0, 4).join(", ")} मा कुनै data छैन — जनताले यी भागका अधिकार देख्न पाउँदैनन्। ${snap.partsWithData}/35 भाग active छन्।`,
+        impactNp:    "महत्त्वपूर्ण संवैधानिक अधिकारहरू जनताले देख्न पाउँदैनन् — Constitution Tree अधुरो छ।",
+        nextStepNp:  "Branch Health page खोल्नुस् → खाली भाग हेर्नुस् → सम्बन्धित document upload गर्नुस्।",
         whyNp:       "खाली भागहरूमा upload भएका documents त्यहाँ पुगेनन् वा Intelligence निकालिएन। Branch Health page मा कुन भाग कमजोर छन् हेर्नुस् र relevant documents upload/extract गर्नुस्।",
         actionLabel: "Branch Health हेर्नुस्",
         actionHref:  "/vault/constitution/health",
@@ -221,6 +237,8 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
       icon:        "⏸",
       titleNp:     `${snap.docsPaused} document — AI रोकियो, document सुरक्षित छ`,
       bodyNp:      "AI provider को limit पुग्यो। Document safe छ, intelligence मात्र रोकियो। API key ठीक गरेपछि retry हुन्छ।",
+      impactNp:    "Document सुरक्षित छ — intelligence मात्र रोकिएको छ, कुनै data गुमेको छैन।",
+      nextStepNp:  "System Settings मा API key confirm गर्नुस् → Retry button थिच्नुस्।",
       whyNp:       "AI analysis fail हुँदा document 'रोकिएको' state मा जान्छ — document कहिल्यै delete हुँदैन। System Settings मा API key configure गरेपछि retry गर्न सकिन्छ।",
       actionLabel: "System Settings →",
       actionHref:  "/vault/system",
@@ -239,6 +257,8 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
       icon:        "📡",
       titleNp:     `${snap.daysSinceLastSignal} दिनदेखि नयाँ government signal छैन`,
       bodyNp:      "NRB, MoF वा Parliament बाट live update आएको छैन। जारी नीति परिवर्तनहरू detect हुँदैनन्।",
+      impactNp:    "नयाँ सरकारी नीति परिवर्तनहरू ZZC मा देखिँदैनन् — Janta cards पुराना हुन सक्छन्।",
+      nextStepNp:  "Source Radar मा नयाँ government website थप्नुस् वा manual check गर्नुस्।",
       whyNp:       "Signal Feed ले live government/financial news detect गर्छ। लामो gap भएमा नयाँ policy changes intelligence मा आउँदैनन् — Janta cards outdated हुन्छन्।",
       actionLabel: "Signal Feed →",
       actionHref:  "/vault/content/intelligence",
@@ -256,6 +276,8 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
       icon:        "⚠️",
       titleNp:     `${snap.lowConfidenceIntel} intelligence records कमजोर छन्`,
       bodyNp:      "AI confidence 60% भन्दा कम छ — गलत information जनतासम्म जान सक्छ।",
+      impactNp:    "केही information गलत हुन सक्छ — जनताले अविश्वसनीय civic data पाउन सक्छन्।",
+      nextStepNp:  "Branch Health page खोल्नुस् → कमजोर records review गर्नुस्।",
       whyNp:       "Confidence कम भएका records गलत हुन सक्छन्। Branch Health page मा कुन records कमजोर छन् हेर्नुस् — unnecessary AI cost नगर्नुस्, हेरेर मात्र re-extract गर्नुस्।",
       actionLabel: "Branch Health →",
       actionHref:  "/vault/constitution/health",
@@ -274,6 +296,8 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
       icon:        "🔗",
       titleNp:     "Documents बीचको connection map बनेको छैन",
       bodyNp:      `${snap.totalIntel} intelligence records छन् तर cross-document connections छैनन् — जनताले सम्बन्धित policies एकसाथ देख्न पाउँदैनन्।`,
+      impactNp:    "Documents बीच patterns देखिँदैनन् — जनताले civic connections बुझ्न सक्दैनन्।",
+      nextStepNp:  "Documents page खोल्नुस् → approved documents मा Intelligence Extract पूरा गर्नुस्।",
       whyNp:       "Connections ले documents बीचको pattern देखाउँछ — 'Budget 2081 ले Education Act लाई कसरी affect गर्छ।' Intelligence निकाल्दा auto-match हुन्छ, manual काम छैन।",
       actionLabel: "Documents → Intelligence निकाल्नुहोस्",
       actionHref:  "/vault/documents",
@@ -292,6 +316,12 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
       bodyNp:      snap.docsTotal > 0
         ? `${snap.docsTotal} documents · ${snap.totalIntel} intelligence records · ${snap.partsWithData}/35 branches active — pipeline unblocked।`
         : "पहिलो civic document upload गरेर Constitution Intelligence सुरु गर्नुस्।",
+      impactNp:    snap.docsTotal > 0
+        ? "सबै ZZC systems राम्रो चलिरहेका छन् — जनताले सही information पाइरहेका छन्।"
+        : "System तयार छ — पहिलो document upload गरेपछि intelligence build हुन थाल्छ।",
+      nextStepNp:  snap.docsTotal > 0
+        ? "QA Sprint जारी राख्नुस् वा नयाँ document upload गर्नुस्।"
+        : "QA Sprint page खोल्नुस् → Document Kit बाट पहिलो document upload गर्नुस्।",
       whyNp:       "सबै tracked pipeline steps clear छन् — कुनै document review मा अड्किएको छैन, कुनै AI error छैन, कुनै branch mapping problem छैन। नयाँ document upload गर्नुस् वा Branch Health check गर्नुस्।",
       actionLabel: snap.docsTotal === 0 ? "पहिलो Document Upload →" : "Branch Health →",
       actionHref:  snap.docsTotal === 0 ? "/vault/documents" : "/vault/constitution/health",
@@ -360,6 +390,8 @@ export function generateInsightsFromContext(
       icon:        "📡",
       titleNp:     `${ctx.sourceMonitoring.newUpdates} नयाँ official documents भेटियो`,
       bodyNp:      `${ctx.sourceMonitoring.sourceIds.slice(0, 2).join(", ")} मा नयाँ PDF/reports भेटियो। Review गरी upload गर्नुहोस्।`,
+      impactNp:    "नयाँ सरकारी documents पर्खिरहेका छन् — review नगरे ZZC मा थपिँदैन।",
+      nextStepNp:  "Source Radar खोल्नुस् → नयाँ documents review गर्नुस् → upload गर्नुस्।",
       whyNp:       "Source Radar ले government websites check गर्छ र नयाँ PDFs detect गर्छ। Review नगरी upload हुँदैन — AI cost लाग्दैन अहिले।",
       actionLabel: "Source Radar →",
       actionHref:  "/vault/sources",

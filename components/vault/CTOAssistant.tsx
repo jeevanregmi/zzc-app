@@ -115,6 +115,18 @@ function PrimaryCard({
         </div>
       </div>
 
+      {/* 5-part founder clarity panel */}
+      <div className="rounded-xl bg-zinc-900/60 border border-zinc-800/50 px-3 py-2.5 space-y-2">
+        <div className="flex gap-2 items-start">
+          <span className="text-[10px] text-zinc-600 font-bold shrink-0 mt-px w-16">मलाई असर:</span>
+          <p className="text-[11px] text-zinc-300 leading-snug flex-1">{insight.impactNp}</p>
+        </div>
+        <div className="flex gap-2 items-start border-t border-zinc-800/60 pt-2">
+          <span className="text-[10px] text-zinc-500 font-bold shrink-0 mt-px w-16">अब:</span>
+          <p className="text-[11px] text-white font-semibold leading-snug flex-1">{insight.nextStepNp}</p>
+        </div>
+      </div>
+
       {/* Cost guard — shown inline before AI actions */}
       {insight.costWarning && (
         <div className="bg-amber-950/40 border border-amber-800/50 rounded-xl px-3 py-2">
