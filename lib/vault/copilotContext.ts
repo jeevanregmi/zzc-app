@@ -196,9 +196,12 @@ export async function buildCopilotContext(
     if (typeof pn === "number" && pn > 0) {
       partCounts.set(pn, (partCounts.get(pn) ?? 0) + 1);
     } else if (pn === 0) {
-      // Only count explicit 0 as broken — these are the ones Repair can actually fix.
-      // undefined/null records have no parseable part field and cannot be repaired.
-      brokenFramework++;
+      const partStr = (d.data() as Record<string, unknown>).part as string | undefined;
+      if (partStr) {
+        // Has a `part` string ("भाग ३") — Repair can parse and fix this.
+        brokenFramework++;
+      }
+      // pn===0 with no part string: unclassifiable — repair cannot fix, no insight generated.
     }
   });
 

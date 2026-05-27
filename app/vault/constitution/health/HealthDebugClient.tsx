@@ -206,10 +206,10 @@ function AnalyticsDashboard(p: AnalyticsDashboardProps) {
               {([
                 {
                   label: "📜 Constitution Framework", value: p.totalFramework, color: "#c084fc", sub: "constitutional_framework",
-                  what: "नेपालको संविधानका ३०८ धाराहरू — AI ले PDF बाट निकालेका structured records।",
-                  why0: "Extract गर्दा Devanagari numeral bug छ (partNumber=0 save भयो), वा extraction नै गरिएको छैन।",
-                  fix: "Documents पेजमा गएर संविधान PDF को 'Extract Framework' click गर्नुस्, अनि यहाँ Framework → PartNumber Repair थिच्नुस्।",
-                  fixHref: "/vault/constitution", fixLabel: "📜 Framework → Repair",
+                  what: "नेपालको संविधानका धाराहरू — AI ले PDF बाट निकालेका structured records।",
+                  why0: "संविधान PDF extract गरिएको छैन। Documents पेजमा गएर PDF upload गर्नुस्।",
+                  fix: "Documents पेजमा गएर संविधान PDF upload र Extract Framework click गर्नुस्।",
+                  fixHref: "/vault/documents", fixLabel: "📄 Documents →",
                 },
                 {
                   label: "📋 Janta Intelligence", value: p.totalJanta, color: "#4ade80", sub: "janta_intelligence",
@@ -228,16 +228,16 @@ function AnalyticsDashboard(p: AnalyticsDashboardProps) {
                 {
                   label: "डेटा भएका भागहरू", value: `${p.withData}/35`, color: "#fbbf24", sub: "parts with data",
                   what: "संविधानका ३५ भागहरूमध्ये कतिमा live intelligence data छ। Branch Health को core metric।",
-                  why0: "Constitutional framework records को partNumber=0 छ — repair नगरिएसम्म ३५ भाग देखिँदैन।",
-                  fix: "Framework पेजमा गएर PartNumber Repair click गर्नुस् — re-extraction नलाग्ने, data fix मात्र हुन्छ।",
-                  fixHref: "/vault/constitution", fixLabel: "🔧 PartNumber Repair →",
+                  why0: "Documents upload र intelligence extract गरिएको छैन। QA Sprint पूरा गर्नुस्।",
+                  fix: "Documents upload → AI Analyze → Approve → Extract intelligence। QA Sprint देख्नुस्।",
+                  fixHref: "/vault/qa", fixLabel: "🎯 QA Sprint →",
                 },
                 {
                   label: "औसत स्वास्थ्य अंक", value: `${p.avgScore}/100`, color: "#60a5fa", sub: "overall score",
                   what: "सबै ३५ भागको average health score। तह १ + तह २ दुवैको presence बाट गणना हुन्छ।",
-                  why0: "Parts with Data = 0 भएसम्म यो पनि 0 हुन्छ। PartNumber Repair र documents upload गर्नुस्।",
-                  fix: "पहिले PartNumber Repair, त्यसपछि जता-जता खाली छ त्यहाँ documents upload गर्दै जानुस्।",
-                  fixHref: "/vault/constitution", fixLabel: "🔧 Framework →",
+                  why0: "Intelligence extract भएको छैन — documents upload र approve गरिएको छैन।",
+                  fix: "QA Sprint: documents upload → approve → intelligence extract। Branch coverage बढ्छ।",
+                  fixHref: "/vault/qa", fixLabel: "🎯 QA Sprint →",
                 },
               ] as AnalyticsStat[]).map(s => <StatCard key={s.label} s={s} />)}
             </div>
@@ -1397,11 +1397,6 @@ export default function HealthDebugClient() {
           <strong style={{ color: "#60a5fa" }}> तह २</strong> = वास्तवमा के भइरहेको छ (सरकारी documents, news, reports बाट)।<br/>
           दुई तहको फरक = <strong style={{ color: "#f87171" }}>governance gap</strong> — जहाँ वाचा र हकिकत मेल खाँदैन।
         </p>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", fontSize: "11px" }}>
-          <span style={{ color: "rgba(255,255,255,0.35)" }}>
-            <span style={{ color: "#fbbf24", fontWeight: 700 }}>अङ्क सबै ० देखियो?</span> → Documents पेजमा गएर संविधान re-extract गर्नुस्, अनि यहाँ "🔧 PartNumber Repair" थिच्नुस्
-          </span>
-        </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "12px", marginTop: "10px" }}>
           {[
             { href: "/vault/documents",        label: "📄 Documents — PDF upload गर्ने ठाउँ",    color: "#60a5fa" },
@@ -1434,12 +1429,9 @@ export default function HealthDebugClient() {
           >
             {deduping ? "🧹 Duplicate हटाउँदैछ…" : "🧹 Duplicate Records हटाउनुस्"}
           </button>
-          <Link href="/vault/constitution" style={{ fontSize: "11px", fontWeight: 700, padding: "6px 14px", borderRadius: "20px", border: "1px solid rgba(167,139,250,0.50)", color: "#a78bfa", background: "rgba(167,139,250,0.08)", textDecoration: "none", whiteSpace: "nowrap" }}>
-            🔧 Framework मा जानुस् → PartNumber Repair
+          <Link href="/vault/qa" style={{ fontSize: "11px", fontWeight: 700, padding: "6px 14px", borderRadius: "20px", border: "1px solid rgba(167,139,250,0.50)", color: "#a78bfa", background: "rgba(167,139,250,0.08)", textDecoration: "none", whiteSpace: "nowrap" }}>
+            🎯 QA Sprint →
           </Link>
-          <span style={{ fontSize: "10px", color: "rgba(255,255,255,0.25)" }}>
-            अङ्क ० देखिन्छ? → Framework पेजमा गएर repair button थिच्नुस्
-          </span>
         </div>
       </div>
 
