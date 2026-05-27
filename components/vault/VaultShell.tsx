@@ -17,6 +17,7 @@ import { CTOAssistant } from "./CTOAssistant";
 const PRIMARY_NAV = [
   { href: "/vault",                   icon: "◈", label: "Overview"      },
   { href: "/vault/vision",            icon: "🌱", label: "Vision Vault"  },
+  { href: "/vault/qa",                icon: "🎯", label: "QA Sprint"     },
   { href: "/vault/documents",         icon: "◻", label: "Documents"     },
   { href: "/vault/admin",             icon: "⬡", label: "Admin Vault"   },
   { href: "/vault/content/queue",     icon: "◆", label: "Content Queue" },

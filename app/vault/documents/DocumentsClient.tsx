@@ -84,21 +84,24 @@ export default function DocumentsClient() {
   const [search,       setSearch]      = useState("");
   const [filter,       setFilter]      = useState<FilterCategory>("all");
   const [viewMode,     setViewMode]    = useState<"recent" | "library">("recent");
-  const [showUpload,       setShowUpload]       = useState(false);
-  const [uploadGovFolder,  setUploadGovFolder]  = useState<GovFolder | undefined>(undefined);
-  const [uploadInitTags,   setUploadInitTags]   = useState<string>("");
-  const [uploadInitTitle,  setUploadInitTitle]  = useState<string>("");
+  const [showUpload,           setShowUpload]           = useState(false);
+  const [uploadGovFolder,      setUploadGovFolder]      = useState<GovFolder | undefined>(undefined);
+  const [uploadInitTags,       setUploadInitTags]       = useState<string>("");
+  const [uploadInitTitle,      setUploadInitTitle]      = useState<string>("");
+  const [uploadInitPartNumber, setUploadInitPartNumber] = useState<number | undefined>(undefined);
 
-  // Auto-open upload modal — reads ?upload=1&govFolder=...&tags=...&title=... from URL
+  // Auto-open upload modal — reads ?upload=1&govFolder=...&tags=...&title=...&parts=N from URL
   useEffect(() => {
     if (typeof window !== "undefined" && window.location.search.includes("upload=1")) {
       const params = new URLSearchParams(window.location.search);
       const gf    = params.get("govFolder") as GovFolder | null;
       const tags  = params.get("tags") ?? "";
       const title = params.get("title") ?? "";
+      const parts = params.get("parts");
       if (gf && gf in GOV_FOLDER_META) setUploadGovFolder(gf);
       if (tags)  setUploadInitTags(tags);
       if (title) setUploadInitTitle(title);
+      if (parts) { const pn = parseInt(parts, 10); if (!isNaN(pn) && pn > 0) setUploadInitPartNumber(pn); }
       setShowUpload(true);
       window.history.replaceState({}, "", window.location.pathname);
     }
@@ -939,11 +942,12 @@ export default function DocumentsClient() {
           onUpload={uploadDoc}
           onClear={clearDone}
           onDismiss={dismissTask}
-          onClose={() => { setShowUpload(false); setUploadGovFolder(undefined); setUploadInitTags(""); setUploadInitTitle(""); }}
+          onClose={() => { setShowUpload(false); setUploadGovFolder(undefined); setUploadInitTags(""); setUploadInitTitle(""); setUploadInitPartNumber(undefined); }}
           ownerId={user?.uid}
           initialGovFolder={uploadGovFolder}
           initialTags={uploadInitTags}
           initialTitle={uploadInitTitle}
+          initialPartNumber={uploadInitPartNumber}
         />
       )}
 

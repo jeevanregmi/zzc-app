@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { collection, deleteDoc, doc as firestoreDoc, getDocs, query, where } from "firebase/firestore";
 import { db } from "../../../firebase";
@@ -694,7 +694,7 @@ const EMPTY_HEALTH: BranchHealth = {
 // ─── Part roadmap card — always renders for all 35 parts ─────────────────────
 
 function PartRoadmapCard({
-  partNumber, health, structural, deepLearn, learnOn, civicAtomCount,
+  partNumber, health, structural, deepLearn, learnOn, civicAtomCount, highlighted,
 }: {
   partNumber:     number;
   health:         BranchHealth | undefined;
@@ -702,7 +702,9 @@ function PartRoadmapCard({
   deepLearn:      PartDeepLearnProfile | undefined;
   learnOn:        boolean;
   civicAtomCount: number;
+  highlighted?:   boolean;
 }) {
+  const cardRef  = useRef<HTMLDivElement>(null);
   const title    = PARTS_META[partNumber] ?? `भाग ${partNumber}`;
   const st       = PART_STATIC[partNumber] ?? { purpose: "", dharasHint: "", themes: [] };
   const h        = health ?? { ...EMPTY_HEALTH, partNumber };
@@ -713,6 +715,12 @@ function PartRoadmapCard({
 
   const [activeStruct, setActiveStruct] = useState<string | null>(null);
   const [activeLive,   setActiveLive]   = useState<string | null>(null);
+
+  useEffect(() => {
+    if (highlighted && cardRef.current) {
+      setTimeout(() => cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }), 300);
+    }
+  }, [highlighted]);
   const toggleStruct = (id: string) => { setActiveStruct(p => p === id ? null : id); setActiveLive(null); };
   const toggleLive   = (id: string) => { setActiveLive(p => p === id ? null : id);   setActiveStruct(null); };
   const activeStructMeta = STRUCT_METRICS.find(m => m.id === activeStruct);
@@ -724,7 +732,23 @@ function PartRoadmapCard({
   })();
 
   return (
-    <div style={{ background: "rgba(255,255,255,0.018)", border: `1px solid ${hasL2 ? col.dot + "30" : "rgba(255,255,255,0.06)"}`, borderRadius: "12px", padding: "16px", display: "flex", flexDirection: "column", gap: "12px" }}>
+    <div
+      ref={cardRef}
+      style={{
+        background: highlighted ? "rgba(251,191,36,0.06)" : "rgba(255,255,255,0.018)",
+        border: highlighted
+          ? "2px solid rgba(251,191,36,0.60)"
+          : `1px solid ${hasL2 ? col.dot + "30" : "rgba(255,255,255,0.06)"}`,
+        borderRadius: "12px", padding: "16px", display: "flex", flexDirection: "column", gap: "12px",
+        boxShadow: highlighted ? "0 0 0 4px rgba(251,191,36,0.08)" : undefined,
+      }}
+    >
+      {highlighted && (
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "4px 10px", background: "rgba(251,191,36,0.15)", borderRadius: "8px", marginBottom: "-4px" }}>
+          <span style={{ fontSize: "10px" }}>📍</span>
+          <span style={{ fontSize: "10px", fontWeight: 800, color: "#fbbf24", letterSpacing: "0.08em" }}>Copilot ले यो भाग suggest गर्‍यो</span>
+        </div>
+      )}
 
       {/* ── Header (always visible) ── */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: "12px" }}>
@@ -1199,6 +1223,7 @@ export default function HealthDebugClient() {
   const [civicAtomsByPart, setCivicAtomsByPart] = useState<Map<number, number>>(new Map());
   const [vaultTags,        setVaultTags]        = useState<Set<string>>(new Set());
   const [loading,          setLoading]          = useState(true);
+  const [spotlightPart,    setSpotlightPart]    = useState<number | null>(null);
 
   const [totalCivicAtoms,    setTotalCivicAtoms]    = useState(0);
   const [totalJanta,         setTotalJanta]         = useState(0);
@@ -1310,6 +1335,13 @@ export default function HealthDebugClient() {
       setDeduping(false);
     }
   };
+
+  // Read ?part=N from URL on mount — highlights and scrolls to that part
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const p = parseInt(new URLSearchParams(window.location.search).get("part") ?? "", 10);
+    if (!isNaN(p) && p >= 1 && p <= 35) setSpotlightPart(p);
+  }, []);
 
   const totalParts = healthMap.size;
   const withData   = Array.from(healthMap.values()).filter(h => h.state !== "unknown").length;
@@ -1471,6 +1503,7 @@ export default function HealthDebugClient() {
               deepLearn={deepLearnMap.get(n)}
               learnOn={learnOn}
               civicAtomCount={civicAtomsByPart.get(n) ?? 0}
+              highlighted={spotlightPart === n}
             />
           ))}
         </div>

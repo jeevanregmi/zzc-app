@@ -117,9 +117,10 @@ interface Props {
   onClose:         () => void;
   onDismiss?:      (localId: string) => void;
   ownerId?:        string;
-  initialGovFolder?: GovFolder;
-  initialTags?:    string;
-  initialTitle?:   string;
+  initialGovFolder?:   GovFolder;
+  initialTags?:        string;
+  initialTitle?:       string;
+  initialPartNumber?:  number;
 }
 
 // ── URL ingest result preview ─────────────────────────────────────────────────
@@ -343,18 +344,19 @@ function UploadActionIntel({ fileCount, category }: { fileCount: number; categor
   return <ActionLearnCard actions={[uploadAction]} />;
 }
 
-export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismiss, ownerId, initialGovFolder, initialTags, initialTitle }: Props) {
+export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismiss, ownerId, initialGovFolder, initialTags, initialTitle, initialPartNumber }: Props) {
   const inputRef   = useRef<HTMLInputElement>(null);
   const [tab,      setTab]     = useState<"file" | "url">("file");
   const [dragging, setDragging] = useState(false);
   const [staged,   setStaged]   = useState<File[]>([]);
   const [meta, setMeta] = useState<UploadDocMeta>({
-    title:       initialTitle ?? "",
-    description: "",
-    category:    "strategy",
-    folder:      "",
-    tags:        initialTags ?? "",
-    govFolder:   initialGovFolder,
+    title:              initialTitle ?? "",
+    description:        "",
+    category:           "strategy",
+    folder:             "",
+    tags:               initialTags ?? "",
+    govFolder:          initialGovFolder,
+    constitutionalParts: initialPartNumber ? [initialPartNumber] : undefined,
   });
 
   const addFiles = (files: File[]) => {

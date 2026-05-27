@@ -726,18 +726,24 @@ export function CTOAssistant({ uid, currentPage }: { uid: string | null; current
                       <p className="text-zinc-600 text-[9px]">{context.qa.onTrack ? "QA sprint पूरा ✓" : `${context.qa.target - context.qa.approvedDocs} थप approved docs चाहिन्छ`}</p>
                     </div>
 
-                    {/* Entrepreneur summary cards */}
+                    {/* Entrepreneur action cards */}
                     {([
-                      { icon: "⚡", label: "आजको सबैभन्दा महत्त्वपूर्ण काम",  value: context.entrepreneur.todayLeverage,     color: "text-amber-300"  },
-                      { icon: "📅", label: "यो हप्ताको priority",              value: context.entrepreneur.weekPriority,      color: "text-blue-300"   },
-                      { icon: "⚠",  label: "System risk",                      value: context.entrepreneur.systemRisk,        color: "text-red-400"    },
-                      { icon: "🚀", label: "Growth opportunity",               value: context.entrepreneur.growthOpportunity, color: "text-green-400"  },
-                      { icon: "🎬", label: "Content opportunity",              value: context.entrepreneur.contentOpportunity,color: "text-purple-400" },
-                      { icon: "📊", label: "सबैभन्दा ठूलो data gap",           value: context.entrepreneur.dataGap,           color: "text-zinc-300"   },
+                      { icon: "⚡", label: "आजको सबैभन्दा महत्त्वपूर्ण काम",  value: context.entrepreneur.todayLeverage,      href: context.entrepreneur.todayAction,    btnLabel: "अहिले गर्नुस्",    color: "text-amber-300",  border: "border-amber-900/40",  btn: "bg-amber-600 hover:bg-amber-500 text-black"   },
+                      { icon: "📅", label: "यो हप्ताको priority",              value: context.entrepreneur.weekPriority,       href: context.entrepreneur.weekAction,     btnLabel: "Sprint खोल्नुस्", color: "text-blue-300",   border: "border-blue-900/30",   btn: "bg-blue-700 hover:bg-blue-600 text-white"     },
+                      { icon: "⚠",  label: "System risk",                      value: context.entrepreneur.systemRisk,         href: context.entrepreneur.riskAction,     btnLabel: "हेर्नुस्",        color: "text-red-400",    border: "border-red-900/30",    btn: "bg-red-800 hover:bg-red-700 text-white"       },
+                      { icon: "🚀", label: "Growth opportunity",               value: context.entrepreneur.growthOpportunity,  href: context.entrepreneur.growthAction,   btnLabel: "सुरु गर्नुस्",    color: "text-green-400",  border: "border-green-900/30",  btn: "bg-green-800 hover:bg-green-700 text-white"   },
+                      { icon: "🎬", label: "Content opportunity",              value: context.entrepreneur.contentOpportunity, href: context.entrepreneur.contentAction,  btnLabel: "Content बनाउनुस्",color: "text-purple-400", border: "border-purple-900/30", btn: "bg-purple-800 hover:bg-purple-700 text-white" },
+                      { icon: "📊", label: "सबैभन्दा ठूलो data gap",           value: context.entrepreneur.dataGap,            href: context.entrepreneur.dataGapAction,  btnLabel: "Data थप्नुस्",    color: "text-zinc-300",   border: "border-zinc-700/50",   btn: "bg-zinc-700 hover:bg-zinc-600 text-white"     },
                     ] as const).map(row => (
-                      <div key={row.label} className="rounded-xl border border-zinc-800/70 bg-zinc-900/40 px-3 py-2.5">
-                        <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-bold mb-1">{row.icon} {row.label}</p>
+                      <div key={row.label} className={`rounded-xl border ${row.border} bg-zinc-900/40 px-3 py-2.5 space-y-2`}>
+                        <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-bold">{row.icon} {row.label}</p>
                         <p className={`text-xs leading-relaxed font-semibold ${row.color}`}>{row.value}</p>
+                        <Link
+                          href={row.href}
+                          className={`block w-full text-center text-[11px] font-black py-1.5 rounded-lg transition-colors ${row.btn}`}
+                        >
+                          {row.btnLabel} →
+                        </Link>
                       </div>
                     ))}
 

@@ -74,11 +74,17 @@ export interface QAProgress {
 
 export interface EntrepreneurSummary {
   todayLeverage:      string;  // single highest-value action right now
+  todayAction:        string;  // href for today's action
   weekPriority:       string;  // strategic focus this week
+  weekAction:         string;  // href for week priority action
   systemRisk:         string;  // biggest current risk
+  riskAction:         string;  // href for risk mitigation
   growthOpportunity:  string;  // highest potential growth vector
+  growthAction:       string;  // href for growth opportunity
   contentOpportunity: string;  // what content could be created now
+  contentAction:      string;  // href for content opportunity
   dataGap:            string;  // most important missing intelligence
+  dataGapAction:      string;  // href for data gap action
   founderNote:        string;  // one sentence synthesis
 }
 
@@ -299,6 +305,28 @@ export async function buildCopilotContext(
   };
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function partToGovFolder(p: number): string {
+  if (p >= 1 && p <= 3) return "constitution";
+  if (p === 4)          return "policy-planning";
+  if (p >= 5 && p <= 7) return "parliament";
+  if (p === 8)          return "budget-economy";
+  if (p >= 9 && p <= 10) return "judiciary";
+  if (p >= 11 && p <= 22) return "local-governance";
+  if (p === 23)          return "budget-economy";
+  if (p >= 24 && p <= 27) return "policy-planning";
+  if (p >= 28 && p <= 30) return "citizen-intelligence";
+  return "constitution";
+}
+
+function uploadUrl(partNumber: number, extraTags?: string): string {
+  const gf = partToGovFolder(partNumber);
+  const p  = new URLSearchParams({ upload: "1", parts: String(partNumber), govFolder: gf });
+  if (extraTags) p.set("tags", extraTags);
+  return `/vault/documents?${p.toString()}`;
+}
+
 // ─── Entrepreneur summary derivation ─────────────────────────────────────────
 
 function deriveEntrepreneur(parts: {
@@ -312,88 +340,120 @@ function deriveEntrepreneur(parts: {
 }): EntrepreneurSummary {
   const { pipeline, intelligence, branchHealth, sourceMonitoring, media, qa } = parts;
 
+  const PART_LABELS: Record<number, string> = {
+    3: "मौलिक हक", 4: "निर्देशक सिद्धान्त", 5: "राज्य संरचना", 7: "कार्यपालिका",
+    11: "न्यायपालिका", 23: "वित्त", 24: "CIAA", 25: "महालेखापरीक्षक",
+    26: "लोक सेवा", 27: "निर्वाचन", 28: "मानव अधिकार", 29: "महिला", 30: "दलित",
+  };
+
   // Today's highest leverage action
   let todayLeverage: string;
+  let todayAction: string;
   if (pipeline.pendingAI > 0) {
     todayLeverage = `${pipeline.pendingAI} document AI analyze गर्नुहोस् — pipeline अड्किएको छ`;
+    todayAction   = "/vault/documents";
   } else if (pipeline.pendingReview > 0) {
     todayLeverage = `${pipeline.pendingReview} document review गर्नुहोस् — intelligence quarantine मा छ`;
+    todayAction   = "/vault/admin?tab=documents";
   } else if (pipeline.pendingExtract > 0) {
     todayLeverage = `${pipeline.pendingExtract} documents बाट intelligence extract गर्नुहोस्`;
+    todayAction   = "/vault/documents";
   } else if (sourceMonitoring.newUpdates > 0) {
     todayLeverage = `${sourceMonitoring.newUpdates} नयाँ official updates review गर्नुहोस् र upload गर्नुहोस्`;
+    todayAction   = "/vault/sources";
   } else if (branchHealth.emptyImportant.length > 0) {
-    todayLeverage = `भाग ${branchHealth.emptyImportant.slice(0, 3).join(", ")} का documents upload गर्नुहोस्`;
+    const firstPart = branchHealth.emptyImportant[0]!;
+    todayLeverage = `भाग ${branchHealth.emptyImportant.slice(0, 3).map(p => PART_LABELS[p] ?? `भाग ${p}`).join(", ")} का documents upload गर्नुहोस्`;
+    todayAction   = uploadUrl(firstPart);
   } else {
-    todayLeverage = "Branch Health हेर्नुस् — अर्को कमजोर branch identify गर्नुहोस्";
+    todayLeverage = "Branch Health हेर्नुस् — अर्को कमजोर branch identify गर्नुस्";
+    todayAction   = "/vault/constitution/health";
   }
 
   // Week priority
   let weekPriority: string;
+  let weekAction: string;
   if (!qa.onTrack) {
     const remaining = qa.target - qa.approvedDocs;
     weekPriority = `QA Sprint: ${remaining} थप documents approve र extract गर्नुहोस् (${qa.pct}% पूरा)`;
+    weekAction   = "/vault/qa";
   } else if (intelligence.intelCount < 200) {
     weekPriority = "Intelligence base बढाउनुहोस् — content बनाउन कम्तिमा 200 records चाहिन्छ";
+    weekAction   = "/vault/documents";
   } else if (media.readyAtoms > 0) {
     weekPriority = `${media.readyAtoms} media scripts publish गर्नुहोस् — public reach बढाउनुहोस्`;
+    weekAction   = "/vault/media";
   } else {
     weekPriority = "New documents upload + intelligence graph expand गर्नुहोस्";
+    weekAction   = "/vault/documents";
   }
 
   // System risk
   let systemRisk: string;
+  let riskAction: string;
   if (parts.costRisk.paused > 0) {
     systemRisk = `AI billing issue — ${parts.costRisk.paused} documents paused। API key check गर्नुहोस्।`;
+    riskAction = "/vault/system";
   } else if (intelligence.brokenFramework > 50) {
     systemRisk = `${intelligence.brokenFramework} framework records broken — Branch Health data गलत देखिन्छ`;
+    riskAction = "/vault/constitution";
   } else if (intelligence.frameworkCount === 0) {
     systemRisk = "Constitution Framework खाली छ — civic intelligence system को जग नै छैन";
+    riskAction = "/vault/documents";
   } else {
     systemRisk = "कुनै critical system risk छैन";
+    riskAction = "/vault/constitution/health";
   }
 
   // Growth opportunity
   let growthOpportunity: string;
+  let growthAction: string;
   if (intelligence.intelCount > 300 && media.totalAtoms === 0) {
     growthOpportunity = "Enough intelligence exists — media content सुरु गर्न सकिन्छ";
+    growthAction      = "/vault/media";
   } else if (branchHealth.partsWithData >= 20) {
     growthOpportunity = `${branchHealth.partsWithData}/35 branches active — public tree launch गर्न सकिन्छ`;
+    growthAction      = "/vault/constitution";
   } else if (qa.onTrack) {
     growthOpportunity = "QA sprint पूरा — signal center र public content phase सुरु गर्न सकिन्छ";
+    growthAction      = "/vault/qa";
   } else {
     growthOpportunity = `QA sprint सकिएपछि (${qa.approvedDocs}/${qa.target}) सबै growth paths खुल्छन्`;
+    growthAction      = "/vault/qa";
   }
 
   // Content opportunity
   let contentOpportunity: string;
+  let contentAction: string;
   if (intelligence.intelCount > 100) {
     const strongParts = IMPORTANT_PARTS.filter(p => !branchHealth.emptyParts.includes(p));
     if (strongParts.length > 0) {
-      const labels: Record<number, string> = { 3: "मौलिक हक", 4: "निर्देशक सिद्धान्त", 23: "वित्त", 27: "निर्वाचन", 28: "मानव अधिकार" };
-      const named = strongParts.slice(0, 2).map(p => labels[p] ?? `भाग ${p}`).join(", ");
+      const named = strongParts.slice(0, 2).map(p => PART_LABELS[p] ?? `भाग ${p}`).join(", ");
       contentOpportunity = `${named} — यी topics मा strong data छ, content बनाउन तयार`;
+      contentAction      = "/vault/media";
     } else {
       contentOpportunity = "Intelligence base बढाउँदैछ — content बनाउन अझ data चाहिन्छ";
+      contentAction      = "/vault/documents";
     }
   } else {
     contentOpportunity = "Intelligence records कम छन् — पहिले pipeline build गर्नुहोस्";
+    contentAction      = "/vault/documents";
   }
 
   // Data gap
   let dataGap: string;
+  let dataGapAction: string;
   if (branchHealth.emptyImportant.length > 0) {
-    const labels: Record<number, string> = {
-      3: "मौलिक हक", 4: "निर्देशक सिद्धान्त", 5: "राज्य संरचना", 7: "कार्यपालिका",
-      11: "न्यायपालिका", 23: "वित्त", 24: "CIAA", 25: "महालेखापरीक्षक",
-      26: "लोक सेवा", 27: "निर्वाचन", 28: "मानव अधिकार", 29: "महिला", 30: "दलित",
-    };
-    const named = branchHealth.emptyImportant.slice(0, 3).map(p => labels[p] ?? `भाग ${p}`).join(", ");
-    dataGap = `${named} — यी महत्त्वपूर्ण भागमा intelligence छैन`;
+    const firstPart = branchHealth.emptyImportant[0]!;
+    const named = branchHealth.emptyImportant.slice(0, 3).map(p => PART_LABELS[p] ?? `भाग ${p}`).join(", ");
+    dataGap       = `${named} — यी महत्त्वपूर्ण भागमा intelligence छैन`;
+    dataGapAction = `/vault/constitution/health?part=${firstPart}`;
   } else if (intelligence.intelCount === 0) {
-    dataGap = "सम्पूर्ण intelligence graph खाली — पहिलो document approve र extract गर्नुहोस्";
+    dataGap       = "सम्पूर्ण intelligence graph खाली — पहिलो document approve र extract गर्नुहोस्";
+    dataGapAction = "/vault/documents";
   } else {
-    dataGap = "Core branches covered — secondary branches fill गर्दैछ";
+    dataGap       = "Core branches covered — secondary branches fill गर्दैछ";
+    dataGapAction = "/vault/constitution/health";
   }
 
   // Founder note
@@ -408,7 +468,15 @@ function deriveEntrepreneur(parts: {
     founderNote = "Infrastructure phase — दुरुस्त बनाउँदैछ, acceleration नजिकै छ।";
   }
 
-  return { todayLeverage, weekPriority, systemRisk, growthOpportunity, contentOpportunity, dataGap, founderNote };
+  return {
+    todayLeverage, todayAction,
+    weekPriority,  weekAction,
+    systemRisk,    riskAction,
+    growthOpportunity, growthAction,
+    contentOpportunity, contentAction,
+    dataGap,       dataGapAction,
+    founderNote,
+  };
 }
 
 // ─── Page hints ───────────────────────────────────────────────────────────────
