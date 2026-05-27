@@ -493,8 +493,8 @@ export default function ConstitutionAdminClient() {
 
   // Records where partNumber is exactly 0 AND a `part` string exists — these CAN be auto-repaired.
   const repairableCount   = records.filter(r => r.partNumber === 0 && !!r.part).length;
-  // Records with no partNumber at all — need manual constitutional review, cannot be auto-repaired.
-  const unclassifiedCount = records.filter(r => r.partNumber == null).length;
+  // Records with no partNumber OR partNumber===0 with no `part` string — cannot be auto-repaired.
+  const unclassifiedCount = records.filter(r => r.partNumber == null || (r.partNumber === 0 && !r.part)).length;
   // Combined for session tracker / workflow guide
   const brokenCount = repairableCount + unclassifiedCount;
 
@@ -662,8 +662,8 @@ export default function ConstitutionAdminClient() {
                   {unclassifiedCount} records — Manual Constitutional Review आवश्यक
                 </p>
                 <p className="text-zinc-600 text-xs mt-1 leading-relaxed">
-                  यी records मा Part number नै छैन — automatic repair सम्भव छैन।
-                  Constitutional Master Review workflow (Phase 6) मा handle हुनेछ।
+                  यी records मा Part number छैन वा Part string parse गर्न सकिएन — automatic repair सम्भव छैन।
+                  भविष्यमा Constitutional Master Review workflow मा manually classify गरिनेछ।
                 </p>
               </div>
             </div>
