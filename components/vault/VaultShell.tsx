@@ -40,9 +40,10 @@ const ADVANCED_GROUPS = [
   {
     label: "Intelligence",
     items: [
-      { href: "/vault/content/intelligence", icon: "◉", label: "Signal Feed"  },
-      { href: "/vault/routing",              icon: "◈", label: "Routing"      },
-      { href: "/vault/ssf",                  icon: "◎", label: "SSF Copilot"  },
+      { href: "/vault/sources",               icon: "📡", label: "Source Radar"  },
+      { href: "/vault/content/intelligence",  icon: "◉", label: "Signal Feed"   },
+      { href: "/vault/routing",               icon: "◈", label: "Routing"       },
+      { href: "/vault/ssf",                   icon: "◎", label: "SSF Copilot"   },
     ],
   },
   {
