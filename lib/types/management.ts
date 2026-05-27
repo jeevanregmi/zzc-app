@@ -13,14 +13,16 @@
 // ─── Department IDs ────────────────────────────────────────────────────────────
 
 export type DepartmentId =
-  | "intelligence"   // documents, extraction, branch health
-  | "content"        // media atoms, scripts, publishing
+  | "intelligence"   // civic pipeline, constitution, janta extraction
+  | "content"        // civic media atoms, scripts, publishing
   | "research"       // source registry, official links, document acquisition
-  | "product"        // public tree, janta, calculator, UX
-  | "operations"     // QA sprint, stuck docs, deploy, system health
-  | "growth"         // social, campaigns, audience, public launch
+  | "product"        // public Civic Chautari, janta, UX
+  | "operations"     // infra, deploy, billing, system health
+  | "growth"         // campaigns, social, civic audience
   | "finance"        // AI cost, cloud cost, revenue readiness
-  | "strategy";      // vision vault, roadmap, long-term decisions
+  | "strategy"       // vision vault, roadmap, two-worlds philosophy
+  | "bhakti"         // Temple Vault + ZZ Bhakti Chautari (spiritual world)
+  | "qa";            // QA & Verification — testing queues, sprint, pass/fail
 
 // ─── AI Officer ────────────────────────────────────────────────────────────────
 
@@ -168,11 +170,45 @@ export interface DepartmentBriefing {
   nextActionLabel:  string;
 }
 
+// ─── Test Item ────────────────────────────────────────────────────────────────
+// A workflow checkpoint the founder should verify. Computed from system state.
+// Not stored in Firestore (Phase 4+) — generated at runtime.
+
+export type TestStatus   = "pending" | "passed" | "failed";
+export type TestItemType = "ui_test" | "pipeline_test" | "data_test" | "workflow_test";
+
+export interface TestItem {
+  id:          string;
+  title:       string;        // "Temple Vault mobile layout"
+  department:  DepartmentId;
+  testType:    TestItemType;
+  status:      TestStatus;    // always "pending" until founder marks done (Phase 4)
+  href:        string;        // where to go to test
+  description: string;        // what to verify (Nepali)
+}
+
+// ─── COO Briefing ─────────────────────────────────────────────────────────────
+// The orchestration layer. Synthesizes all department states into one voice.
+// This is what the founder reads FIRST — before any department detail.
+
+export interface COOBriefing {
+  focusStatement:  string;        // ONE directive sentence: what to do RIGHT NOW
+  systemStatus:    "healthy" | "attention_needed" | "critical";
+  systemStatusNp:  string;        // Nepali label
+  attentionCount:  number;        // departments with needs_attention or critical
+  criticalCount:   number;        // departments with critical status
+  blockerCount:    number;        // total blocked tasks
+  testingItems:    TestItem[];    // workflow checkpoints needing verification
+  ctoFeedback:     string[];      // 3-5 clean sentences summarizing operational state for CTO
+  operationalNote: string;        // one calm sentence about overall system health
+}
+
 // ─── Management OS State ──────────────────────────────────────────────────────
 // The full rendered state for /vault/management.
 // Computed from CopilotContext — never persisted to Firestore (until Phase 4 tasks).
 
 export interface ManagementOSState {
+  cooBriefing:     COOBriefing;
   cycle:           FounderWorkCycle;
   departments:     DepartmentBriefing[];
   urgentCount:     number;           // departments with status === "critical"
@@ -255,19 +291,19 @@ export const AI_OFFICERS: Record<DepartmentId, AIOfficer> = {
     id: "cpo", title: "Chief Product Officer", titleNp: "मुख्य उत्पाद अधिकारी",
     icon: "🌳", department: "product",
     contextFocus: ["branchHealth", "intelligence"],
-    focusAreas: ["Public Constitution Tree", "Janta page", "Scheme calculators", "UX quality"],
+    focusAreas: ["Civic Chautari", "Public Constitution Tree", "Janta page", "UX quality"],
   },
   operations: {
     id: "coo", title: "Chief Operations Officer", titleNp: "मुख्य सञ्चालन अधिकारी",
     icon: "⚙️", department: "operations",
-    contextFocus: ["pipeline", "qa", "costRisk"],
-    focusAreas: ["QA sprint", "Stuck documents", "Deploy health", "System settings"],
+    contextFocus: ["pipeline", "costRisk"],
+    focusAreas: ["Infra health", "Billing", "Deploy", "System settings", "Stuck documents"],
   },
   growth: {
     id: "cgro", title: "Chief Growth Officer", titleNp: "मुख्य वृद्धि अधिकारी",
     icon: "🚀", department: "growth",
     contextFocus: ["media", "intelligence"],
-    focusAreas: ["Social presence", "Campaign planning", "Audience building", "Public launch"],
+    focusAreas: ["Civic campaigns", "Social presence", "Audience building", "Public launch"],
   },
   finance: {
     id: "cfo", title: "Chief Finance Officer", titleNp: "मुख्य वित्त अधिकारी",
@@ -279,19 +315,33 @@ export const AI_OFFICERS: Record<DepartmentId, AIOfficer> = {
     id: "cso", title: "Chief Strategy Officer", titleNp: "मुख्य रणनीति अधिकारी",
     icon: "🎯", department: "strategy",
     contextFocus: ["qa", "intelligence", "media"],
-    focusAreas: ["Vision Vault", "Roadmap evolution", "Long-term architecture", "ZZC philosophy"],
+    focusAreas: ["Vision Vault", "Two-worlds architecture", "Roadmap", "ZZC philosophy"],
+  },
+  bhakti: {
+    id: "cbdo", title: "Chief Bhakti & Devotional Officer", titleNp: "मुख्य भक्ति अधिकारी",
+    icon: "🛕", department: "bhakti",
+    contextFocus: ["temple"],
+    focusAreas: ["Temple Vault", "Sacred notes review", "Bhakti Chautari pipeline", "Sanskrit dictionary"],
+  },
+  qa: {
+    id: "cqao", title: "Chief QA & Verification Officer", titleNp: "मुख्य QA अधिकारी",
+    icon: "✅", department: "qa",
+    contextFocus: ["qa", "pipeline", "intelligence"],
+    focusAreas: ["QA sprint", "Pipeline verification", "Testing queues", "Pass/fail scoring"],
   },
 };
 
 export const DEPARTMENT_NAMES: Record<DepartmentId, { name: string; nameNp: string }> = {
-  intelligence: { name: "Intelligence",  nameNp: "बुद्धिमत्ता"    },
-  content:      { name: "Content",       nameNp: "सामग्री"        },
-  research:     { name: "Research",      nameNp: "अनुसन्धान"      },
-  product:      { name: "Product",       nameNp: "उत्पाद"          },
-  operations:   { name: "Operations",    nameNp: "सञ्चालन"        },
-  growth:       { name: "Growth",        nameNp: "वृद्धि"          },
-  finance:      { name: "Finance",       nameNp: "वित्त"           },
-  strategy:     { name: "Strategy",      nameNp: "रणनीति"         },
+  intelligence: { name: "Intelligence",  nameNp: "नागरिक बुद्धिमत्ता" },
+  content:      { name: "Content",       nameNp: "सामग्री"             },
+  research:     { name: "Research",      nameNp: "स्रोत अनुसन्धान"     },
+  product:      { name: "Product",       nameNp: "सार्वजनिक अनुभव"    },
+  operations:   { name: "Operations",    nameNp: "संरचना सञ्चालन"      },
+  growth:       { name: "Growth",        nameNp: "वृद्धि"               },
+  finance:      { name: "Finance",       nameNp: "वित्त"                },
+  strategy:     { name: "Strategy",      nameNp: "दीर्घकालीन रणनीति"   },
+  bhakti:       { name: "Bhakti",        nameNp: "भक्ति चौतारी"        },
+  qa:           { name: "QA",            nameNp: "QA र परीक्षण"        },
 };
 
 // ─── Work cycle prioritization order ──────────────────────────────────────────
@@ -300,11 +350,13 @@ export const DEPARTMENT_NAMES: Record<DepartmentId, { name: string; nameNp: stri
 
 export const DEFAULT_WORK_ORDER: DepartmentId[] = [
   "operations",    // 1. Fix broken things first
-  "intelligence",  // 2. Keep pipeline moving
-  "research",      // 3. Fill data gaps
-  "content",       // 4. Turn intelligence into content
-  "growth",        // 5. Publish and amplify
-  "finance",       // 6. Cost awareness
-  "product",       // 7. Public experience polish
-  "strategy",      // 8. Long-term alignment
+  "qa",            // 2. Verify what was built
+  "intelligence",  // 3. Keep pipeline moving
+  "research",      // 4. Fill data gaps
+  "content",       // 5. Turn intelligence into content
+  "bhakti",        // 6. Spiritual world progress
+  "growth",        // 7. Publish and amplify
+  "finance",       // 8. Cost awareness
+  "product",       // 9. Public experience polish
+  "strategy",      // 10. Long-term alignment
 ];

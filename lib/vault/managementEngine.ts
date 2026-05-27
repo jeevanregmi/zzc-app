@@ -11,6 +11,7 @@ import type { CopilotContext } from "./copilotContext";
 import {
   AI_OFFICERS,
   DEFAULT_WORK_ORDER,
+  type COOBriefing,
   type DepartmentBriefing,
   type DepartmentId,
   type DepartmentStatus,
@@ -20,6 +21,7 @@ import {
   type ManagementOSState,
   type ManagementTask,
   type StepUrgency,
+  type TestItem,
 } from "../types/management";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -425,6 +427,115 @@ function buildStrategyBriefing(ctx: CopilotContext): DepartmentBriefing {
   };
 }
 
+// ─── Bhakti briefing ─────────────────────────────────────────────────────────
+
+function buildBhaktiBriefing(ctx: CopilotContext): DepartmentBriefing {
+  const { temple } = ctx;
+  const tasks: ManagementTask[] = [];
+
+  if (temple.totalNotes === 0) {
+    tasks.push(task(
+      "Temple Vault मा पहिलो विचार थप्नुहोस्",
+      "bhakti", "medium", "open",
+      "मन्दिर →", "/vault/temple",
+    ));
+  }
+  if (temple.reviewNotes > 0) {
+    tasks.push(task(
+      `${temple.reviewNotes} notes समीक्षामा छन् — Bhakti Chautari को लागि तयार गर्नुस्`,
+      "bhakti", "medium", "open",
+      "मन्दिर →", "/vault/temple",
+      { costLevel: "none" },
+    ));
+  }
+  if (temple.totalNotes > 5 && temple.bhaktiAtoms === 0) {
+    tasks.push(task(
+      "पहिलो bhakti atom create गर्नुस् — Bhakti Chautari Phase 4 तयारी",
+      "bhakti", "low", "open",
+      "मन्दिर →", "/vault/temple",
+    ));
+  }
+
+  const status: DepartmentStatus =
+    temple.reviewNotes > 0        ? "needs_attention" :
+    temple.totalNotes  > 0        ? "on_track"        : "idle";
+
+  return {
+    department:  "bhakti",
+    status,
+    statusNp:    statusLabel(status),
+    officer:     AI_OFFICERS.bhakti,
+    topTasks:    tasks.slice(0, 3),
+    blockers:    tasks.filter(t => t.status === "blocked"),
+    kpis: [
+      kv("templeNotes",    "Temple Notes",          "लेखन",   temple.totalNotes,    undefined, "higher_is_better"),
+      kv("reviewNotes",    "समीक्षामा Notes",         "लेखन",   temple.reviewNotes,   0,         "lower_is_better"),
+      kv("bhaktiAtoms",    "Bhakti Atoms (Phase 4)", "atoms",  temple.bhaktiAtoms,   undefined, "higher_is_better"),
+    ],
+    nextAction:      tasks[0]?.titleNp ?? "Temple Vault चालू छ — लेख्नुहोस्",
+    nextActionHref:  "/vault/temple",
+    nextActionLabel: "मन्दिर →",
+  };
+}
+
+// ─── QA briefing ──────────────────────────────────────────────────────────────
+
+function buildQABriefing(ctx: CopilotContext): DepartmentBriefing {
+  const { pipeline, qa, intelligence } = ctx;
+  const tasks: ManagementTask[] = [];
+
+  if (!qa.onTrack) {
+    tasks.push(task(
+      `QA Sprint: ${qa.approvedDocs}/${qa.target} — ${qa.target - qa.approvedDocs} documents बाँकी`,
+      "qa", "urgent", "open",
+      "QA Sprint →", "/vault/qa",
+    ));
+  }
+  if (pipeline.pendingReview > 0) {
+    tasks.push(task(
+      `${pipeline.pendingReview} documents review pending — Admin Vault खोल्नुस्`,
+      "qa", "high", "open",
+      "Admin Vault →", "/vault/admin",
+    ));
+  }
+  if (intelligence.lowConfidenceCount > 0) {
+    tasks.push(task(
+      `${intelligence.lowConfidenceCount} low-confidence records verify गर्नुस्`,
+      "qa", "medium", "open",
+      "Branch Health →", "/vault/constitution/health",
+    ));
+  }
+  if (intelligence.brokenFramework > 0) {
+    tasks.push(task(
+      `${intelligence.brokenFramework} framework records repair गर्नुस्`,
+      "qa", "medium", "open",
+      "Constitution →", "/vault/constitution",
+    ));
+  }
+
+  const status: DepartmentStatus =
+    !qa.onTrack                         ? "needs_attention" :
+    pipeline.pendingReview > 0          ? "needs_attention" :
+    intelligence.lowConfidenceCount > 5 ? "needs_attention" : "on_track";
+
+  return {
+    department:  "qa",
+    status,
+    statusNp:    statusLabel(status),
+    officer:     AI_OFFICERS.qa,
+    topTasks:    tasks.slice(0, 3),
+    blockers:    tasks.filter(t => t.status === "blocked"),
+    kpis: [
+      kv("qaProgress",   "QA Sprint",         "docs",    qa.approvedDocs,                 qa.target, "higher_is_better"),
+      kv("pendingRev",   "Pending Review",      "docs",    pipeline.pendingReview,          0,         "lower_is_better"),
+      kv("lowConf",      "Low-Confidence",      "records", intelligence.lowConfidenceCount, 0,         "lower_is_better"),
+    ],
+    nextAction:      tasks[0]?.titleNp ?? `QA Sprint ${qa.pct}% पूरा — राम्रो`,
+    nextActionHref:  tasks[0]?.actionHref ?? "/vault/qa",
+    nextActionLabel: tasks[0]?.actionLabel ?? "QA Sprint →",
+  };
+}
+
 // ─── Status label ─────────────────────────────────────────────────────────────
 
 function statusLabel(s: DepartmentStatus): string {
@@ -526,6 +637,8 @@ function successFor(dept: DepartmentId, ctx: CopilotContext): string {
     case "finance":      return `Paused documents: 0`;
     case "product":      return `Public tree checks passed`;
     case "strategy":     return `Vision Vault updated`;
+    case "bhakti":       return `Temple notes reviewed, bhakti_atoms published`;
+    case "qa":           return `QA sprint ${ctx.qa.approvedDocs}/${ctx.qa.target} complete`;
   }
 }
 
@@ -545,31 +658,198 @@ function deriveWeekFocus(ctx: CopilotContext): string {
   return "Quality र growth — pipeline stable, content amplify गर्ने";
 }
 
+// ─── COO Briefing — the orchestration voice ───────────────────────────────────
+// Synthesizes ALL department states into a single directive message.
+// This is what the founder reads FIRST. One sentence. No ambiguity.
+
+let _testSeq = 0;
+function testItem(
+  title:       string,
+  dept:        DepartmentId,
+  testType:    TestItem["testType"],
+  href:        string,
+  description: string,
+): TestItem {
+  return {
+    id:          `test_${++_testSeq}`,
+    title,
+    department:  dept,
+    testType,
+    status:      "pending",
+    href,
+    description,
+  };
+}
+
+function buildTestingQueue(ctx: CopilotContext): TestItem[] {
+  _testSeq = 0;
+  const items: TestItem[] = [];
+
+  // Temple Vault — recently built (Phase 2)
+  items.push(testItem(
+    "Temple Vault — mobile layout",
+    "bhakti", "ui_test", "/vault/temple",
+    "मोबाइलमा chamber cards र note editor overflow नभएको verify गर्नुस्",
+  ));
+
+  // Management OS — recently built
+  items.push(testItem(
+    "Management OS — 10 departments render",
+    "qa", "ui_test", "/vault/management",
+    "सबै 10 departments cards देखिन्छन्, COO panel सही छ",
+  ));
+
+  // Constitution pipeline — if documents present
+  if (ctx.pipeline.approved > 0) {
+    items.push(testItem(
+      "Constitution extraction quality",
+      "intelligence", "pipeline_test", "/vault/constitution/health",
+      "Branch Health मा approved documents को intelligence records देखिन्छ",
+    ));
+  }
+
+  // QA Sprint progress
+  if (!ctx.qa.onTrack) {
+    items.push(testItem(
+      `QA Sprint — ${ctx.qa.approvedDocs}/${ctx.qa.target} complete`,
+      "qa", "data_test", "/vault/qa",
+      "QA Sprint page मा progress correct छ",
+    ));
+  }
+
+  // Public Janta page — if intel exists
+  if (ctx.intelligence.intelCount > 0) {
+    items.push(testItem(
+      "Public Janta page — story cards loading",
+      "product", "ui_test", "/janta",
+      "Story cards render हुन्छन्, TTS काम गर्छ",
+    ));
+  }
+
+  return items;
+}
+
+function buildCOOBriefing(
+  briefings: DepartmentBriefing[],
+  ctx:       CopilotContext,
+): COOBriefing {
+  const criticalDepts   = briefings.filter(b => b.status === "critical");
+  const attentionDepts  = briefings.filter(b => b.status === "needs_attention");
+  const allIssues       = [...criticalDepts, ...attentionDepts];
+  const totalBlockers   = briefings.reduce((n, b) => n + b.blockers.length, 0);
+
+  const systemStatus =
+    criticalDepts.length > 0  ? "critical" :
+    attentionDepts.length > 0 ? "attention_needed" : "healthy";
+
+  // The ONE focus sentence — what to do right now
+  let focusStatement: string;
+  const topCritical = criticalDepts[0];
+  const topAttention = attentionDepts[0];
+
+  if (topCritical) {
+    const task = topCritical.topTasks[0];
+    focusStatement = `तुरुन्त: ${task?.titleNp ?? topCritical.nextAction}`;
+  } else if (topAttention) {
+    const task = topAttention.topTasks[0];
+    focusStatement = `आजको प्राथमिकता: ${task?.titleNp ?? topAttention.nextAction}`;
+  } else {
+    // All clear — suggest the highest value next action
+    focusStatement = deriveWeekFocus(ctx);
+  }
+
+  // CTO feedback: 3-5 clean sentences summarizing operational state
+  const ctoFeedback: string[] = [];
+
+  // Pipeline
+  if (ctx.pipeline.aiPaused > 0) {
+    ctoFeedback.push(`${ctx.pipeline.aiPaused} documents AI processing रोकिएको छ — billing issue छ।`);
+  } else if (ctx.pipeline.approved > 0) {
+    ctoFeedback.push(`${ctx.pipeline.approved} documents approved — pipeline healthy।`);
+  }
+
+  // QA
+  ctoFeedback.push(
+    ctx.qa.onTrack
+      ? `QA Sprint complete — ${ctx.qa.approvedDocs}/${ctx.qa.target} documents verified।`
+      : `QA Sprint ${ctx.qa.pct}% — ${ctx.qa.target - ctx.qa.approvedDocs} documents बाँकी छन्।`,
+  );
+
+  // Intelligence
+  if (ctx.intelligence.intelCount > 0) {
+    ctoFeedback.push(`${ctx.intelligence.intelCount} intelligence records, ${ctx.branchHealth.partsWithData}/35 branches active।`);
+  } else {
+    ctoFeedback.push("Intelligence extraction शुरू भएको छैन — documents pipeline मा pending छन्।");
+  }
+
+  // Temple/Bhakti
+  if (ctx.temple.totalNotes > 0) {
+    const reviewNote = ctx.temple.reviewNotes > 0
+      ? ` ${ctx.temple.reviewNotes} notes समीक्षामा।`
+      : "";
+    ctoFeedback.push(`Temple Vault: ${ctx.temple.totalNotes} notes active।${reviewNote}`);
+  } else {
+    ctoFeedback.push("Temple Vault Phase 2 stable — content अझ थपिएको छैन।");
+  }
+
+  // Overall
+  if (systemStatus === "healthy") {
+    ctoFeedback.push("सबै systems stable छन् — अर्को phase तर्फ बढ्न सकिन्छ।");
+  } else {
+    ctoFeedback.push(`${allIssues.length} department(s) ध्यान माग्दैछन्।`);
+  }
+
+  const operationalNote =
+    systemStatus === "healthy"         ? "सबै 10 departments चालू छन् — system स्वस्थ छ।" :
+    systemStatus === "attention_needed" ? `${attentionDepts.length} department(s) ध्यान माग्छन् — critical छैन।` :
+                                          `${criticalDepts.length} critical issue — तुरुन्त action आवश्यक।`;
+
+  const systemStatusNp =
+    systemStatus === "healthy"          ? "सबै राम्रो" :
+    systemStatus === "attention_needed" ? "ध्यान दिनुस्" : "तुरुन्त हेर्नुस्";
+
+  return {
+    focusStatement,
+    systemStatus,
+    systemStatusNp,
+    attentionCount: allIssues.length,
+    criticalCount:  criticalDepts.length,
+    blockerCount:   totalBlockers,
+    testingItems:   buildTestingQueue(ctx),
+    ctoFeedback,
+    operationalNote,
+  };
+}
+
 // ─── Main export ──────────────────────────────────────────────────────────────
 
 export function buildManagementOS(ctx: CopilotContext): ManagementOSState {
-  _taskSeq = 0; // reset per-call so IDs are deterministic
+  _taskSeq = 0;
+  _testSeq = 0;
 
   const start = Date.now();
 
   const briefings: DepartmentBriefing[] = [
     buildOperationsBriefing(ctx),
+    buildQABriefing(ctx),
     buildIntelligenceBriefing(ctx),
     buildResearchBriefing(ctx),
     buildContentBriefing(ctx),
-    buildProductBriefing(ctx),
+    buildBhaktiBriefing(ctx),
     buildGrowthBriefing(ctx),
     buildFinanceBriefing(ctx),
+    buildProductBriefing(ctx),
     buildStrategyBriefing(ctx),
   ];
 
-  const cycle = buildWorkCycle(briefings, ctx);
-
+  const cooBriefing   = buildCOOBriefing(briefings, ctx);
+  const cycle         = buildWorkCycle(briefings, ctx);
   const urgentCount   = briefings.filter(b => b.status === "critical").length;
   const blockerCount  = briefings.reduce((n, b) => n + b.blockers.length, 0);
   const openDecisions = cycle.topDecision ? [cycle.topDecision] : [];
 
   return {
+    cooBriefing,
     cycle,
     departments:   briefings,
     urgentCount,

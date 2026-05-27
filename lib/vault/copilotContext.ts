@@ -88,6 +88,15 @@ export interface EntrepreneurSummary {
   founderNote:        string;  // one sentence synthesis
 }
 
+// ─── Temple state (minimal — used by Management OS / COO, not CTO Assistant) ──
+
+export interface TempleState {
+  totalNotes:      number;
+  reviewNotes:     number;   // visibility === "review" — potential Bhakti content
+  publishedNotes:  number;   // visibility === "published" — linked to bhakti_atoms
+  bhaktiAtoms:     number;   // bhakti_atoms docs (expression layer)
+}
+
 // ─── Master context type ──────────────────────────────────────────────────────
 
 export interface CopilotContext {
@@ -99,6 +108,7 @@ export interface CopilotContext {
   costRisk:         CostRiskState;
   qa:               QAProgress;
   entrepreneur:     EntrepreneurSummary;
+  temple:           TempleState;
 
   // Page-aware guidance cache (keyed by route prefix)
   pageHints:        Record<string, string[]>;
@@ -137,6 +147,8 @@ export async function buildCopilotContext(
     mediaSnap,
     watcherSnap,
     updateSnap,
+    templeNotesSnap,
+    bhaktiAtomsSnap,
   ] = await Promise.all([
     safe(q("vault_documents",         200), EMPTY_SNAP),
     safe(q("janta_intelligence",      500), EMPTY_SNAP),
@@ -145,6 +157,8 @@ export async function buildCopilotContext(
     safe(q("media_atoms",             100), EMPTY_SNAP),
     safe(q("monitored_sources",       100), EMPTY_SNAP),
     safe(q("source_updates",          200), EMPTY_SNAP),
+    safe(q("temple_notes",            200), EMPTY_SNAP),
+    safe(q("bhakti_atoms",            100), EMPTY_SNAP),
   ]);
 
   // ── Pipeline state ─────────────────────────────────────────────────────────
@@ -293,6 +307,17 @@ export async function buildCopilotContext(
 
   const pageHints = buildPageHints({ pipeline, intelligence, branchHealth, sourceMonitoring, media });
 
+  // ── Temple state ──────────────────────────────────────────────────────────
+  // Private — not exposed to CTO Assistant or public pipelines.
+
+  const templeNoteRows = (templeNotesSnap.docs ?? []).map(d => d.data() as Record<string, unknown>);
+  const temple: TempleState = {
+    totalNotes:     templeNoteRows.length,
+    reviewNotes:    templeNoteRows.filter(n => n.visibility === "review").length,
+    publishedNotes: templeNoteRows.filter(n => n.visibility === "published").length,
+    bhaktiAtoms:    bhaktiAtomsSnap.size ?? 0,
+  };
+
   return {
     pipeline,
     intelligence,
@@ -302,6 +327,7 @@ export async function buildCopilotContext(
     costRisk,
     qa,
     entrepreneur,
+    temple,
     pageHints,
     computedAt: new Date().toISOString(),
     durationMs: Date.now() - start,
