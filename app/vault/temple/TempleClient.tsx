@@ -7,7 +7,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useVaultAuth } from "../../../hooks/vault/useVaultAuth";
-import type { TempleNote, NoteType } from "../../../lib/types/temple-vault";
+import type { TempleNote, NoteType, TempleVisibility } from "../../../lib/types/temple-vault";
 import { SACRED_CHAMBERS } from "../../../lib/types/temple-vault";
 
 // ─── Chamber accent palette ────────────────────────────────────────────────────
@@ -105,6 +105,23 @@ const SEED_PROMPTS: Partial<Record<string, { icon: string; lines: string[] }>> =
   },
 };
 
+// ─── Visibility indicator ─────────────────────────────────────────────────────
+// private   = no indicator (default, invisible)
+// review    = small amber dot (founder flagged as "maybe share someday")
+// published = small green dot (a bhakti_atom has been created)
+
+const VISIBILITY_DOT: Record<TempleVisibility, string | null> = {
+  private:   null,
+  review:    "bg-amber-500",
+  published: "bg-emerald-500",
+};
+
+const VISIBILITY_LABEL: Record<TempleVisibility, string> = {
+  private:   "निजी",
+  review:    "समीक्षा",
+  published: "प्रकाशित",
+};
+
 // ─── DB note shape ─────────────────────────────────────────────────────────────
 
 type NoteDoc = TempleNote & { id: string };
@@ -166,17 +183,24 @@ function NoteCard({
   accentText,
   onEdit,
   onDelete,
+  onVisibilityChange,
 }: {
   note: NoteDoc;
   accentText: string;
   onEdit: (n: NoteDoc) => void;
   onDelete: (id: string) => void;
+  onVisibilityChange: (id: string, v: TempleVisibility) => void;
 }) {
   const date = note.createdAt
     ? new Date(note.createdAt).toLocaleDateString("ne-NP", {
         year: "numeric", month: "long", day: "numeric",
       })
     : "";
+
+  const vis     = note.visibility ?? "private";
+  const dot     = VISIBILITY_DOT[vis];
+  const isReview    = vis === "review";
+  const isPublished = vis === "published";
 
   return (
     <div className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-5 space-y-3 transition-all duration-500 hover:bg-white/[0.035]">
@@ -193,8 +217,30 @@ function NoteCard({
           {note.title && (
             <span className="text-sm font-medium text-zinc-200 truncate">{note.title}</span>
           )}
+          {/* Visibility dot — only shown for review/published */}
+          {dot && (
+            <span
+              className={`shrink-0 w-1.5 h-1.5 rounded-full ${dot} opacity-70`}
+              title={VISIBILITY_LABEL[vis]}
+            />
+          )}
         </div>
+
         <div className="flex items-center gap-3 shrink-0">
+          {/* Visibility toggle — only private notes can be marked for review */}
+          {!isPublished && (
+            <button
+              onClick={() => onVisibilityChange(note.id, isReview ? "private" : "review")}
+              className={`text-[10px] transition-colors duration-300 ${
+                isReview
+                  ? "text-amber-700 hover:text-amber-500"
+                  : "text-zinc-800 hover:text-zinc-600"
+              }`}
+              title={isReview ? "निजीमा फर्काउनुहोस्" : "समीक्षाको लागि चिह्नित गर्नुहोस्"}
+            >
+              {isReview ? "निजी ←" : "→ समीक्षा"}
+            </button>
+          )}
           <button
             onClick={() => onEdit(note)}
             className="text-zinc-700 hover:text-zinc-400 transition-colors duration-300 text-[11px]"
@@ -243,7 +289,7 @@ function NoteEditor({
   chamberName: string;
   accentText: string;
   editing: NoteDoc | null;
-  onSave: (data: Omit<TempleNote, "ownerId" | "createdAt" | "updatedAt" | "isPrivate">) => Promise<void>;
+  onSave: (data: Omit<TempleNote, "ownerId" | "createdAt" | "updatedAt" | "visibility">) => Promise<void>;
   onClose: () => void;
 }) {
   const [type,   setType]   = useState<NoteType>(editing?.type ?? "reflection");
@@ -436,17 +482,17 @@ function ChamberView({
 
   useEffect(() => { void loadNotes(); }, [chamberId, uid]);
 
-  async function handleSave(data: Omit<TempleNote, "ownerId" | "createdAt" | "updatedAt" | "isPrivate">) {
+  async function handleSave(data: Omit<TempleNote, "ownerId" | "createdAt" | "updatedAt" | "visibility">) {
     const now = new Date().toISOString();
     if (editingNote) {
       await updateDoc(doc(db, "temple_notes", editingNote.id), { ...data, updatedAt: now });
     } else {
       await addDoc(collection(db, "temple_notes"), {
         ...data,
-        ownerId:   uid,
-        isPrivate: true as const,
-        createdAt: now,
-        updatedAt: now,
+        ownerId:    uid,
+        visibility: "private" as TempleVisibility,
+        createdAt:  now,
+        updatedAt:  now,
       });
     }
     setShowEditor(false);
@@ -458,6 +504,14 @@ function ChamberView({
     if (!confirm("यो लेखन मेट्ने?")) return;
     await deleteDoc(doc(db, "temple_notes", id));
     void loadNotes();
+  }
+
+  async function handleVisibilityChange(id: string, v: TempleVisibility) {
+    await updateDoc(doc(db, "temple_notes", id), {
+      visibility: v,
+      updatedAt:  new Date().toISOString(),
+    });
+    setNotes(prev => prev.map(n => n.id === id ? { ...n, visibility: v } : n));
   }
 
   function openEdit(note: NoteDoc) { setEditingNote(note); setShowEditor(true); }
@@ -567,6 +621,7 @@ function ChamberView({
                 accentText={accentText}
                 onEdit={openEdit}
                 onDelete={handleDelete}
+                onVisibilityChange={handleVisibilityChange}
               />
             ))}
           </div>

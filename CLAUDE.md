@@ -20,31 +20,52 @@ This file has current context, founder preferences, and session continuity.
 
 ## Core System Philosophy
 
-ZZC is a **perpetual civic intelligence operating system** — not a minimal SaaS dashboard.
-It is designed like a city: many districts, rooms, and layers — all connected to one atom graph.
-See `docs/ARCHITECTURE_PHILOSOPHY.md` for the full city blueprint.
+ZZC is evolving into **two public worlds** + **one private sanctuary**, all sharing one semantic intelligence core.
+See `docs/ZZC_TWO_WORLDS.md` for the full strategic architecture.
+See `docs/ARCHITECTURE_PHILOSOPHY.md` for the city model.
+
+### The Two Worlds (Strategic North Star)
+
+```
+ZZC Civic Chautari     — civic intelligence · constitution · governance · Nepali-first
+ZZ Bhakti Chautari     — devotional semantic · Sanskrit · mantra · sacred media (Phase 5)
+Temple Vault           — private founder sanctuary · Bhakti Chautari creative source
+```
+
+**The moat is deep multilingual semantic intelligence for Nepal — not financial data feeds.**
+Financial data (market rates, NRB) is a feature, not the identity.
 
 ### The ONE Brain Principle (absolute, non-negotiable)
 
 **Outputs can multiply. Intelligence must remain singular.**
 
-All civic intelligence lives in:
+Civic intelligence lives in:
 - `constitutional_framework` (Layer 1 — static)
 - `janta_intelligence` (Layer 2 — dynamic)
 - `janta_relationships` (graph edges)
 - `vault_documents` (source material)
 
-Everything else — media atoms, campaigns, feeds, timelines, modes — **references** these collections. Never duplicates them.
+Spiritual intelligence lives in:
+- `semantic_dictionary` (domain: "spiritual" — shared atom protocol)
+- `bhakti_atoms` (expression layer — same role as `media_atoms` for civic world)
+- `temple_notes` / `temple_content` (private source, never directly public)
 
-- New Firestore collection? → must reference atoms, not store intelligence independently
-- New AI pipeline? → must extract to existing collections, not create parallel stores
-- New page? → must discover or express patterns from the existing atom graph
+Everything else references atoms. Never duplicates them.
+
+### Temple Vault → Bhakti Pipeline (three visibility states)
+
+`TempleNote.visibility`:
+- `"private"` → founder-only forever (default)
+- `"review"` → founder considering for public someday
+- `"published"` → a `bhakti_atom` has been created; feeds Bhakti Chautari
+
+Every transition is founder-initiated. Nothing auto-advances.
 
 ### Open-Armed Architecture (encouraged)
 
 New rooms, layers, and organizational systems are WELCOME.
 
-ZZC should grow toward: **Notion + Bloomberg + Civic OS + Knowledge Warehouse + AI Studio**
+ZZC should grow toward: **Civic OS + Devotional Semantic Platform + Knowledge Warehouse + AI Studio**
 
 Planned rooms (not yet built — see `docs/ARCHITECTURE_PHILOSOPHY.md`):
 - `civic_campaigns` — first-class civic missions, not lightweight playlists

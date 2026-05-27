@@ -102,10 +102,23 @@ export interface TempleContent {
   dictionaryRefs?: string[];    // semantic_dictionary term IDs
   addedAt:       string;
   isFavorite:    boolean;
+  visibility:    TempleVisibility; // default: "private"
+  bhaktiAtomId?: string;          // set when visibility==="published"
 }
 
+// ─── Visibility state (three-state publishing pipeline) ──────────────────────
+// private   → founder-only forever (default)
+// review    → founder is considering this for Bhakti Chautari someday
+// published → approved; a bhakti_atom has been created from this
+//
+// Transitions are always founder-initiated. Nothing auto-advances.
+// See docs/ZZC_TWO_WORLDS.md for full pipeline architecture.
+
+export type TempleVisibility = "private" | "review" | "published";
+
 // ─── Temple Note ─────────────────────────────────────────────────────────────
-// Personal spiritual reflections. ALWAYS private. No public option ever.
+// Personal spiritual reflections. Private by default.
+// May advance to "review" or "published" if the founder chooses to share.
 
 export type NoteType =
   | "reflection"    // personal thought or realization
@@ -139,7 +152,8 @@ export interface TempleNote {
   // ── Metadata ─────────────────────────────────────────────────────────────
   createdAt:     string;
   updatedAt:     string;
-  isPrivate:     true;          // structural — always true, never changeable
+  visibility:    TempleVisibility; // default: "private" — founder advances deliberately
+  bhaktiAtomId?: string;          // set when visibility==="published"; points to bhakti_atoms doc
 }
 
 // ─── Mantra Practice ─────────────────────────────────────────────────────────
@@ -190,6 +204,61 @@ export interface TempleVaultState {
   activePractices: MantraPractice[];
   totalContent:  number;
   totalNotes:    number;
+}
+
+// ─── Bhakti Atom ─────────────────────────────────────────────────────────────
+// The public expression layer for ZZ Bhakti Chautari.
+// Architectural role: same as media_atoms in the civic world.
+// Created deliberately by the founder from a temple_note/content with visibility==="published".
+// The bhakti_atom IS the public content — not a reference to the private note.
+// Firestore collection: bhakti_atoms
+// Rules: owner write, public read when isPublic===true (Phase 5+)
+// See docs/ZZC_TWO_WORLDS.md for full pipeline.
+
+export type BhaktiAtomType =
+  | "shloka_breakdown"       // verse with multilingual meaning layers
+  | "mantra_explainer"       // mantra with grammar, meaning, tradition
+  | "bhajan_text"            // devotional song text + context
+  | "meaning_card"           // single Sanskrit term deep meaning
+  | "leela_story"            // divine play narrative
+  | "devotional_reflection"  // founder spiritual insight made public-safe
+  | "teaching_note";         // received teaching with source
+
+export interface BhaktiAtom {
+  id?:              string;
+  ownerId:          string;
+  sourceNoteId?:    string;        // which temple_note inspired this (private — never exposed)
+  sourceContentId?: string;        // which temple_content inspired this
+
+  // ── Type and tradition ────────────────────────────────────────────────────
+  type:             BhaktiAtomType;
+  tradition?:       SpiritualTradition;
+
+  // ── Multilingual text layers ──────────────────────────────────────────────
+  textOriginal:     string;        // Devanagari (Sanskrit/Nepali primary)
+  transliteration?: string;        // IAST for Sanskrit
+  textNepali?:      string;
+  textHindi?:       string;
+  textEnglish?:     string;
+
+  // ── Meaning ───────────────────────────────────────────────────────────────
+  meaningNepali:    string;        // public-safe meaning in Nepali
+  meaningEnglish?:  string;
+
+  // ── Source grounding (required before isPublic=true) ─────────────────────
+  sourceRef?:       string;        // "Rigveda 7.59.12", "Bhagavad Gita 2.47"
+  isSourceGrounded: boolean;       // verified against a published source
+
+  // ── Semantic links ────────────────────────────────────────────────────────
+  dictionaryRefs:   string[];      // semantic_dictionary term IDs
+
+  // ── Media generation (Phase 6) ────────────────────────────────────────────
+  mediaPrompt?:     string;        // visual/audio generation prompt for devotional reel
+
+  // ── Publishing ────────────────────────────────────────────────────────────
+  isPublic:         boolean;       // false until founder explicitly publishes
+  addedAt:          string;
+  publishedAt?:     string;        // ISO — set when isPublic becomes true
 }
 
 // ─── Re-export spiritual semantic type ───────────────────────────────────────

@@ -1,9 +1,15 @@
 # ZZC Roadmap
 
-> Last updated: 2026-05-27
+> Last updated: 2026-05-28
 > Single owner system — Jeevan Regmi is the only admin.
 > Update this file whenever priorities shift.
+>
+> Strategic direction: see docs/ZZC_TWO_WORLDS.md — two public worlds, one private sanctuary.
 > Architecture: see docs/ARCHITECTURE_PHILOSOPHY.md — city model, not minimal dashboard.
+>
+> **The moat is deep multilingual semantic intelligence — not financial data feeds.**
+> ZZC Civic Chautari + ZZ Bhakti Chautari are the two public worlds.
+> Financial data (market rates, NRB) is a feature, not the identity.
 
 ---
 
@@ -75,7 +81,29 @@
 
 ---
 
-## 🔵 Later (Next quarter) — City Expansion
+## 🟣 Bhakti Chautari Pipeline (Phase 3–5)
+
+### B1. Spiritual Dictionary — Foundation
+- Seed 30 priority Sanskrit terms in `semantic_dictionary` (spiritual domain)
+- Monier-Williams source grounding for key terms (public domain XML)
+- Dictionary viewer at `/vault/temple/dictionary`
+- Three-state visibility UI live in TempleClient (private/review/published) ← already types done
+
+### B2. Temple → Bhakti Publish Pipeline
+- Review queue: founder sees all `visibility==="review"` notes in one view
+- Publish action: creates `bhakti_atom` from reviewed temple_note
+- `/vault/bhakti` publish dashboard (draft bhakti_atoms, approve, mark isPublic)
+- Firestore rule: `bhakti_atoms` open read when `isPublic==true` (Phase 5)
+
+### B3. ZZ Bhakti Chautari Public Launch
+- Public `/bhakti` route (or subdomain)
+- Shloka breakdowns, mantra explainers, meaning cards
+- Source attribution on every published atom
+- Calm sacred UX — no engagement bait, no notifications, no algorithmic feed
+
+---
+
+## 🔵 Later (Next quarter) — Civic City Expansion
 
 ### 9. Civic Campaigns — first-class civic missions
 - `civic_campaigns` Firestore collection + firestore.rules entry
@@ -145,15 +173,16 @@ These are part of the city vision. Not now, but designed to be addable.
 
 ## ⛔ Permanently Deferred
 
-Only things that violate the ONE brain principle or quality gate:
-
 | Feature | Why permanently deferred |
 |---|---|
 | Duplicate intelligence collections | Violates ONE brain principle |
 | Open signups / public contributor access | Trust problem — no anonymous contributions |
 | Generic LLM chatbot | Not the goal — rule-based CTO engine is the foundation |
-| Revenue / monetization | Too early — build quality first |
 | Auto-generate video without approval | Cost explosion + quality risk |
+| Financial data as primary public identity | The moat is semantic intelligence, not rates |
+| Fake guru / AI spiritual authority | Forbidden — see docs/ZZC_TWO_WORLDS.md |
+| Gamification in either world | No streaks, points, or engagement bait anywhere |
+| Auto-publishing from temple notes | Every visibility transition is deliberate (founder-only) |
 
 ---
 
