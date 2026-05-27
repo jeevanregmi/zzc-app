@@ -7,6 +7,7 @@ import type { DocUploadTask, DocCategory, GovFolder } from "../../../lib/types/d
 import { GOV_FOLDER_META } from "../../../lib/types/documents";
 import { createIntelligenceDoc } from "../../../lib/vault/firestore";
 import { ActionLearnCard, type ActionLearnData } from "../../vault/LearnTip";
+import OfficialSourceLinks from "../OfficialSourceLinks";
 
 const ALLOWED_MIME = [
   "application/pdf",
@@ -540,6 +541,15 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismi
             </select>
             {meta.govFolder && (
               <p className="text-zinc-600 text-xs px-1">{GOV_FOLDER_META[meta.govFolder].desc}</p>
+            )}
+            {meta.govFolder && (
+              <div className="mt-2">
+                <OfficialSourceLinks
+                  compact
+                  govFolder={meta.govFolder}
+                  tags={meta.tags ? meta.tags.split(",").map(t => t.trim()).filter(Boolean) : []}
+                />
+              </div>
             )}
           </div>
 

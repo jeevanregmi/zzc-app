@@ -19,7 +19,8 @@ import {
 import type { IntelligenceRecord } from "../../../../lib/types/intelligence-record";
 import type { ConstitutionalFrameworkRecord } from "../../../../lib/types/constitutional-framework";
 import { PARTS_META } from "./partsMeta";
-import { UPLOAD_GUIDANCE, type VaultCategory, type UploadRecommendation, type SourceLink } from "../../../../lib/constitution/uploadGuidance";
+import { UPLOAD_GUIDANCE, type VaultCategory, type UploadRecommendation } from "../../../../lib/constitution/uploadGuidance";
+import OfficialSourceLinks from "../../../../components/vault/OfficialSourceLinks";
 import type { GovFolder } from "../../../../lib/types/documents";
 import {
   computeAllDeepLearnProfiles,
@@ -512,26 +513,6 @@ function LivePill({ m, health, activeId, onToggle, learnOn }: {
 
 // ─── Upload guidance ──────────────────────────────────────────────────────────
 
-function SourceLinkBadges({ links }: { links: SourceLink[] }) {
-  if (!links.length) return null;
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: "5px", flexWrap: "wrap", marginBottom: "6px" }}>
-      <span style={{ fontSize: "9px", color: "rgba(255,255,255,0.25)", flexShrink: 0 }}>🔗 स्रोत:</span>
-      {links.map((lk, i) => (
-        <a
-          key={i}
-          href={lk.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ fontSize: "9.5px", fontWeight: 700, color: "#38bdf8", background: "rgba(56,189,248,0.08)", border: "1px solid rgba(56,189,248,0.22)", borderRadius: "5px", padding: "2px 8px", textDecoration: "none", whiteSpace: "nowrap" }}
-        >
-          ↗ {lk.label}
-        </a>
-      ))}
-    </div>
-  );
-}
-
 const PRIORITY_STYLE = {
   high:   { bg: "rgba(239,68,68,0.12)",   dot: "#ef4444", label: "उच्च" },
   medium: { bg: "rgba(251,191,36,0.12)",  dot: "#fbbf24", label: "मध्यम" },
@@ -625,11 +606,9 @@ function UploadGuidanceSection({ partNumber }: { partNumber: number }) {
                     {copied === copyKey ? "✓ copied" : "copy"}
                   </button>
                 </div>
-                {rec.sourceLinks && rec.sourceLinks.length > 0 && (
-                  <div style={{ marginTop: "8px" }}>
-                    <SourceLinkBadges links={rec.sourceLinks} />
-                  </div>
-                )}
+                <div style={{ marginTop: "8px" }}>
+                  <OfficialSourceLinks compact partNumbers={[partNumber]} tags={rec.tags} govFolder={recGovFolder(rec, partNumber)} />
+                </div>
                 <a href={recUploadUrl(rec, partNumber)} style={{ marginTop: "6px", display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", padding: "8px 12px", background: "rgba(34,197,94,0.10)", border: "1px solid rgba(34,197,94,0.25)", borderRadius: "7px", fontSize: "11px", fontWeight: 700, color: "#4ade80", textDecoration: "none" }}>
                   📤 यो document अहिले upload गर्नुहोस्
                 </a>
@@ -1046,17 +1025,7 @@ function FounderGuidancePanel({ healthMap, structMap, vaultTags, totalFramework 
                       </div>
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: "5px", flexShrink: 0, alignSelf: "center" }}>
-                      {rec.sourceLinks && rec.sourceLinks.map((lk, li) => (
-                        <a
-                          key={li}
-                          href={lk.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ fontSize: "9px", fontWeight: 700, color: "#38bdf8", background: "rgba(56,189,248,0.08)", border: "1px solid rgba(56,189,248,0.22)", borderRadius: "5px", padding: "3px 8px", textDecoration: "none", whiteSpace: "nowrap", textAlign: "center" }}
-                        >
-                          ↗ {lk.label}
-                        </a>
-                      ))}
+                      <OfficialSourceLinks compact partNumbers={[partNumber]} tags={rec.tags} govFolder={recGovFolder(rec, partNumber)} limit={2} />
                       <a
                         href={recUploadUrl(rec, partNumber)}
                         style={{ fontSize: "10px", fontWeight: 700, color: "#4ade80", background: "rgba(74,222,128,0.10)", border: "1px solid rgba(74,222,128,0.25)", borderRadius: "7px", padding: "6px 10px", textDecoration: "none", whiteSpace: "nowrap", textAlign: "center" }}
