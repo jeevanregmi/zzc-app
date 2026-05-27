@@ -4,9 +4,10 @@ import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { collection, getDocs, query, where, updateDoc, doc as firestoreDoc } from "firebase/firestore";
 import { db } from "../../app/firebase";
-import { useCTOInsights } from "../../hooks/vault/useCTOInsights";
+import { useCopilotContext } from "../../hooks/vault/useCopilotContext";
 import { systemHealthStatus } from "../../lib/vault/ctoEngine";
 import type { CTOInsight, InsightPriority } from "../../lib/vault/ctoEngine";
+import type { CopilotContext } from "../../lib/vault/copilotContext";
 import { useFounderMode } from "../../contexts/FounderModeContext";
 import { readLastSession } from "../../hooks/vault/useSessionTracker";
 
@@ -247,27 +248,36 @@ function HealthyCard({ insight }: { insight: CTOInsight }) {
   );
 }
 
-// ── Debug snapshot panel ──────────────────────────────────────────────────────
+// ── Debug context panel ───────────────────────────────────────────────────────
 
-function DebugPanel({ snapshot }: { snapshot: NonNullable<ReturnType<typeof useCTOInsights>["snapshot"]> }) {
+function DebugPanel({ context }: { context: CopilotContext }) {
+  const { pipeline, intelligence, branchHealth, sourceMonitoring, media, costRisk, qa } = context;
   return (
     <div className="rounded-xl border border-orange-900/50 bg-orange-950/10 p-3 space-y-1.5">
-      <p className="text-[9px] text-orange-500 uppercase tracking-widest font-black mb-2">🛠 Debug Snapshot</p>
-      {[
-        ["vault_documents",        snapshot.docsTotal],
-        ["janta_intelligence",     snapshot.totalIntel],
-        ["constitutional_framework", snapshot.totalFramework],
-        ["broken partNumber=0",    snapshot.brokenFrameworkRecords],
-        ["janta_relationships",    snapshot.totalRelationships],
-        ["low confidence intel",   snapshot.lowConfidenceIntel],
-        ["empty parts",            snapshot.emptyParts.length],
-        ["days since signal",      snapshot.daysSinceLastSignal ?? "—"],
-      ].map(([label, val]) => (
-        <div key={String(label)} className="flex items-center justify-between">
+      <p className="text-[9px] text-orange-500 uppercase tracking-widest font-black mb-2">🛠 Copilot Context</p>
+      {([
+        ["vault_documents",            pipeline.totalDocs],
+        ["janta_intelligence",         intelligence.intelCount],
+        ["constitutional_framework",   intelligence.frameworkCount],
+        ["broken partNumber=0",        intelligence.brokenFramework],
+        ["janta_relationships",        intelligence.relationshipCount],
+        ["low confidence intel",       intelligence.lowConfidenceCount],
+        ["empty parts",                branchHealth.emptyParts.length],
+        ["pending AI analyze",         pipeline.pendingAI],
+        ["pending review",             pipeline.pendingReview],
+        ["pending extract",            pipeline.pendingExtract],
+        ["source watchers",            sourceMonitoring.watchedSources],
+        ["new source updates",         sourceMonitoring.newUpdates],
+        ["media atoms",                media.totalAtoms],
+        ["QA progress",                `${qa.approvedDocs}/${qa.target}`],
+        ["context computed ms",        context.durationMs],
+      ] as [string, string | number][]).map(([label, val]) => (
+        <div key={label} className="flex items-center justify-between">
           <span className="text-zinc-600 text-[9px] font-mono">{label}</span>
           <span className="text-orange-300 text-[9px] font-black">{String(val)}</span>
         </div>
       ))}
+      <p className="text-zinc-700 text-[8px] font-mono pt-1">{costRisk.roughCostNote}</p>
     </div>
   );
 }
@@ -539,13 +549,13 @@ function CommandCenter({ uid }: { uid: string }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function CTOAssistant({ uid }: { uid: string | null }) {
+export function CTOAssistant({ uid, currentPage }: { uid: string | null; currentPage?: string }) {
   const [open,      setOpen]      = useState(false);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [lastSession, setLastSession] = useState<ReturnType<typeof readLastSession>>(null);
 
   const { isDebug, isFounder } = useFounderMode();
-  const { insights: rawInsights, snapshot, loading, lastRefresh, refresh } = useCTOInsights(uid);
+  const { context, insights: rawInsights, loading, lastRefresh, refresh } = useCopilotContext(uid);
 
   // Restore panel open state
   useEffect(() => {
@@ -571,7 +581,7 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
   }, []);
 
   const insights = rawInsights.filter(i => i.priority === "critical" || !dismissed.has(i.id));
-  const [panelTab, setPanelTab] = useState<"insights" | "commands">("insights");
+  const [panelTab, setPanelTab] = useState<"insights" | "commands" | "entrepreneur">("insights");
 
   const handleDismiss = useCallback((id: string) => {
     dismissInsight(id);
@@ -675,8 +685,9 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
           {/* Tab bar */}
           <div className="flex border-b border-zinc-800 px-4 shrink-0">
             {([
-              { id: "insights",  label: "💡 Insights" },
-              { id: "commands",  label: "⚡ Commands" },
+              { id: "insights",     label: "💡 Insights"    },
+              { id: "entrepreneur", label: "🎯 Founder"     },
+              { id: "commands",     label: "⚡ Commands"    },
             ] as const).map(t => (
               <button
                 key={t.id}
@@ -694,8 +705,72 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
             {/* ── Commands tab ── */}
             {panelTab === "commands" && <CommandCenter uid={uid} />}
 
+            {/* ── Entrepreneur tab ── */}
+            {panelTab === "entrepreneur" && (
+              <div className="space-y-3">
+                {!context ? (
+                  <div className="flex items-center justify-center py-12 text-zinc-600 text-xs">Loading context…</div>
+                ) : (
+                  <>
+                    {/* QA progress bar */}
+                    <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-bold">QA Sprint Progress</p>
+                        <span className={`text-[10px] font-black ${context.qa.onTrack ? "text-green-400" : "text-amber-400"}`}>
+                          {context.qa.approvedDocs}/{context.qa.target}
+                        </span>
+                      </div>
+                      <div className="flex-1 bg-zinc-800 rounded-full h-1.5 overflow-hidden">
+                        <div className="h-full bg-green-500 rounded-full transition-all duration-700" style={{ width: `${context.qa.pct}%` }} />
+                      </div>
+                      <p className="text-zinc-600 text-[9px]">{context.qa.onTrack ? "QA sprint पूरा ✓" : `${context.qa.target - context.qa.approvedDocs} थप approved docs चाहिन्छ`}</p>
+                    </div>
+
+                    {/* Entrepreneur summary cards */}
+                    {([
+                      { icon: "⚡", label: "आजको सबैभन्दा महत्त्वपूर्ण काम",  value: context.entrepreneur.todayLeverage,     color: "text-amber-300"  },
+                      { icon: "📅", label: "यो हप्ताको priority",              value: context.entrepreneur.weekPriority,      color: "text-blue-300"   },
+                      { icon: "⚠",  label: "System risk",                      value: context.entrepreneur.systemRisk,        color: "text-red-400"    },
+                      { icon: "🚀", label: "Growth opportunity",               value: context.entrepreneur.growthOpportunity, color: "text-green-400"  },
+                      { icon: "🎬", label: "Content opportunity",              value: context.entrepreneur.contentOpportunity,color: "text-purple-400" },
+                      { icon: "📊", label: "सबैभन्दा ठूलो data gap",           value: context.entrepreneur.dataGap,           color: "text-zinc-300"   },
+                    ] as const).map(row => (
+                      <div key={row.label} className="rounded-xl border border-zinc-800/70 bg-zinc-900/40 px-3 py-2.5">
+                        <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-bold mb-1">{row.icon} {row.label}</p>
+                        <p className={`text-xs leading-relaxed font-semibold ${row.color}`}>{row.value}</p>
+                      </div>
+                    ))}
+
+                    {/* Founder synthesis note */}
+                    <div className="rounded-xl border border-zinc-700/60 bg-zinc-800/40 px-3 py-2.5">
+                      <p className="text-[9px] text-zinc-500 uppercase tracking-widest font-bold mb-1">🧠 Founder Note</p>
+                      <p className="text-zinc-300 text-xs leading-relaxed italic">{context.entrepreneur.founderNote}</p>
+                    </div>
+
+                    {/* Cost note */}
+                    <div className="rounded-xl border border-zinc-800/50 px-3 py-2 bg-zinc-950/40">
+                      <p className="text-[9px] text-zinc-700 uppercase tracking-widest font-bold mb-0.5">💰 AI Cost</p>
+                      <p className="text-zinc-500 text-[10px]">{context.costRisk.roughCostNote}</p>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {/* ── Insights tab ── */}
             {panelTab === "insights" && <>
+
+            {/* Page-aware hint banner */}
+            {context && currentPage && (() => {
+              const hintKey = Object.keys(context.pageHints).find(k => currentPage.startsWith(k));
+              const hints = hintKey ? (context.pageHints[hintKey] ?? []) : [];
+              return hints.length > 0 ? (
+                <div className="rounded-xl border border-blue-900/40 bg-blue-950/20 px-3 py-2 space-y-1">
+                  <p className="text-[9px] text-blue-500 uppercase tracking-widest font-bold">📍 यो page</p>
+                  {hints.map((h, i) => <p key={i} className="text-blue-300 text-[10px] leading-relaxed">{h}</p>)}
+                </div>
+              ) : null;
+            })()}
 
             {/* Last session continuity banner */}
             {showSession && (
@@ -714,20 +789,20 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
             )}
 
             {/* Loading */}
-            {loading && !snapshot && (
+            {loading && !context && (
               <div className="flex flex-col items-center justify-center py-16 gap-3">
                 <span className="text-3xl animate-pulse">🧠</span>
                 <p className="text-zinc-600 text-xs">System state load हुँदैछ…</p>
               </div>
             )}
 
-            {/* Snapshot stats row */}
-            {snapshot && (
+            {/* Context stats row */}
+            {context && (
               <div className="grid grid-cols-3 gap-1.5">
                 {[
-                  { label: "Documents",   sub: isDebug ? "vault_documents" : "uploaded",         value: snapshot.docsTotal,     color: "text-white"                                               },
-                  { label: "Intelligence", sub: isDebug ? "janta_intelligence" : "records",       value: snapshot.totalIntel,    color: snapshot.totalIntel > 0     ? "text-blue-400"  : "text-zinc-600" },
-                  { label: "Branches",    sub: isDebug ? "constitutional_framework" : `${snapshot.partsWithData}/35`, value: snapshot.partsWithData, color: snapshot.partsWithData > 0 ? "text-green-400" : "text-zinc-600" },
+                  { label: "Documents",   sub: isDebug ? "vault_documents" : "uploaded",           value: context.pipeline.totalDocs,        color: "text-white"                                                                       },
+                  { label: "Intelligence",sub: isDebug ? "janta_intelligence" : "records",         value: context.intelligence.intelCount,   color: context.intelligence.intelCount > 0     ? "text-blue-400"  : "text-zinc-600" },
+                  { label: "Branches",    sub: isDebug ? "constitutional_framework" : `${context.branchHealth.partsWithData}/35`, value: context.branchHealth.partsWithData, color: context.branchHealth.partsWithData > 0 ? "text-green-400" : "text-zinc-600" },
                 ].map(s => (
                   <div key={s.label} className="bg-zinc-900 border border-zinc-800/60 rounded-xl p-2.5 text-center">
                     <p className={`text-lg font-black ${s.color}`}>{s.value}</p>
@@ -765,7 +840,7 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
             )}
 
             {/* Constitution branch progress */}
-            {snapshot && snapshot.totalFramework > 0 && (
+            {context && context.intelligence.frameworkCount > 0 && (
               <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-3 space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-bold">
@@ -777,28 +852,28 @@ export function CTOAssistant({ uid }: { uid: string | null }) {
                   <div className="flex-1 bg-zinc-800 rounded-full h-2 overflow-hidden">
                     <div
                       className="h-full bg-green-500 rounded-full transition-all duration-700"
-                      style={{ width: `${Math.round((snapshot.partsWithData / 35) * 100)}%` }}
+                      style={{ width: `${Math.round((context.branchHealth.partsWithData / 35) * 100)}%` }}
                     />
                   </div>
-                  <span className="text-xs font-black text-white shrink-0">{snapshot.partsWithData}/35</span>
+                  <span className="text-xs font-black text-white shrink-0">{context.branchHealth.partsWithData}/35</span>
                 </div>
-                {snapshot.brokenFrameworkRecords > 0 && (
+                {context.intelligence.brokenFramework > 0 && (
                   <p className="text-amber-600 text-[10px]">
-                    {snapshot.brokenFrameworkRecords} धाराहरू सही भागमा पुगेका छैनन् —
+                    {context.intelligence.brokenFramework} धाराहरू सही भागमा पुगेका छैनन् —
                     <Link href="/vault/constitution" className="text-amber-400 ml-1 hover:text-amber-300">मिलाउनुस् →</Link>
                   </p>
                 )}
-                {snapshot.emptyParts.length > 0 && snapshot.brokenFrameworkRecords === 0 && (
+                {context.branchHealth.emptyParts.length > 0 && context.intelligence.brokenFramework === 0 && (
                   <p className="text-zinc-600 text-[10px]">
-                    खाली: भाग {snapshot.emptyParts.slice(0, 6).join(", ")}
-                    {snapshot.emptyParts.length > 6 ? ` +${snapshot.emptyParts.length - 6} थप` : ""}
+                    खाली: भाग {context.branchHealth.emptyParts.slice(0, 6).join(", ")}
+                    {context.branchHealth.emptyParts.length > 6 ? ` +${context.branchHealth.emptyParts.length - 6} थप` : ""}
                   </p>
                 )}
               </div>
             )}
 
-            {/* Debug raw snapshot */}
-            {isDebug && snapshot && <DebugPanel snapshot={snapshot} />}
+            {/* Debug context dump */}
+            {isDebug && context && <DebugPanel context={context} />}
 
             {/* Glossary — founder mode shows plain Nepali only */}
             {isFounder && (
