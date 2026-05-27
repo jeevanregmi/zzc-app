@@ -7,6 +7,80 @@ import { db } from "../../firebase";
 import { VaultShell } from "../../../components/vault/VaultShell";
 import { useVaultAuth } from "../../../hooks/vault/useVaultAuth";
 
+// ── QA Document Kit ───────────────────────────────────────────────────────────
+
+interface KitDoc {
+  title:   string;
+  parts:   number[];
+  cat:     string;
+  tags:    string;
+  folder:  string;
+  source:  string;
+}
+
+const KIT_DOCS: KitDoc[] = [
+  { title: "राष्ट्रिय मानव अधिकार आयोग वार्षिक प्रतिवेदन", parts: [28, 3],   cat: "research",  tags: "मानव अधिकार,fundamental rights",   folder: "nhrc",            source: "nhrc.org.np"             },
+  { title: "अख्तियार दुरुपयोग अनुसन्धान आयोग वार्षिक प्रतिवेदन", parts: [24],  cat: "legal",     tags: "CIAA,भ्रष्टाचार,anti-corruption",  folder: "ciaa",            source: "ciaa.gov.np"             },
+  { title: "नेपाल सरकारको वार्षिक बजेट भाषण", parts: [23],                      cat: "finance",   tags: "बजेट,सार्वजनिक खर्च,अर्थ",         folder: "mof",             source: "mof.gov.np"              },
+  { title: "नेपाल राष्ट्र बैंक मौद्रिक नीति", parts: [23],                      cat: "finance",   tags: "मौद्रिक नीति,NRB,banking",          folder: "nrb",             source: "nrb.org.np"              },
+  { title: "राष्ट्रिय शिक्षा नीति", parts: [4, 3],                              cat: "strategy",  tags: "शिक्षा नीति,education,directive",    folder: "moe",             source: "moe.gov.np"              },
+  { title: "लोक सेवा आयोग वार्षिक प्रतिवेदन", parts: [26],                      cat: "research",  tags: "लोक सेवा,civil service,PSC",         folder: "psc",             source: "psc.gov.np"              },
+  { title: "निर्वाचन आयोग वार्षिक प्रतिवेदन", parts: [27],                      cat: "research",  tags: "निर्वाचन,election,democracy",        folder: "election-commission", source: "election.gov.np"     },
+  { title: "महालेखापरीक्षकको कार्यालय लेखापरीक्षण प्रतिवेदन", parts: [25, 23], cat: "finance",   tags: "लेखापरीक्षण,audit,OAG",              folder: "oag",             source: "oag.gov.np"              },
+  { title: "राष्ट्रिय महिला आयोग वार्षिक प्रतिवेदन", parts: [29, 3],            cat: "research",  tags: "महिला अधिकार,women,gender",          folder: "ncw",             source: "ncwnepal.gov.np"         },
+  { title: "सर्वोच्च अदालत वार्षिक प्रतिवेदन", parts: [11, 3],                  cat: "legal",     tags: "न्यायपालिका,judiciary,Supreme Court", folder: "judiciary",       source: "supremecourt.gov.np"     },
+];
+
+const PART_LABELS_KIT: Record<number, string> = {
+  3: "मौलिक हक", 4: "निर्देशक सिद्धान्त", 11: "न्यायपालिका",
+  23: "वित्त", 24: "CIAA", 25: "महालेखापरीक्षक",
+  26: "लोक सेवा", 27: "निर्वाचन", 28: "मानव अधिकार", 29: "महिला",
+};
+
+function buildUploadUrl(doc: KitDoc): string {
+  const params = new URLSearchParams({
+    upload: "1",
+    title:  doc.title,
+    tags:   doc.tags,
+    govFolder: doc.folder,
+  });
+  if (doc.parts[0]) params.set("parts", String(doc.parts[0]));
+  return `/vault/documents?${params.toString()}`;
+}
+
+function DocKitRow({ doc, idx, done }: { doc: KitDoc; idx: number; done: boolean }) {
+  return (
+    <div className={`rounded-lg border px-3 py-2.5 flex items-start gap-3 ${
+      done ? "border-green-900/40 bg-green-950/10" : "border-zinc-800 bg-zinc-900/20"
+    }`}>
+      <span className={`text-xs font-black w-5 shrink-0 pt-0.5 ${done ? "text-green-500" : "text-zinc-600"}`}>
+        {done ? "✓" : idx + 1}
+      </span>
+      <div className="flex-1 min-w-0 space-y-1">
+        <p className={`text-xs font-bold leading-tight ${done ? "text-green-400" : "text-white"}`}>
+          {doc.title}
+        </p>
+        <div className="flex flex-wrap gap-1">
+          {doc.parts.map(p => (
+            <span key={p} className="text-[9px] px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-400 font-semibold border border-zinc-700">
+              भाग {p} — {PART_LABELS_KIT[p] ?? `Part ${p}`}
+            </span>
+          ))}
+        </div>
+        <p className="text-zinc-600 text-[9px]">{doc.source}</p>
+      </div>
+      {!done && (
+        <Link
+          href={buildUploadUrl(doc)}
+          className="shrink-0 text-[10px] font-black px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-black transition-colors"
+        >
+          Upload →
+        </Link>
+      )}
+    </div>
+  );
+}
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface QADoc {
@@ -278,6 +352,24 @@ export default function QASprintClient() {
             />
           </div>
         </div>
+
+        {/* Document Kit */}
+        {!loading && approved < TARGET && (
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-black">10 Document Kit — सुझाव</p>
+              <span className="text-[9px] text-zinc-600">{Math.min(uploaded, TARGET)}/{TARGET} upload गरिएको</span>
+            </div>
+            <div className="space-y-1.5">
+              {KIT_DOCS.map((doc, i) => (
+                <DocKitRow key={i} doc={doc} idx={i} done={i < uploaded} />
+              ))}
+            </div>
+            <p className="text-zinc-700 text-[9px] mt-2 px-1">
+              प्रत्येक document सम्बन्धित सरकारी website बाट PDF download गरेर Upload गर्नुहोस्।
+            </p>
+          </div>
+        )}
 
         {/* Document list */}
         {loading ? (
