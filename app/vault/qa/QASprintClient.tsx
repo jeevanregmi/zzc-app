@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { collection, getDocs, limit, query, where } from "firebase/firestore";
 import { db } from "../../firebase";
 import { VaultShell } from "../../../components/vault/VaultShell";
 import { useVaultAuth } from "../../../hooks/vault/useVaultAuth";
@@ -159,13 +159,10 @@ export default function QASprintClient() {
   useEffect(() => {
     if (!uid) return;
     setLoading(true);
-    const q = (col: string, lim: number) =>
-      getDocs(query(collection(db, col), where("ownerId", "==", uid), { limit: lim } as never));
-
     void Promise.all([
-      safe(getDocs(query(collection(db, "vault_documents"), where("ownerId", "==", uid))), EMPTY),
-      safe(getDocs(query(collection(db, "janta_intelligence"), where("ownerId", "==", uid))), EMPTY),
-      safe(getDocs(query(collection(db, "constitutional_framework"), where("ownerId", "==", uid))), EMPTY),
+      safe(getDocs(query(collection(db, "vault_documents"), where("ownerId", "==", uid), limit(200))), EMPTY),
+      safe(getDocs(query(collection(db, "janta_intelligence"), where("ownerId", "==", uid), limit(500))), EMPTY),
+      safe(getDocs(query(collection(db, "constitutional_framework"), where("ownerId", "==", uid), limit(500))), EMPTY),
     ]).then(([docsSnap, intelSnap, fwSnap]) => {
       const rawDocs: QADoc[] = (docsSnap.docs ?? [])
         .map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) } as QADoc))
@@ -186,7 +183,6 @@ export default function QASprintClient() {
       });
       setPartsWithData(partSet.size);
 
-      void q; // silence unused import warning
     }).finally(() => setLoading(false));
   }, [uid]);
 
