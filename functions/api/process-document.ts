@@ -166,12 +166,49 @@ function toBase64(buffer: ArrayBuffer): string {
 function parseIntelligence(text: string): IntelligenceResult | null {
   const t = text.trim();
   if (!t) return null;
+
   // 1. Direct parse — works when responseMimeType: application/json is set
-  try { const d = JSON.parse(t); if (d && typeof d === "object" && !Array.isArray(d)) return d as IntelligenceResult; } catch {}
-  // 2. Extract first {...} block — handles preamble/postamble or markdown fences
-  const match = t.match(/\{[\s\S]*\}/);
-  if (!match) return null;
-  try { return JSON.parse(match[0]) as IntelligenceResult; } catch { return null; }
+  try {
+    const d = JSON.parse(t);
+    if (d && typeof d === "object" && !Array.isArray(d)) return d as IntelligenceResult;
+  } catch {}
+
+  // 2. Strip markdown fences (```json ... ``` or ``` ... ```) then retry
+  const noFences = t.replace(/^```(?:json)?\s*/m, "").replace(/\s*```\s*$/m, "").trim();
+  if (noFences !== t) {
+    try {
+      const d = JSON.parse(noFences);
+      if (d && typeof d === "object" && !Array.isArray(d)) return d as IntelligenceResult;
+    } catch {}
+  }
+
+  // 3. Balanced bracket scan — more reliable than greedy regex when preamble/postamble
+  //    contains { or } characters (common with Gemini 2.5 verbose responses).
+  //    Finds each top-level { ... } candidate and parses it.
+  for (let i = 0; i < t.length; i++) {
+    if (t[i] !== "{") continue;
+    let depth = 0;
+    let inString = false;
+    let escaped  = false;
+    let j = i;
+    for (; j < t.length; j++) {
+      const c = t[j];
+      if (escaped)               { escaped = false; continue; }
+      if (c === "\\" && inString){ escaped = true;  continue; }
+      if (c === '"')             { inString = !inString; continue; }
+      if (inString)              continue;
+      if (c === "{")             depth++;
+      else if (c === "}") { depth--; if (depth === 0) break; }
+    }
+    if (depth === 0) {
+      try {
+        const d = JSON.parse(t.slice(i, j + 1));
+        if (d && typeof d === "object" && !Array.isArray(d)) return d as IntelligenceResult;
+      } catch {}
+    }
+  }
+
+  return null;
 }
 
 function json(body: unknown, status: number): Response {

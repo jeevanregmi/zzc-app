@@ -126,7 +126,8 @@ async function tryGemini(
           system,
           parts,
           maxTokens,
-          // responseMimeType not supported with PDF inline_data — system prompt handles JSON format
+          // jsonMode forces responseMimeType: application/json — NOT supported with PDF inline_data
+          jsonMode:  doc.textBody !== undefined,
         });
         return { ok: true, text: result.text, model: result.model, retries: attempt };
       } catch (err) {
