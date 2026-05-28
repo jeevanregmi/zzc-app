@@ -145,6 +145,8 @@ interface QADoc {
   adminApprovalStatus?: string;
   uploadedAt?:          string;
   aiSummary?:           string;
+  govFolder?:           string;
+  downloadUrl?:         string;
 }
 
 interface StageCount {
@@ -284,7 +286,7 @@ export default function QASprintClient() {
 
   const TARGET = 10;
 
-  useEffect(() => {
+  const fetchData = () => {
     if (!uid) return;
     setLoading(true);
     void Promise.all([
@@ -312,7 +314,9 @@ export default function QASprintClient() {
       setPartsWithData(partSet.size);
 
     }).finally(() => setLoading(false));
-  }, [uid]);
+  };
+
+  useEffect(() => { fetchData(); }, [uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (authLoading) return null;
 
@@ -321,6 +325,16 @@ export default function QASprintClient() {
   const reviewed   = docs.filter(d => d.adminApprovalStatus && d.adminApprovalStatus !== "pending_review").length;
   const approved   = docs.filter(d => d.adminApprovalStatus === "approved").length;
   const extracted  = docs.filter(d => d.adminApprovalStatus === "approved" && (intelByDoc[d.id] ?? 0) > 0).length;
+
+  // Build folder + URL match sets so kit rows show ✓ for docs already in vault
+  const uploadedFolders = new Set(docs.map(d => d.govFolder).filter(Boolean) as string[]);
+  const uploadedUrls    = new Set(docs.map(d => d.downloadUrl).filter(Boolean) as string[]);
+  function kitDone(kitDoc: KitDoc): boolean {
+    if (uploadedFolders.has(kitDoc.folder)) return true;
+    if (uploadedUrls.has(kitDoc.siteUrl))   return true;
+    return false;
+  }
+  const kitUploadedCount = KIT_DOCS.filter(kitDone).length;
 
   const stages: StageCount = { uploaded, analyzed, reviewed, approved, extracted, branchHealthPct: Math.round((partsWithData / 35) * 100) };
 
@@ -340,9 +354,18 @@ export default function QASprintClient() {
 
         {/* Header */}
         <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">🎯</span>
-            <h1 className="text-xl font-black text-white">QA Sprint</h1>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-2xl">🎯</span>
+              <h1 className="text-xl font-black text-white">QA Sprint</h1>
+            </div>
+            <button
+              onClick={fetchData}
+              disabled={loading}
+              className="text-[10px] font-black px-2.5 py-1 rounded-lg border border-zinc-700 bg-zinc-900 text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors disabled:opacity-40"
+            >
+              {loading ? "…" : "↻ Refresh"}
+            </button>
           </div>
           <p className="text-zinc-500 text-sm">
             {TARGET} documents पूरा pipeline मा पार गर्ने लक्ष्य — civic intelligence system को foundation prove गर्ने।
@@ -412,7 +435,7 @@ export default function QASprintClient() {
           <div>
             <div className="flex items-center justify-between mb-2">
               <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-black">10 Document Kit — सुझाव</p>
-              <span className="text-[9px] text-zinc-600">{Math.min(uploaded, TARGET)}/{TARGET} upload गरिएको</span>
+              <span className="text-[9px] text-zinc-600">{kitUploadedCount}/{TARGET} upload गरिएको</span>
             </div>
             <div className="rounded-lg border border-amber-900/30 bg-amber-950/10 px-3 py-2 mb-3 flex items-start gap-2">
               <span className="text-amber-500 text-xs shrink-0">⚠</span>
@@ -422,7 +445,7 @@ export default function QASprintClient() {
             </div>
             <div className="space-y-1.5">
               {KIT_DOCS.map((doc, i) => (
-                <DocKitRow key={i} doc={doc} idx={i} done={i < uploaded} />
+                <DocKitRow key={i} doc={doc} idx={i} done={kitDone(doc)} />
               ))}
             </div>
             <p className="text-zinc-700 text-[9px] mt-2 px-1">
