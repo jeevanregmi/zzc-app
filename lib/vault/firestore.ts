@@ -16,12 +16,13 @@
 
 import {
   collection, doc, addDoc, updateDoc, deleteDoc, getDoc, setDoc,
-  onSnapshot, query, where, orderBy, Timestamp,
+  getDocs, onSnapshot, query, where, orderBy, limit, Timestamp,
   type Unsubscribe,
 } from "firebase/firestore";
 import { db } from "../../app/firebase";
 import type { VaultMedia, VaultFolder, VaultDocument } from "./types";
 import type { IntelligenceDocument } from "../types/documents";
+import type { SpiritualCharacter, SpiritualRelationship } from "../types/temple-vault";
 import type { QueueItem } from "../types/queue";
 import type { SourceSignal, MonitoredSource, IntelligenceTopic } from "../types/signals";
 import { writeAtomsForDoc } from "./atoms";
@@ -1123,3 +1124,62 @@ export function subscribeAudienceLeads(
   });
 }
 
+
+// ─── Spiritual Characters ─────────────────────────────────────────────────────
+
+const COL_SPIRITUAL_CHARS = "spiritual_characters";
+const COL_SPIRITUAL_RELS  = "spiritual_relationships";
+
+export async function upsertSpiritualCharacter(
+  character: Omit<SpiritualCharacter, "createdAt" | "updatedAt"> & { id: string },
+): Promise<void> {
+  const { id, ...data } = character;
+  const ref = doc(db, COL_SPIRITUAL_CHARS, id);
+  const snap = await getDoc(ref);
+  const now = Timestamp.now();
+  if (snap.exists()) {
+    await updateDoc(ref, { ...data, updatedAt: now.toDate().toISOString() });
+  } else {
+    await setDoc(ref, { ...data, createdAt: now.toDate().toISOString(), updatedAt: now.toDate().toISOString() });
+  }
+}
+
+export async function updateSpiritualCharacter(
+  id: string,
+  patch: Partial<SpiritualCharacter>,
+): Promise<void> {
+  await updateDoc(doc(db, COL_SPIRITUAL_CHARS, id), {
+    ...patch,
+    updatedAt: new Date().toISOString(),
+  });
+}
+
+export async function getSpiritualCharacters(ownerId: string): Promise<(SpiritualCharacter & { id: string })[]> {
+  const snap = await getDocs(query(
+    collection(db, COL_SPIRITUAL_CHARS),
+    where("ownerId", "==", ownerId),
+    limit(50),
+  ));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as SpiritualCharacter & { id: string }));
+}
+
+export async function getSpiritualRelationships(
+  ownerId: string,
+  characterId?: string,
+): Promise<(SpiritualRelationship & { id: string })[]> {
+  const constraints = [where("ownerId", "==", ownerId), limit(200)] as const;
+  const snap = await getDocs(query(collection(db, COL_SPIRITUAL_RELS), ...constraints));
+  const all = snap.docs.map(d => ({ id: d.id, ...d.data() } as SpiritualRelationship & { id: string }));
+  if (!characterId) return all;
+  return all.filter(r => r.fromId === characterId || r.toId === characterId);
+}
+
+export async function upsertSpiritualRelationship(
+  rel: Omit<SpiritualRelationship, "createdAt"> & { id: string },
+): Promise<void> {
+  const { id, ...data } = rel;
+  await setDoc(doc(db, COL_SPIRITUAL_RELS, id), {
+    ...data,
+    createdAt: new Date().toISOString(),
+  });
+}

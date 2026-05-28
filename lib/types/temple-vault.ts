@@ -305,6 +305,8 @@ export interface SpiritualCharacter {
 
   // ── Identity ───────────────────────────────────────────────────────────────
   characterType:   CharacterType;
+  icon?:           string;              // emoji/symbol for UI display ("🕉", "🪷")
+  chamberTheme?:   ChamberTheme;        // which sacred chamber this character maps to
   primaryName:     MultilingualText;    // canonical name in all languages
   alternateNames:  MultilingualText[];  // Mahadeva, Nataraja, Mahakala, Pashupati...
   epithets:        string[];            // "Destroyer", "Consciousness", "Auspicious"

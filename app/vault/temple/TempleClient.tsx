@@ -9,6 +9,9 @@ import { db } from "../../firebase";
 import { useVaultAuth } from "../../../hooks/vault/useVaultAuth";
 import type { TempleNote, NoteType, TempleVisibility } from "../../../lib/types/temple-vault";
 import { SACRED_CHAMBERS } from "../../../lib/types/temple-vault";
+import { CharacterIntelligencePanel } from "../../../components/vault/temple/CharacterIntelligencePanel";
+
+type ActiveTab = "mantra" | "charitra";
 
 // ─── Chamber accent palette ────────────────────────────────────────────────────
 
@@ -669,7 +672,7 @@ function TempleLanding({ uid, onEnter }: { uid: string; onEnter: (id: string) =>
   }, [uid]);
 
   return (
-    <div className="min-h-screen bg-[#070714] px-5 sm:px-8 py-14">
+    <div className="px-5 sm:px-8 py-14">
 
       {/* OM header — breathing room, not a banner */}
       <div className="text-center mb-16">
@@ -750,6 +753,7 @@ function TempleLanding({ uid, onEnter }: { uid: string; onEnter: (id: string) =>
 export default function TempleClient() {
   const { user, loading, isOwner } = useVaultAuth();
   const [activeChamber, setActiveChamber] = useState<string | null>(null);
+  const [activeTab,     setActiveTab]     = useState<ActiveTab>("mantra");
 
   if (loading) {
     return (
@@ -777,5 +781,40 @@ export default function TempleClient() {
     );
   }
 
-  return <TempleLanding uid={user.uid} onEnter={setActiveChamber} />;
+  return (
+    <div className="min-h-screen bg-[#070714]">
+
+      {/* Tab bar — मन्दिर (notes) ↔ चरित्र (intelligence graph) */}
+      <div className="flex items-end justify-center gap-10 pt-5 border-b border-white/[0.03]">
+        <button
+          onClick={() => setActiveTab("mantra")}
+          className={`pb-3 text-xs tracking-widest transition-colors duration-300 ${
+            activeTab === "mantra"
+              ? "text-zinc-400 border-b border-zinc-600"
+              : "text-zinc-700 hover:text-zinc-500"
+          }`}
+        >
+          मन्दिर
+        </button>
+        <button
+          onClick={() => setActiveTab("charitra")}
+          className={`pb-3 text-xs tracking-widest transition-colors duration-300 ${
+            activeTab === "charitra"
+              ? "text-zinc-400 border-b border-zinc-600"
+              : "text-zinc-700 hover:text-zinc-500"
+          }`}
+        >
+          चरित्र
+        </button>
+      </div>
+
+      {activeTab === "mantra" ? (
+        <TempleLanding uid={user.uid} onEnter={setActiveChamber} />
+      ) : (
+        <div className="px-5 sm:px-8 py-8">
+          <CharacterIntelligencePanel ownerId={user.uid} />
+        </div>
+      )}
+    </div>
+  );
 }

@@ -146,6 +146,7 @@ export type SpiritualTradition =
   | "bhakti"
   | "tantra"
   | "yoga"
+  | "ganapatya"
   | "general";
 
 export interface ScriptureReference {
