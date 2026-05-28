@@ -17,6 +17,7 @@
 import {
   collection, doc, addDoc, updateDoc, deleteDoc, getDoc, setDoc,
   getDocs, onSnapshot, query, where, orderBy, limit, Timestamp,
+  arrayUnion,
   type Unsubscribe,
 } from "firebase/firestore";
 import { db } from "../../app/firebase";
@@ -24,6 +25,7 @@ import type { VaultMedia, VaultFolder, VaultDocument } from "./types";
 import type { IntelligenceDocument } from "../types/documents";
 import type { SpiritualCharacter, SpiritualRelationship } from "../types/temple-vault";
 import type { SacredText, ShlokaAtom } from "../types/sacred-text";
+import type { SpiritualSuggestion, SuggestionStatus, SuggestionPayload } from "../types/spiritual-suggestions";
 import type { QueueItem } from "../types/queue";
 import type { SourceSignal, MonitoredSource, IntelligenceTopic } from "../types/signals";
 import { writeAtomsForDoc } from "./atoms";
@@ -1245,4 +1247,61 @@ export async function getShlokaAtoms(
   const all = snap.docs.map(d => ({ id: d.id, ...d.data() } as ShlokaAtom & { id: string }));
   if (!sourceTextId) return all;
   return all.filter(a => a.sourceTextId === sourceTextId);
+}
+
+// ─── Spiritual Recommendation Queue ─────────────────────────────────────────
+// AI suggestions flow: analyze text → create suggestions → founder reviews →
+// approved suggestions update the intelligence graph.
+
+const COL_SPIRITUAL_SUGGESTIONS = "spiritual_suggestions";
+
+export async function createSpiritualSuggestions(
+  suggestions: Omit<SpiritualSuggestion, "id" | "createdAt" | "reviewedAt">[],
+): Promise<void> {
+  const ts = now();
+  await Promise.all(
+    suggestions.map(s =>
+      addDoc(collection(db, COL_SPIRITUAL_SUGGESTIONS), { ...s, createdAt: ts }),
+    ),
+  );
+}
+
+export async function getSpiritualSuggestions(
+  ownerId: string,
+  sourceTextId?: string,
+): Promise<(SpiritualSuggestion & { id: string })[]> {
+  const snap = await getDocs(query(
+    collection(db, COL_SPIRITUAL_SUGGESTIONS),
+    where("ownerId", "==", ownerId),
+    limit(500),
+  ));
+  const all = snap.docs.map(d => ({ id: d.id, ...d.data() } as SpiritualSuggestion & { id: string }));
+  if (!sourceTextId) return all;
+  return all.filter(s => s.sourceTextId === sourceTextId);
+}
+
+export async function updateSuggestionStatus(
+  id: string,
+  status: SuggestionStatus,
+  opts?: { founderNote?: string; editedPayload?: SuggestionPayload },
+): Promise<void> {
+  await updateDoc(doc(db, COL_SPIRITUAL_SUGGESTIONS, id), {
+    status,
+    founderNote:   opts?.founderNote   ?? null,
+    editedPayload: opts?.editedPayload ?? null,
+    reviewedAt:    now(),
+  });
+}
+
+// Append values to an array field on a SpiritualCharacter atomically.
+// Used when a character_enrichment suggestion is approved.
+export async function enrichSpiritualCharacter(
+  characterId: string,
+  field: string,
+  values: string[],
+): Promise<void> {
+  await updateDoc(doc(db, COL_SPIRITUAL_CHARS, characterId), {
+    [field]:    arrayUnion(...values),
+    updatedAt:  now(),
+  } as Record<string, unknown>);
 }

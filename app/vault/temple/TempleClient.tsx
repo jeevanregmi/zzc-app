@@ -11,8 +11,9 @@ import type { TempleNote, NoteType, TempleVisibility } from "../../../lib/types/
 import { SACRED_CHAMBERS } from "../../../lib/types/temple-vault";
 import { CharacterIntelligencePanel } from "../../../components/vault/temple/CharacterIntelligencePanel";
 import { SacredTextIntakePanel } from "../../../components/vault/temple/SacredTextIntakePanel";
+import { SpiritualRecommendationQueue } from "../../../components/vault/temple/SpiritualRecommendationQueue";
 
-type ActiveTab = "mantra" | "charitra" | "granth";
+type ActiveTab = "mantra" | "charitra" | "granth" | "sugjhav";
 
 // ─── Chamber accent palette ────────────────────────────────────────────────────
 
@@ -753,8 +754,9 @@ function TempleLanding({ uid, onEnter }: { uid: string; onEnter: (id: string) =>
 
 export default function TempleClient() {
   const { user, loading, isOwner } = useVaultAuth();
-  const [activeChamber, setActiveChamber] = useState<string | null>(null);
-  const [activeTab,     setActiveTab]     = useState<ActiveTab>("mantra");
+  const [activeChamber,    setActiveChamber]    = useState<string | null>(null);
+  const [activeTab,        setActiveTab]        = useState<ActiveTab>("mantra");
+  const [pendingSuggCount, setPendingSuggCount] = useState(0);
 
   if (loading) {
     return (
@@ -785,13 +787,14 @@ export default function TempleClient() {
   return (
     <div className="min-h-screen bg-[#070714]">
 
-      {/* Tab bar — मन्दिर · चरित्र · ग्रन्थ */}
+      {/* Tab bar — मन्दिर · चरित्र · ग्रन्थ · सुझाव */}
       <div className="flex items-end justify-center gap-10 pt-5 border-b border-white/[0.03]">
-        {(["mantra", "charitra", "granth"] as const).map(tab => {
+        {(["mantra", "charitra", "granth", "sugjhav"] as const).map(tab => {
           const labels: Record<ActiveTab, string> = {
             mantra:   "मन्दिर",
             charitra: "चरित्र",
             granth:   "ग्रन्थ",
+            sugjhav:  pendingSuggCount > 0 ? `सुझाव (${pendingSuggCount})` : "सुझाव",
           };
           return (
             <button
@@ -815,9 +818,19 @@ export default function TempleClient() {
         <div className="px-5 sm:px-8 py-8">
           <CharacterIntelligencePanel ownerId={user.uid} />
         </div>
-      ) : (
+      ) : activeTab === "granth" ? (
         <div className="px-5 sm:px-8 py-8">
           <SacredTextIntakePanel ownerId={user.uid} />
+        </div>
+      ) : (
+        <div className="px-5 sm:px-8 py-8">
+          <p className="text-zinc-600 text-xs uppercase tracking-widest mb-5">
+            सुझाव Queue — AI recommendation · Founder decides
+          </p>
+          <SpiritualRecommendationQueue
+            ownerId={user.uid}
+            onPendingCount={setPendingSuggCount}
+          />
         </div>
       )}
     </div>

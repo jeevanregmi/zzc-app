@@ -19,8 +19,9 @@ import type { SpiritualTradition } from "../../../lib/types/semantic-atom";
 import type { TempleVisibility, SpiritualCharacter } from "../../../lib/types/temple-vault";
 import {
   addSacredText, updateSacredText, deleteSacredText, getSacredTexts,
-  getSpiritualCharacters,
+  getSpiritualCharacters, createSpiritualSuggestions, getSpiritualSuggestions,
 } from "../../../lib/vault/firestore";
+import type { SuggestionPayload } from "../../../lib/types/spiritual-suggestions";
 
 type TextDoc = SacredText & { id: string };
 type CharDoc = SpiritualCharacter & { id: string };
@@ -358,18 +359,95 @@ function TextForm({
   );
 }
 
+// ── Analyze button with cost guard ────────────────────────────────────────────
+
+function AnalyzeButton({
+  text,
+  onAnalyze,
+  alreadyAnalyzed,
+}: {
+  text:            TextDoc;
+  onAnalyze:       () => Promise<void>;
+  alreadyAnalyzed: boolean;
+}) {
+  const [analyzing,  setAnalyzing]  = useState(false);
+  const [confirm,    setConfirm]    = useState(false);
+  const [error,      setError]      = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  async function run() {
+    setConfirm(false);
+    setError(null);
+    setSuccessMsg(null);
+    setAnalyzing(true);
+    try {
+      await onAnalyze();
+      setSuccessMsg("Suggestions created — सुझाव tab मा जानुहोस्");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Analysis failed");
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+
+  if (successMsg) {
+    return <p className="text-green-400 text-xs">{successMsg}</p>;
+  }
+
+  if (confirm) {
+    return (
+      <div className="space-y-2">
+        <p className="text-amber-300 text-xs">
+          Gemini API call हुनेछ (cost)। {alreadyAnalyzed ? "यो ग्रन्थको suggestions पहिले नै छन् — फेरि analyze गर्ने?" : "जारी राख्ने?"}
+        </p>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setConfirm(false)}
+            className="flex-1 py-1.5 rounded-lg border border-white/[0.06] text-zinc-600 text-xs hover:text-zinc-400 transition-colors"
+          >
+            रद्द
+          </button>
+          <button
+            onClick={run}
+            className="flex-1 py-1.5 rounded-lg border border-amber-800/50 bg-amber-950/20 text-amber-300 text-xs hover:bg-amber-950/40 transition-colors"
+          >
+            हो, जारी राख्नुहोस्
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-1.5">
+      {error && <p className="text-red-400 text-xs">{error}</p>}
+      <button
+        onClick={() => setConfirm(true)}
+        disabled={analyzing}
+        className="w-full py-2 rounded-xl border border-indigo-800/50 bg-indigo-950/20 text-indigo-300 text-xs hover:bg-indigo-950/40 disabled:opacity-30 transition-all"
+      >
+        {analyzing ? "विश्लेषण हुँदैछ…" : `🤖 AI विश्लेषण गर्नुहोस्${alreadyAnalyzed ? " (Re-analyze)" : ""}`}
+      </button>
+    </div>
+  );
+}
+
 // ── Text detail panel ──────────────────────────────────────────────────────────
 
 function TextDetail({
   text,
   characters,
+  pendingSuggCount,
   onEdit,
   onDelete,
+  onAnalyze,
 }: {
-  text:       TextDoc;
-  characters: CharDoc[];
-  onEdit:     () => void;
-  onDelete:   () => void;
+  text:               TextDoc;
+  characters:         CharDoc[];
+  pendingSuggCount:   number;
+  onEdit:             () => void;
+  onDelete:           () => void;
+  onAnalyze:          () => Promise<void>;
 }) {
   const tradColor   = TRADITION_COLORS[text.tradition] ?? TRADITION_COLORS.general;
   const tradLabel   = TRADITIONS.find(t => t.value === text.tradition)?.label ?? text.tradition;
@@ -493,15 +571,22 @@ function TextDetail({
         </div>
       </div>
 
-      {/* Phase 2 placeholder */}
-      <div className="rounded-xl border border-white/[0.04] bg-white/[0.01] px-4 py-3 space-y-1">
-        <p className="text-zinc-700 text-[10px] uppercase tracking-widest">
-          Phase 2 — Shloka Atoms
-        </p>
-        <p className="text-zinc-800 text-[10px] leading-relaxed">
-          यो पाठबाट श्लोक atoms extract + Sanskrit terms capture हुनेछन्।
-          प्रत्येक atom Character Intelligence Graph लाई समृद्ध गर्नेछ।
-        </p>
+      {/* AI Analysis — cost-guarded */}
+      <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] px-4 py-3 space-y-2.5">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-zinc-400 text-xs font-medium">AI विश्लेषण</p>
+            <p className="text-zinc-700 text-[10px] mt-0.5">
+              Shloka atoms, Sanskrit terms, Character enrichment सुझाव generate गर्नुहोस्
+            </p>
+          </div>
+          {pendingSuggCount > 0 && (
+            <span className="text-[10px] px-2 py-0.5 rounded-full border border-amber-800/50 bg-amber-950/30 text-amber-400 shrink-0">
+              {pendingSuggCount} pending
+            </span>
+          )}
+        </div>
+        <AnalyzeButton text={text} onAnalyze={onAnalyze} alreadyAnalyzed={pendingSuggCount > 0} />
       </div>
 
       {/* Actions */}
@@ -526,12 +611,13 @@ function TextDetail({
 // ── Main panel ─────────────────────────────────────────────────────────────────
 
 export function SacredTextIntakePanel({ ownerId }: { ownerId: string }) {
-  const [texts,       setTexts]       = useState<TextDoc[]>([]);
-  const [characters,  setCharacters]  = useState<CharDoc[]>([]);
-  const [selectedId,  setSelectedId]  = useState<string | null>(null);
-  const [loading,     setLoading]     = useState(true);
-  const [showForm,    setShowForm]    = useState(false);
-  const [editingText, setEditingText] = useState<TextDoc | null>(null);
+  const [texts,            setTexts]            = useState<TextDoc[]>([]);
+  const [characters,       setCharacters]       = useState<CharDoc[]>([]);
+  const [selectedId,       setSelectedId]       = useState<string | null>(null);
+  const [loading,          setLoading]          = useState(true);
+  const [showForm,         setShowForm]         = useState(false);
+  const [editingText,      setEditingText]      = useState<TextDoc | null>(null);
+  const [pendingSuggCounts,setPendingSuggCounts]= useState<Record<string, number>>({});
 
   async function loadAll() {
     setLoading(true);
@@ -588,6 +674,59 @@ export function SacredTextIntakePanel({ ownerId }: { ownerId: string }) {
     if (selectedId === id) {
       setSelectedId(texts.find(t => t.id !== id)?.id ?? null);
     }
+  }
+
+  async function handleAnalyze(text: TextDoc) {
+    const res = await fetch("/api/analyze-sacred-text", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({
+        text: {
+          title:             text.title,
+          textType:          text.textType,
+          tradition:         text.tradition,
+          authorName:        text.authorName,
+          scriptureRef:      text.scriptureRef,
+          originalText:      text.originalText,
+          primaryCharacterId:text.primaryCharacterId,
+        },
+        characters: characters.map(c => ({
+          id:              c.id,
+          icon:            c.icon,
+          primaryName:     c.primaryName,
+          primaryTradition:c.primaryTradition,
+        })),
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: "Unknown error" })) as { error?: string };
+      throw new Error(err.error ?? "Analysis failed");
+    }
+
+    const data = await res.json() as { suggestions: SuggestionPayload[] };
+    const payloads = data.suggestions ?? [];
+    if (payloads.length === 0) throw new Error("AI returned 0 suggestions");
+
+    await createSpiritualSuggestions(
+      payloads.map(p => ({
+        ownerId:          ownerId,
+        sourceTextId:     text.id,
+        sourceTextTitle:  text.title.nepali ?? text.title.sanskrit ?? "",
+        suggestionType:   p.type,
+        payload:          p,
+        status:           "pending" as const,
+      })),
+    );
+
+    // Update pending count for this text
+    setPendingSuggCounts(prev => ({ ...prev, [text.id]: (prev[text.id] ?? 0) + payloads.length }));
+    // Update processing status to show analysis was run
+    await safe(
+      updateSacredText(text.id, { processingStatus: "atoms_extracted" }),
+      undefined,
+    );
+    setTexts(prev => prev.map(t => t.id === text.id ? { ...t, processingStatus: "atoms_extracted" } : t));
   }
 
   function openEdit(text: TextDoc) {
@@ -694,8 +833,10 @@ export function SacredTextIntakePanel({ ownerId }: { ownerId: string }) {
             <TextDetail
               text={selected}
               characters={characters}
+              pendingSuggCount={pendingSuggCounts[selected.id] ?? 0}
               onEdit={() => openEdit(selected)}
               onDelete={() => { void handleDelete(selected.id); }}
+              onAnalyze={() => handleAnalyze(selected)}
             />
           ) : (
             <div className="flex items-center justify-center h-40 text-zinc-700 text-xs">
