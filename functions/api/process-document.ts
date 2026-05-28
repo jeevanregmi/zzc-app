@@ -184,6 +184,15 @@ export const onRequestOptions = async (): Promise<Response> =>
   new Response(null, { status: 204, headers: CORS });
 
 export const onRequestPost = async (context: PagesContext): Promise<Response> => {
+  try {
+    return await handlePost(context);
+  } catch (err) {
+    console.error("[process-document] unhandled:", err);
+    return json({ error: `Internal error: ${String(err)}`, code: "INTERNAL_ERROR", processingStatus: "ai_paused" }, 500);
+  }
+};
+
+async function handlePost(context: PagesContext): Promise<Response> {
   // ── Parse request ──────────────────────────────────────────────────────────
   let body: ProcessRequest;
   try {
@@ -240,6 +249,15 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
         }, isTimeout ? 504 : 500);
       }
       clearTimeout(abortId);
+      // Reject HTML responses — happens when external URL redirects to a login/error page
+      const ct = fileRes.headers.get("content-type") ?? "";
+      if (ct.startsWith("text/html")) {
+        return json({
+          error:            `External URL returned HTML instead of a document (${downloadUrl.slice(0, 100)}). Re-upload the file directly via the vault uploader.`,
+          code:             "FETCH_ERROR",
+          processingStatus: "ai_paused",
+        }, 400);
+      }
       if (isText) {
         textBody = (await fileRes.text()).slice(0, 80_000);
       } else {
