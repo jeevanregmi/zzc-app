@@ -18,7 +18,7 @@ import { DocumentViewer } from "../../../components/vault/documents/DocumentView
 import { LearnBlock } from "../../../components/vault/LearnTip";
 import { CivicIntelligencePipeline } from "../../../components/vault/CivicIntelligencePipeline";
 import { useLearningMode } from "../../../contexts/LearningModeContext";
-import type { IntelligenceDocument, GovFolder } from "../../../lib/types/documents";
+import type { IntelligenceDocument, GovFolder, LifecycleType } from "../../../lib/types/documents";
 import { GOV_FOLDER_META } from "../../../lib/types/documents";
 import { WorkflowGuide, DOC_INTEL_STEPS, docIntelStep } from "../../../components/vault/WorkflowGuide";
 import type { QueueContentType, QueuePlatform } from "../../../lib/types/queue";
@@ -85,23 +85,29 @@ export default function DocumentsClient() {
   const [filter,       setFilter]      = useState<FilterCategory>("all");
   const [viewMode,     setViewMode]    = useState<"recent" | "library">("recent");
   const [showUpload,           setShowUpload]           = useState(false);
-  const [uploadGovFolder,      setUploadGovFolder]      = useState<GovFolder | undefined>(undefined);
-  const [uploadInitTags,       setUploadInitTags]       = useState<string>("");
-  const [uploadInitTitle,      setUploadInitTitle]      = useState<string>("");
-  const [uploadInitPartNumber, setUploadInitPartNumber] = useState<number | undefined>(undefined);
+  const [uploadGovFolder,        setUploadGovFolder]        = useState<GovFolder | undefined>(undefined);
+  const [uploadInitTags,         setUploadInitTags]         = useState<string>("");
+  const [uploadInitTitle,        setUploadInitTitle]        = useState<string>("");
+  const [uploadInitPartNumber,   setUploadInitPartNumber]   = useState<number | undefined>(undefined);
+  const [uploadInitLifecycle,    setUploadInitLifecycle]    = useState<LifecycleType | undefined>(undefined);
+  const [uploadInitSourceUrl,    setUploadInitSourceUrl]    = useState<string>("");
 
-  // Auto-open upload modal — reads ?upload=1&govFolder=...&tags=...&title=...&parts=N from URL
+  // Auto-open upload modal — reads ?upload=1&govFolder=...&tags=...&title=...&parts=N&lifecycle=...&sourceUrl=... from URL
   useEffect(() => {
     if (typeof window !== "undefined" && window.location.search.includes("upload=1")) {
       const params = new URLSearchParams(window.location.search);
-      const gf    = params.get("govFolder") as GovFolder | null;
-      const tags  = params.get("tags") ?? "";
-      const title = params.get("title") ?? "";
-      const parts = params.get("parts");
+      const gf        = params.get("govFolder") as GovFolder | null;
+      const tags      = params.get("tags") ?? "";
+      const title     = params.get("title") ?? "";
+      const parts     = params.get("parts");
+      const lifecycle = params.get("lifecycle") as LifecycleType | null;
+      const sourceUrl = params.get("sourceUrl") ?? "";
       if (gf && gf in GOV_FOLDER_META) setUploadGovFolder(gf);
-      if (tags)  setUploadInitTags(tags);
-      if (title) setUploadInitTitle(title);
-      if (parts) { const pn = parseInt(parts, 10); if (!isNaN(pn) && pn > 0) setUploadInitPartNumber(pn); }
+      if (tags)      setUploadInitTags(tags);
+      if (title)     setUploadInitTitle(title);
+      if (parts)     { const pn = parseInt(parts, 10); if (!isNaN(pn) && pn > 0) setUploadInitPartNumber(pn); }
+      if (lifecycle) setUploadInitLifecycle(lifecycle);
+      if (sourceUrl) setUploadInitSourceUrl(sourceUrl);
       setShowUpload(true);
       window.history.replaceState({}, "", window.location.pathname);
     }
@@ -942,12 +948,14 @@ export default function DocumentsClient() {
           onUpload={uploadDoc}
           onClear={clearDone}
           onDismiss={dismissTask}
-          onClose={() => { setShowUpload(false); setUploadGovFolder(undefined); setUploadInitTags(""); setUploadInitTitle(""); setUploadInitPartNumber(undefined); }}
+          onClose={() => { setShowUpload(false); setUploadGovFolder(undefined); setUploadInitTags(""); setUploadInitTitle(""); setUploadInitPartNumber(undefined); setUploadInitLifecycle(undefined); setUploadInitSourceUrl(""); }}
           ownerId={user?.uid}
           initialGovFolder={uploadGovFolder}
           initialTags={uploadInitTags}
           initialTitle={uploadInitTitle}
           initialPartNumber={uploadInitPartNumber}
+          initialLifecycleType={uploadInitLifecycle}
+          initialSourceUrl={uploadInitSourceUrl}
         />
       )}
 

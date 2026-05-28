@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react";
 import { uploadToR2 }           from "../../lib/vault/r2";
 import { createIntelligenceDoc } from "../../lib/vault/firestore";
-import type { DocUploadTask, DocCategory, DocFileType } from "../../lib/types/documents";
+import type { DocUploadTask, DocCategory, DocFileType, LifecycleType, UpdateFrequency, VersioningStrategy, ArchivePolicy, MonitoringMode, ImportanceLevel } from "../../lib/types/documents";
 
 // ── MIME → stored file type ───────────────────────────────────────────────────
 
@@ -48,6 +48,15 @@ export interface UploadDocMeta {
   institutionName?:  string;
   docYear?:          number | null;
   constitutionalParts?: number[];
+  // Document Lifecycle Intelligence
+  lifecycleType?:      LifecycleType;
+  updateFrequency?:    UpdateFrequency;
+  versioningStrategy?: VersioningStrategy;
+  archivePolicy?:      ArchivePolicy;
+  monitoringMode?:     MonitoringMode;
+  importanceLevel?:    ImportanceLevel;
+  originalSourceUrl?:  string;
+  versionNumber?:      string;
 }
 
 export interface UploadSummary {
@@ -101,10 +110,18 @@ export function useDocumentUpload(ownerId: string) {
         processingStatus:    "ready",
         uploadedAt:          new Date().toISOString(),
         updatedAt:           new Date().toISOString(),
-        ...(meta.govFolder         ? { govFolder:          meta.govFolder         } : {}),
-        ...(meta.institutionName   ? { institutionName:    meta.institutionName   } : {}),
-        ...(meta.docYear != null   ? { docYear:            meta.docYear           } : {}),
+        ...(meta.govFolder            ? { govFolder:           meta.govFolder            } : {}),
+        ...(meta.institutionName      ? { institutionName:     meta.institutionName      } : {}),
+        ...(meta.docYear != null      ? { docYear:             meta.docYear              } : {}),
         ...(meta.constitutionalParts?.length ? { constitutionalParts: meta.constitutionalParts } : {}),
+        ...(meta.lifecycleType        ? { lifecycleType:       meta.lifecycleType        } : {}),
+        ...(meta.updateFrequency      ? { updateFrequency:     meta.updateFrequency      } : {}),
+        ...(meta.versioningStrategy   ? { versioningStrategy:  meta.versioningStrategy   } : {}),
+        ...(meta.archivePolicy        ? { archivePolicy:       meta.archivePolicy        } : {}),
+        ...(meta.monitoringMode       ? { monitoringMode:      meta.monitoringMode       } : {}),
+        ...(meta.importanceLevel      ? { importanceLevel:     meta.importanceLevel      } : {}),
+        ...(meta.originalSourceUrl    ? { originalSourceUrl:   meta.originalSourceUrl    } : {}),
+        ...(meta.versionNumber        ? { versionNumber:       meta.versionNumber        } : {}),
       });
 
       console.log("[upload] done", { docId, r2Key, size });

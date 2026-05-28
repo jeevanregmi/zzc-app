@@ -25,6 +25,56 @@ export type GovFolder =
   | "media-signals"         // मिडिया र संकेत — News, URL signals, RSS intelligence
   | "other";                // अन्य — Uncategorized
 
+/**
+ * How a document's content changes over time.
+ *   perpetual        — Constitution, Acts — valid indefinitely until replaced/amended
+ *   amendment_based  — Acts/rules that get periodic amendments but no full replacement
+ *   annual_report    — NHRC, PSC, Supreme Court — new version every fiscal year
+ *   quarterly        — Quarterly economic/monetary reports
+ *   circular         — Regulatory circulars — single notice, never "updated"
+ *   news             — Media/signal intelligence — ephemeral, not versioned
+ */
+export type LifecycleType =
+  | "perpetual"
+  | "amendment_based"
+  | "annual_report"
+  | "quarterly"
+  | "circular"
+  | "news";
+
+/** How often a new version is expected. */
+export type UpdateFrequency =
+  | "rare"        // decades — constitutional amendments
+  | "yearly"      // annual reports, budgets
+  | "quarterly"   // quarterly monetary/economic reports
+  | "monthly"     // monthly circulars, rate updates
+  | "weekly"      // government gazette notices
+  | "daily";      // live signals, news
+
+/** How ZZC stores multiple versions of the same source document. */
+export type VersioningStrategy =
+  | "versioned"     // keep every version (recommended for annual_report / amendment_based)
+  | "replace"       // overwrite the record — only for circular/news that are purely ephemeral
+  | "append_only";  // never remove, only add (perpetual legal documents)
+
+/** Who can monitor when a new version appears. */
+export type MonitoringMode =
+  | "auto"       // system polls source URL for changes
+  | "manual"     // founder uploads manually when aware of new version
+  | "archived"   // document lifecycle ended — no further monitoring needed
+  | "inactive";  // monitoring paused
+
+/**
+ * How ZZC handles archiving old versions.
+ *   keep_all    — legal/constitutional: every version must be retained forever
+ *   keep_latest — circulars/news: only keep the most recent copy
+ *   rolling_N   — quarterly reports: keep last N versions (configured separately)
+ */
+export type ArchivePolicy = "keep_all" | "keep_latest" | "rolling_N";
+
+/** Document importance in civic intelligence priority queue. */
+export type ImportanceLevel = "critical" | "high" | "medium" | "low";
+
 export const GOV_FOLDER_META: Record<GovFolder, { np: string; icon: string; desc: string }> = {
   "constitution":         { np: "संविधान",             icon: "📜", desc: "Constitution text, amendments, constitutional explanations" },
   "budget-economy":       { np: "बजेट र अर्थव्यवस्था", icon: "💰", desc: "Annual budget, monetary policy, economic survey, revenue reports" },
@@ -115,6 +165,25 @@ export interface IntelligenceDocument {
   institutionName?:     string;        // source institution: "Nepal Rastra Bank", "Ministry of Finance", etc.
   docYear?:             number | null; // fiscal/calendar year of the document
   docType?:             string;        // specific type: "Annual Budget", "Court Decision", "Policy", etc.
+  // ── Document Lifecycle Intelligence ──────────────────────────────────────
+  // These fields answer: what kind of document is this, when will it be
+  // superseded, and how should ZZC archive it over time?
+  lifecycleType?:         LifecycleType;       // perpetual | amendment_based | annual_report | quarterly | circular | news
+  updateFrequency?:       UpdateFrequency;     // rare | yearly | quarterly | monthly | weekly | daily
+  monitoringMode?:        MonitoringMode;      // auto | manual | archived | inactive
+  archivePolicy?:         ArchivePolicy;       // keep_all | keep_latest | rolling_N
+  versioningStrategy?:    VersioningStrategy;  // versioned | replace | append_only
+  importanceLevel?:       ImportanceLevel;     // critical | high | medium | low
+  // ── Version chain ─────────────────────────────────────────────────────────
+  versionNumber?:         string;              // "2081/82", "2080/81", "FY2024-25"
+  versionLabel?:          string;              // display: "२०८१/८२ वार्षिक प्रतिवेदन"
+  previousVersionId?:     string;              // docId of the older version this replaces
+  replacedByDocId?:       string;              // docId of the newer version (set when superseded)
+  amendmentNotes?:        string;              // what changed from previous version
+  // ── Source provenance + archive ───────────────────────────────────────────
+  originalSourceUrl?:     string;              // exact URL where the PDF was downloaded from
+  archiveVerifiedAt?:     string;              // ISO timestamp confirming R2 copy is intact
+  expectedUpdateWindow?:  string;              // "Shrawan–Bhadra 2082" — next version expected
   // ── Metadata ──────────────────────────────────────────────────────────────
   pageCount?:          number;
   language?:           string;

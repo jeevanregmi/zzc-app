@@ -3,7 +3,7 @@
 import { useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import type { UploadDocMeta } from "../../../hooks/vault/useDocumentUpload";
-import type { DocUploadTask, DocCategory, GovFolder } from "../../../lib/types/documents";
+import type { DocUploadTask, DocCategory, GovFolder, LifecycleType } from "../../../lib/types/documents";
 import { GOV_FOLDER_META } from "../../../lib/types/documents";
 import { createIntelligenceDoc } from "../../../lib/vault/firestore";
 import { ActionLearnCard, type ActionLearnData } from "../../vault/LearnTip";
@@ -117,10 +117,12 @@ interface Props {
   onClose:         () => void;
   onDismiss?:      (localId: string) => void;
   ownerId?:        string;
-  initialGovFolder?:   GovFolder;
-  initialTags?:        string;
-  initialTitle?:       string;
-  initialPartNumber?:  number;
+  initialGovFolder?:      GovFolder;
+  initialTags?:           string;
+  initialTitle?:          string;
+  initialPartNumber?:     number;
+  initialLifecycleType?:  LifecycleType;
+  initialSourceUrl?:      string;
 }
 
 // ── URL ingest result preview ─────────────────────────────────────────────────
@@ -344,19 +346,21 @@ function UploadActionIntel({ fileCount, category }: { fileCount: number; categor
   return <ActionLearnCard actions={[uploadAction]} />;
 }
 
-export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismiss, ownerId, initialGovFolder, initialTags, initialTitle, initialPartNumber }: Props) {
+export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismiss, ownerId, initialGovFolder, initialTags, initialTitle, initialPartNumber, initialLifecycleType, initialSourceUrl }: Props) {
   const inputRef   = useRef<HTMLInputElement>(null);
   const [tab,      setTab]     = useState<"file" | "url">("file");
   const [dragging, setDragging] = useState(false);
   const [staged,   setStaged]   = useState<File[]>([]);
   const [meta, setMeta] = useState<UploadDocMeta>({
-    title:              initialTitle ?? "",
-    description:        "",
-    category:           "strategy",
-    folder:             "",
-    tags:               initialTags ?? "",
-    govFolder:          initialGovFolder,
+    title:               initialTitle ?? "",
+    description:         "",
+    category:            "strategy",
+    folder:              "",
+    tags:                initialTags ?? "",
+    govFolder:           initialGovFolder,
     constitutionalParts: initialPartNumber ? [initialPartNumber] : undefined,
+    lifecycleType:       initialLifecycleType,
+    originalSourceUrl:   initialSourceUrl ?? "",
   });
 
   const addFiles = (files: File[]) => {
@@ -580,6 +584,20 @@ export function DocumentUploadModal({ tasks, onUpload, onClear, onClose, onDismi
               className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
             />
             <p className="text-zinc-600 text-xs px-1">Documents लाई organise गर्न — मन्त्रालय वा विषय क्षेत्रको नाम राख्नुहोस्</p>
+          </div>
+
+          {/* Original Source URL — provenance for archive */}
+          <div className="space-y-1">
+            <input
+              type="url"
+              placeholder="Original PDF URL (optional) — यहाँबाट download गरिएको थियो"
+              value={meta.originalSourceUrl ?? ""}
+              onChange={e => setMeta(p => ({ ...p, originalSourceUrl: e.target.value }))}
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
+            />
+            <p className="text-zinc-600 text-xs px-1">
+              सरकारी website को PDF link — ZZC archive को source attribution को लागि। Site बन्द भए पनि यो record रहिरहन्छ।
+            </p>
           </div>
         </div>
 
