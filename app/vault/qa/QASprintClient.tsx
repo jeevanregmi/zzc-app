@@ -326,13 +326,17 @@ export default function QASprintClient() {
   const approved   = docs.filter(d => d.adminApprovalStatus === "approved").length;
   const extracted  = docs.filter(d => d.adminApprovalStatus === "approved" && (intelByDoc[d.id] ?? 0) > 0).length;
 
-  // Build folder + URL match sets so kit rows show ✓ for docs already in vault
-  const uploadedFolders = new Set(docs.map(d => d.govFolder).filter(Boolean) as string[]);
-  const uploadedUrls    = new Set(docs.map(d => d.downloadUrl).filter(Boolean) as string[]);
+  // Match kit doc → vault doc by govFolder, or by domain appearing in any stored URL
   function kitDone(kitDoc: KitDoc): boolean {
-    if (uploadedFolders.has(kitDoc.folder)) return true;
-    if (uploadedUrls.has(kitDoc.siteUrl))   return true;
-    return false;
+    let kitHost = "";
+    try { kitHost = new URL(kitDoc.siteUrl).hostname.replace(/^www\./, ""); } catch { /* skip */ }
+    return docs.some(d => {
+      if (d.govFolder === kitDoc.folder) return true;
+      const url = d.downloadUrl ?? "";
+      if (!url) return false;
+      try { return new URL(url).hostname.replace(/^www\./, "").includes(kitHost); }
+      catch { return !!kitHost && url.includes(kitHost); }
+    });
   }
   const kitUploadedCount = KIT_DOCS.filter(kitDone).length;
 
