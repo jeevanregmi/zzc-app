@@ -202,13 +202,23 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
   let textBody: string | undefined;
   let base64:   string | undefined;
 
+  if (!context.env.VAULT_BUCKET) {
+    return json({ error: "VAULT_BUCKET R2 binding not configured in Cloudflare Pages", code: "FETCH_ERROR", processingStatus: "ai_paused" }, 500);
+  }
+
+  let r2Key: string;
   try {
-    const r2Key = new URL(downloadUrl).searchParams.get("key") ?? "";
-    if (!r2Key || !context.env.VAULT_BUCKET) {
-      throw new Error("R2 binding unavailable or key missing in download URL");
-    }
+    r2Key = new URL(downloadUrl).searchParams.get("key") ?? "";
+  } catch {
+    r2Key = "";
+  }
+  if (!r2Key) {
+    return json({ error: `Could not extract R2 key from download URL: ${downloadUrl.slice(0, 120)}`, code: "FETCH_ERROR", processingStatus: "ai_paused" }, 500);
+  }
+
+  try {
     const obj = await context.env.VAULT_BUCKET.get(r2Key);
-    if (!obj) throw new Error("Document not found in R2 storage");
+    if (!obj) throw new Error(`Document not found in R2: ${r2Key}`);
 
     if (isText) {
       textBody = (await obj.text()).slice(0, 80_000);

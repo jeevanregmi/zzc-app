@@ -95,8 +95,10 @@ async function fetchPdfBase64(
   bucket: R2Bucket,
 ): Promise<{ base64: string; sizeBytes: number } | { error: string }> {
   try {
-    const r2Key = new URL(url).searchParams.get("key") ?? "";
-    if (!r2Key) return { error: "No R2 key in download URL" };
+    let r2Key: string;
+    try { r2Key = new URL(url).searchParams.get("key") ?? ""; }
+    catch { return { error: `Invalid download URL: ${url.slice(0, 100)}` }; }
+    if (!r2Key) return { error: `R2 key missing from URL: ${url.slice(0, 100)}` };
     const obj = await bucket.get(r2Key);
     if (!obj) return { error: `Document not found in R2 storage: ${r2Key.slice(0, 80)}` };
     const buf   = await obj.arrayBuffer();

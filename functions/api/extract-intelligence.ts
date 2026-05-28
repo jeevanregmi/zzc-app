@@ -209,12 +209,13 @@ async function extractFromPdf(
   let base64: string;
   try {
     // Direct R2 binding — avoids Cloudflare loopback (HTTP 525)
-    const r2Key = new URL(body.downloadUrl!).searchParams.get("key") ?? "";
-    if (!r2Key || !context.env.VAULT_BUCKET) {
-      throw new Error("R2 binding unavailable or key missing in download URL");
-    }
+    if (!context.env.VAULT_BUCKET) throw new Error("VAULT_BUCKET R2 binding not configured");
+    let r2Key: string;
+    try { r2Key = new URL(body.downloadUrl!).searchParams.get("key") ?? ""; }
+    catch { r2Key = ""; }
+    if (!r2Key) throw new Error(`R2 key missing from URL: ${body.downloadUrl!.slice(0, 100)}`);
     const obj = await context.env.VAULT_BUCKET.get(r2Key);
-    if (!obj) throw new Error(`Document not found in R2 storage: ${r2Key.slice(0, 80)}`);
+    if (!obj) throw new Error(`Document not found in R2: ${r2Key}`);
     const buf = await obj.arrayBuffer();
     const sizeMB = buf.byteLength / 1024 / 1024;
     // Gemini inline_data accepts up to ~20 MB base64 ≈ 15 MB raw binary.
