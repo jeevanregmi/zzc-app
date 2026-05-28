@@ -95,13 +95,26 @@ async function fetchPdfBase64(
   bucket: R2Bucket,
 ): Promise<{ base64: string; sizeBytes: number } | { error: string }> {
   try {
-    let r2Key: string;
-    try { r2Key = new URL(url).searchParams.get("key") ?? ""; }
-    catch { return { error: `Invalid download URL: ${url.slice(0, 100)}` }; }
-    if (!r2Key) return { error: `R2 key missing from URL: ${url.slice(0, 100)}` };
-    const obj = await bucket.get(r2Key);
-    if (!obj) return { error: `Document not found in R2 storage: ${r2Key.slice(0, 80)}` };
-    const buf   = await obj.arrayBuffer();
+    let buf: ArrayBuffer;
+    let r2Key = "";
+    try { r2Key = new URL(url).searchParams.get("key") ?? ""; } catch { /* ignored */ }
+    if (r2Key) {
+      // Vault-hosted file — direct R2 binding avoids Cloudflare loopback
+      const obj = await bucket.get(r2Key);
+      if (!obj) return { error: `Document not found in R2: ${r2Key}` };
+      buf = await obj.arrayBuffer();
+    } else {
+      // External URL — plain HTTP fetch
+      const controller = new AbortController();
+      const timeout    = setTimeout(() => controller.abort(), 25_000);
+      try {
+        const res = await fetch(url, { signal: controller.signal });
+        if (!res.ok) return { error: `Storage fetch failed: HTTP ${res.status}` };
+        buf = await res.arrayBuffer();
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
     const bytes = new Uint8Array(buf);
     if (bytes.length > 18_000_000) return { error: `PDF too large: ${(bytes.length / 1_000_000).toFixed(1)} MB (max 18 MB)` };
     let bin = "";

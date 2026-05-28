@@ -208,15 +208,23 @@ async function extractFromPdf(
 
   let base64: string;
   try {
-    // Direct R2 binding — avoids Cloudflare loopback (HTTP 525)
-    if (!context.env.VAULT_BUCKET) throw new Error("VAULT_BUCKET R2 binding not configured");
-    let r2Key: string;
-    try { r2Key = new URL(body.downloadUrl!).searchParams.get("key") ?? ""; }
-    catch { r2Key = ""; }
-    if (!r2Key) throw new Error(`R2 key missing from URL: ${body.downloadUrl!.slice(0, 100)}`);
-    const obj = await context.env.VAULT_BUCKET.get(r2Key);
-    if (!obj) throw new Error(`Document not found in R2: ${r2Key}`);
-    const buf = await obj.arrayBuffer();
+    // R2 direct binding for vault files; HTTP fetch for external URLs
+    let r2Key = "";
+    try { r2Key = new URL(body.downloadUrl!).searchParams.get("key") ?? ""; } catch { /* ignored */ }
+    let buf: ArrayBuffer;
+    if (r2Key && context.env.VAULT_BUCKET) {
+      const obj = await context.env.VAULT_BUCKET.get(r2Key);
+      if (!obj) throw new Error(`Document not found in R2: ${r2Key}`);
+      buf = await obj.arrayBuffer();
+    } else {
+      const abort = new AbortController();
+      const tid   = setTimeout(() => abort.abort(), 20_000);
+      let res: Response;
+      try { res = await fetch(body.downloadUrl!, { signal: abort.signal }); }
+      finally { clearTimeout(tid); }
+      if (!res.ok) throw new Error(`PDF fetch failed: HTTP ${res.status} from ${body.downloadUrl!.slice(0, 80)}`);
+      buf = await res.arrayBuffer();
+    }
     const sizeMB = buf.byteLength / 1024 / 1024;
     // Gemini inline_data accepts up to ~20 MB base64 ≈ 15 MB raw binary.
     // Files larger than this get rejected with a 400 — return a clear error.

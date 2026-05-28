@@ -202,32 +202,53 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
   let textBody: string | undefined;
   let base64:   string | undefined;
 
-  if (!context.env.VAULT_BUCKET) {
-    return json({ error: "VAULT_BUCKET R2 binding not configured in Cloudflare Pages", code: "FETCH_ERROR", processingStatus: "ai_paused" }, 500);
-  }
-
-  let r2Key: string;
-  try {
-    r2Key = new URL(downloadUrl).searchParams.get("key") ?? "";
-  } catch {
-    r2Key = "";
-  }
-  if (!r2Key) {
-    return json({ error: `Could not extract R2 key from download URL: ${downloadUrl.slice(0, 120)}`, code: "FETCH_ERROR", processingStatus: "ai_paused" }, 500);
-  }
+  // R2 direct binding for vault-hosted files; HTTP fetch for external URLs
+  let r2Key = "";
+  try { r2Key = new URL(downloadUrl).searchParams.get("key") ?? ""; } catch { /* ignored */ }
+  const isR2 = !!r2Key && context.env.VAULT_BUCKET != null;
 
   try {
-    const obj = await context.env.VAULT_BUCKET.get(r2Key);
-    if (!obj) throw new Error(`Document not found in R2: ${r2Key}`);
-
-    if (isText) {
-      textBody = (await obj.text()).slice(0, 80_000);
-    } else {
-      const buf = await obj.arrayBuffer();
-      if (buf.byteLength > MAX_BYTES) {
-        return json({ error: `File too large (${(buf.byteLength / 1024 / 1024).toFixed(1)} MB). Max 15 MB.`, code: "FILE_TOO_LARGE" }, 413);
+    if (isR2) {
+      const obj = await context.env.VAULT_BUCKET!.get(r2Key);
+      if (!obj) throw new Error(`Document not found in R2: ${r2Key}`);
+      if (isText) {
+        textBody = (await obj.text()).slice(0, 80_000);
+      } else {
+        const buf = await obj.arrayBuffer();
+        if (buf.byteLength > MAX_BYTES) {
+          return json({ error: `File too large (${(buf.byteLength / 1024 / 1024).toFixed(1)} MB). Max 15 MB.`, code: "FILE_TOO_LARGE" }, 413);
+        }
+        base64 = toBase64(buf);
       }
-      base64 = toBase64(buf);
+    } else {
+      // External URL — plain HTTP fetch (no loopback risk)
+      const abort   = new AbortController();
+      const abortId = setTimeout(() => abort.abort(), 25_000);
+      let fileRes: Response;
+      try {
+        fileRes = await fetch(downloadUrl, { signal: abort.signal });
+        if (!fileRes.ok) throw new Error(`HTTP ${fileRes.status} fetching document`);
+      } catch (err) {
+        clearTimeout(abortId);
+        const isTimeout = err instanceof Error && err.name === "AbortError";
+        return json({
+          error:            isTimeout
+            ? "Request timeout — document is safe. Large PDFs can take up to 30s. Retry using the button on the card."
+            : `Could not fetch document: ${String(err)}`,
+          code:             isTimeout ? "TIMEOUT" : "FETCH_ERROR",
+          processingStatus: "ai_paused",
+        }, isTimeout ? 504 : 500);
+      }
+      clearTimeout(abortId);
+      if (isText) {
+        textBody = (await fileRes.text()).slice(0, 80_000);
+      } else {
+        const buf = await fileRes.arrayBuffer();
+        if (buf.byteLength > MAX_BYTES) {
+          return json({ error: `File too large (${(buf.byteLength / 1024 / 1024).toFixed(1)} MB). Max 15 MB.`, code: "FILE_TOO_LARGE" }, 413);
+        }
+        base64 = toBase64(buf);
+      }
     }
   } catch (err) {
     return json({
