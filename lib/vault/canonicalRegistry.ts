@@ -11,7 +11,7 @@
  */
 
 import {
-  collection, doc, addDoc, updateDoc, getDocs, getDoc, query,
+  collection, doc, addDoc, updateDoc, getDocs, query,
   where, limit, arrayUnion, Timestamp,
 } from "firebase/firestore";
 import { db } from "../../app/firebase";

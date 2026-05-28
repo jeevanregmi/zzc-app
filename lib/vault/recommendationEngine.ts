@@ -27,10 +27,9 @@ import type {
 // ── Deterministic ID ──────────────────────────────────────────────────────────
 
 function recId(targetId: string, kind: string, field?: string): string {
-  const suffix = field ? `_${field}` : `_${kind}`;
-  return `${targetId}_${kind}${suffix}`
-    .replace(/[^a-zA-Z0-9_-]/g, "_")
-    .slice(0, 100);
+  const parts = [targetId, kind];
+  if (field) parts.push(field);
+  return parts.join("_").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 100);
 }
 
 // ── Document recommendations ──────────────────────────────────────────────────
@@ -319,8 +318,12 @@ export function generateDuplicateDetectionRecommendations(
       institutionName:   other.institutionName,
     });
 
-    // Exact canonicalKey match = very likely duplicate
-    if (fp.canonicalKey === otherFp.canonicalKey && fp.canonicalKey !== "unknown_other") {
+    // Exact canonicalKey match = very likely duplicate (skip if institution is unknown to avoid false positives)
+    if (
+      fp.canonicalKey === otherFp.canonicalKey
+      && fp.canonicalKey !== "unknown_other"
+      && fp.institutionId !== "unknown"
+    ) {
       const label = (doc.title ?? doc.fileName ?? doc.id).slice(0, 80);
       const otherLabel = (other.title ?? other.fileName ?? other.id).slice(0, 60);
       recs.push({

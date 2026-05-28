@@ -31,6 +31,15 @@ export interface PipelineDoc {
   originalSourceUrl?:   string;
   sourceUrl?:           string;
   downloadUrl?:         string;
+  // Identity + canonical fields
+  lifecycleType?:       string;
+  institutionName?:     string;
+  sourceAuthority?:     string;
+  docYear?:             number | null;
+  constitutionalParts?: number[];
+  tags?:                string[];
+  canonicalId?:         string;
+  contentHash?:         string;
 }
 
 // ── Pipeline state ────────────────────────────────────────────────────────────

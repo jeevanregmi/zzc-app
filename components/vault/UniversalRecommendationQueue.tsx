@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { patchDocumentIdentity, reviewRecommendation } from "../../lib/vault/firestore";
-import { promoteAndLink } from "../../lib/vault/canonicalRegistry";
 import type { UniversalRecommendation } from "../../lib/types/recommendations";
 import {
   REC_KIND_LABELS,
@@ -13,10 +12,12 @@ import {
 } from "../../lib/types/recommendations";
 
 interface Props {
-  recs:       UniversalRecommendation[];
-  onRefresh:  () => void;
-  ownerId?:   string;   // required for canonical_promotion approvals
-  collapsed?: boolean;
+  recs:                 UniversalRecommendation[];
+  onRefresh:            () => void;
+  ownerId?:             string;
+  collapsed?:           boolean;
+  /** Called when founder approves a canonical_promotion rec. Caller supplies full doc fields. */
+  onApproveCanonical?:  (rec: UniversalRecommendation) => Promise<void>;
 }
 
 function suggestedDisplay(value: unknown): string {
@@ -26,7 +27,7 @@ function suggestedDisplay(value: unknown): string {
   return String(value).slice(0, 60);
 }
 
-export function UniversalRecommendationQueue({ recs, onRefresh, ownerId, collapsed: initCollapsed = false }: Props) {
+export function UniversalRecommendationQueue({ recs, onRefresh, ownerId, collapsed: initCollapsed = false, onApproveCanonical }: Props) {
   const [open,   setOpen]   = useState(!initCollapsed);
   const [saving, setSaving] = useState<string | null>(null);
 
@@ -42,9 +43,8 @@ export function UniversalRecommendationQueue({ recs, onRefresh, ownerId, collaps
     setSaving(rec.id);
     try {
       if (rec.targetType === "document") {
-        if (rec.kind === "canonical_promotion" && ownerId) {
-          // Promote doc to canonical_documents + set canonicalId on the doc
-          await promoteAndLink(ownerId, rec.targetId, {});
+        if (rec.kind === "canonical_promotion" && onApproveCanonical) {
+          await onApproveCanonical(rec);
         } else if (rec.field) {
           await patchDocumentIdentity(rec.targetId, { [rec.field]: rec.suggested } as Parameters<typeof patchDocumentIdentity>[1]);
         }

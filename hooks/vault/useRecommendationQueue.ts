@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   getPendingRecommendations,
+  getAllRecommendationIds,
   reviewRecommendation,
   saveRecommendations,
 } from "../../lib/vault/firestore";
@@ -19,12 +20,18 @@ export function useRecommendationQueue(
   targetType?: RecommendationTarget,
 ) {
   const [state, setState] = useState<QueueState>({ recs: [], loading: false, error: null });
+  // Tracks ALL rec IDs (pending + reviewed) so persist() never re-creates founder-reviewed recs.
+  const knownIds = useRef(new Set<string>());
 
   const load = useCallback(async () => {
     if (!ownerId) return;
     setState(s => ({ ...s, loading: true, error: null }));
     try {
-      const recs = await getPendingRecommendations(ownerId, targetType);
+      const [recs, allIds] = await Promise.all([
+        getPendingRecommendations(ownerId, targetType),
+        getAllRecommendationIds(ownerId),
+      ]);
+      knownIds.current = new Set(allIds);
       setState({ recs, loading: false, error: null });
     } catch (e: unknown) {
       const code = (e as { code?: string })?.code ?? "unknown";
@@ -41,21 +48,24 @@ export function useRecommendationQueue(
     note?:  string,
   ) => {
     await reviewRecommendation(id, status, note);
+    // Keep knownIds in sync so a re-persisted run won't re-add this ID
+    knownIds.current.add(id);
     setState(s => ({ ...s, recs: s.recs.filter(r => r.id !== id) }));
   }, []);
 
   /**
-   * Generate fresh recommendations and persist only NEW ones
-   * (IDs not already in the current pending set).
+   * Persist only NEW recommendations — those whose IDs are unknown to this owner.
+   * Checks ALL statuses (pending + reviewed), not just the visible pending set,
+   * so founder review decisions are never erased.
    */
   const persist = useCallback(async (generated: UniversalRecommendation[]) => {
     if (!ownerId || generated.length === 0) return;
-    const existingIds = new Set(state.recs.map(r => r.id));
-    const toSave = generated.filter(r => !existingIds.has(r.id));
+    const toSave = generated.filter(r => !knownIds.current.has(r.id));
     if (toSave.length === 0) return;
     await saveRecommendations(toSave);
+    toSave.forEach(r => knownIds.current.add(r.id));
     setState(s => ({ ...s, recs: [...s.recs, ...toSave] }));
-  }, [ownerId, state.recs]);
+  }, [ownerId]);
 
   return { ...state, total: state.recs.length, review, persist, refresh: load };
 }

@@ -203,12 +203,13 @@ export async function deleteIntelligenceDoc(id: string): Promise<void> {
 export async function patchDocumentIdentity(
   id: string,
   patch: {
-    govFolder?:          string;
-    lifecycleType?:      string;
-    originalSourceUrl?:  string;
-    institutionName?:    string;
-    importanceLevel?:    string;
-    tags?:               string[];
+    govFolder?:           string;
+    lifecycleType?:       string;
+    originalSourceUrl?:   string;
+    institutionName?:     string;
+    importanceLevel?:     string;
+    tags?:                string[];
+    constitutionalParts?: number[];
   },
 ): Promise<void> {
   // Strip undefined values so we don't accidentally null out existing fields
@@ -1358,19 +1359,49 @@ export async function saveRecommendations(recs: UniversalRecommendation[]): Prom
 /**
  * Fetch all pending recommendations for the owner.
  * Optional targetType filter narrows to a single object class.
+ * Falls back to ownerId-only query + client-side filter when the composite
+ * (ownerId, status) index hasn't been built yet (failed-precondition error).
  */
 export async function getPendingRecommendations(
   ownerId:     string,
   targetType?: RecommendationTarget,
 ): Promise<UniversalRecommendation[]> {
+  const toRecs = (snap: { docs: { data: () => Record<string, unknown>; id: string }[] }) =>
+    snap.docs.map(d => ({ ...d.data(), id: d.id } as UniversalRecommendation));
+
+  let all: UniversalRecommendation[];
+  try {
+    const snap = await getDocs(query(
+      collection(db, COL_REC_QUEUE),
+      where("ownerId", "==", ownerId),
+      where("status",  "==", "pending"),
+      limit(500),
+    ));
+    all = toRecs(snap);
+  } catch (e: unknown) {
+    if ((e as { code?: string })?.code !== "failed-precondition") throw e;
+    // Composite index not ready — fall back to ownerId filter + client-side status filter
+    const snap = await getDocs(query(
+      collection(db, COL_REC_QUEUE),
+      where("ownerId", "==", ownerId),
+      limit(500),
+    ));
+    all = toRecs(snap).filter(r => r.status === "pending");
+  }
+  return targetType ? all.filter(r => r.targetType === targetType) : all;
+}
+
+/**
+ * Return all recommendation IDs for an owner (any status).
+ * Used by useRecommendationQueue.persist to prevent re-creating reviewed recs.
+ */
+export async function getAllRecommendationIds(ownerId: string): Promise<string[]> {
   const snap = await getDocs(query(
     collection(db, COL_REC_QUEUE),
-    where("ownerId",  "==", ownerId),
-    where("status",   "==", "pending"),
-    limit(500),
+    where("ownerId", "==", ownerId),
+    limit(2000),
   ));
-  const all = snap.docs.map(d => ({ ...d.data(), id: d.id } as UniversalRecommendation));
-  return targetType ? all.filter(r => r.targetType === targetType) : all;
+  return snap.docs.map(d => d.id);
 }
 
 /**

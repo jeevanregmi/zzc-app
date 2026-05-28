@@ -25,6 +25,7 @@ import {
   type IdentityField,
 } from "../../../lib/vault/identityEnrichment";
 import { patchDocumentIdentity } from "../../../lib/vault/firestore";
+import { promoteAndLink } from "../../../lib/vault/canonicalRegistry";
 import {
   generateDocumentRecommendations,
   generateCanonicalPromotionRecommendation,
@@ -922,6 +923,24 @@ export default function QASprintClient() {
               recs={persistQueue.recs}
               onRefresh={persistQueue.refresh}
               ownerId={uid ?? undefined}
+              onApproveCanonical={async (rec) => {
+                if (!uid) return;
+                const d = docs.find(x => x.id === rec.targetId);
+                await promoteAndLink(uid, rec.targetId, {
+                  title:               d?.title,
+                  fileName:            d?.fileName,
+                  govFolder:           d?.govFolder,
+                  lifecycleType:       d?.lifecycleType,
+                  docYear:             d?.docYear ?? null,
+                  originalSourceUrl:   d?.originalSourceUrl,
+                  sourceUrl:           d?.sourceUrl,
+                  institutionName:     d?.institutionName,
+                  sourceAuthority:     d?.sourceAuthority,
+                  constitutionalParts: d?.constitutionalParts,
+                  tags:                d?.tags,
+                  contentHash:         d?.contentHash,
+                });
+              }}
             />
           </div>
         )}
