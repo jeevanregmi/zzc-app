@@ -14,6 +14,7 @@
  */
 
 import { getDocEnrichment } from "./identityEnrichment";
+import { computeFingerprint, resolveInstitutionId } from "./identityFingerprint";
 import type { ResolvableDoc, RecDescriptor }      from "./documentResolver";
 import type { ConstitutionalFrameworkRecord }      from "../types/constitutional-framework";
 import type {
@@ -200,6 +201,146 @@ export function generateJantaRecommendations(
       signals:     [{ type: "missing_refs", label: "No constitutional references" }],
       status:      "pending",
     });
+  }
+
+  return recs;
+}
+
+// ── Canonical promotion recommendations ──────────────────────────────────────
+
+/**
+ * A document is "promotable" to canonical identity when it has:
+ *   - govFolder (institutional classification)
+ *   - lifecycleType (how it changes over time)
+ *   - A resolvable institution (govFolder or sourceUrl domain)
+ *   - No existing canonicalId (hasn't been promoted yet)
+ *
+ * The suggested value is the computed canonicalKey — the persistent identity token.
+ */
+export function generateCanonicalPromotionRecommendation(
+  ownerId: string,
+  doc:     ResolvableDoc & { canonicalId?: string; docYear?: number | null; contentHash?: string },
+): UniversalRecommendation | null {
+  // Already promoted — no recommendation needed
+  if (doc.canonicalId) return null;
+
+  // Need at minimum govFolder + lifecycleType to generate a meaningful canonical
+  if (!doc.govFolder || !doc.lifecycleType) return null;
+
+  const fp = computeFingerprint({
+    title:              doc.title,
+    fileName:           doc.fileName,
+    govFolder:          doc.govFolder,
+    lifecycleType:      doc.lifecycleType,
+    docYear:            doc.docYear ?? null,
+    originalSourceUrl:  doc.originalSourceUrl,
+    sourceUrl:          doc.sourceUrl,
+    institutionName:    doc.institutionName,
+    sourceAuthority:    doc.sourceAuthority,
+  });
+
+  const institutionId = resolveInstitutionId(doc.govFolder, doc.originalSourceUrl ?? doc.sourceUrl, doc.institutionName);
+  const isUnknownInst = institutionId === "unknown";
+
+  // Higher confidence when we have year + known institution
+  const confidence = isUnknownInst
+    ? 55
+    : fp.year
+      ? 90
+      : 75;
+
+  const label = (doc.title ?? doc.fileName ?? doc.id).slice(0, 80);
+
+  const signals: RecommendationSignal[] = [
+    { type: "govFolder",     label: `govFolder: ${doc.govFolder}` },
+    { type: "lifecycle",     label: `lifecycle: ${doc.lifecycleType}` },
+  ];
+  if (fp.year) signals.push({ type: "year", label: `year: ${fp.year}` });
+  if (!isUnknownInst) signals.push({ type: "institution", label: `institution: ${institutionId}` });
+
+  return {
+    id:          recId(doc.id, "canonical_promotion"),
+    ownerId,
+    createdAt:   new Date().toISOString(),
+    targetType:  "document" as RecommendationTarget,
+    targetId:    doc.id,
+    targetLabel: label,
+    kind:        "canonical_promotion",
+    field:       "canonicalId",
+    current:     null,
+    suggested:   fp.canonicalKey,
+    confidence,
+    reasoning:   `यो document Canonical Identity बन्न तयार छ — Key: "${fp.canonicalKey}" — Approve गर्दा permanent identity anchor बन्नेछ`,
+    signals,
+    status:      "pending",
+  };
+}
+
+/**
+ * Duplicate detection: check if any OTHER doc in the vault appears to be
+ * the same real-world document. Returns one recommendation per suspect duplicate.
+ *
+ * Uses title + institution + year matching — no content hash comparison here
+ * (that requires reading file bytes, done asynchronously elsewhere).
+ */
+export function generateDuplicateDetectionRecommendations(
+  ownerId:  string,
+  doc:      ResolvableDoc & { canonicalId?: string; docYear?: number | null },
+  allDocs:  (ResolvableDoc & { canonicalId?: string; docYear?: number | null })[],
+): UniversalRecommendation[] {
+  // Skip if already canonically linked — dedup resolved
+  if (doc.canonicalId) return [];
+  if (!doc.govFolder || !doc.lifecycleType) return [];
+
+  const fp = computeFingerprint({
+    govFolder:         doc.govFolder,
+    lifecycleType:     doc.lifecycleType,
+    docYear:           doc.docYear ?? null,
+    title:             doc.title,
+    originalSourceUrl: doc.originalSourceUrl,
+    sourceUrl:         doc.sourceUrl,
+    institutionName:   doc.institutionName,
+  });
+
+  const recs: UniversalRecommendation[] = [];
+
+  for (const other of allDocs) {
+    if (other.id === doc.id) continue;
+    // Skip docs already confirmed to be different canonicals
+    if (doc.canonicalId && other.canonicalId && doc.canonicalId !== other.canonicalId) continue;
+
+    const otherFp = computeFingerprint({
+      govFolder:         other.govFolder,
+      lifecycleType:     other.lifecycleType,
+      docYear:           (other as { docYear?: number | null }).docYear ?? null,
+      title:             other.title,
+      originalSourceUrl: other.originalSourceUrl,
+      sourceUrl:         other.sourceUrl,
+      institutionName:   other.institutionName,
+    });
+
+    // Exact canonicalKey match = very likely duplicate
+    if (fp.canonicalKey === otherFp.canonicalKey && fp.canonicalKey !== "unknown_other") {
+      const label = (doc.title ?? doc.fileName ?? doc.id).slice(0, 80);
+      const otherLabel = (other.title ?? other.fileName ?? other.id).slice(0, 60);
+      recs.push({
+        id:          recId(doc.id, "duplicate_detected", other.id.slice(0, 12)),
+        ownerId,
+        createdAt:   new Date().toISOString(),
+        targetType:  "document" as RecommendationTarget,
+        targetId:    doc.id,
+        targetLabel: label,
+        kind:        "duplicate_detected",
+        field:       "canonicalId",
+        current:     null,
+        suggested:   other.id,
+        confidence:  85,
+        reasoning:   `"${otherLabel}" — उही canonicalKey "${fp.canonicalKey}" — यी दुई documents एउटै हुन सक्छन्`,
+        signals:     [{ type: "canonicalKey", label: `same key: ${fp.canonicalKey}` }],
+        status:      "pending",
+      });
+      break; // One duplicate suggestion per doc is enough
+    }
   }
 
   return recs;

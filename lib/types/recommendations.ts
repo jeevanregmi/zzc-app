@@ -24,6 +24,8 @@ export type RecommendationTarget =
 export type RecommendationKind =
   | "identity_fix"          // set govFolder, lifecycleType, institutionName
   | "metadata"              // fill tags, constitutionalParts, originalSourceUrl
+  | "canonical_promotion"   // document has enough identity → promote to canonical_documents
+  | "duplicate_detected"    // another document appears to be the same real-world doc
   | "relationship"          // suggest a graph edge between two objects
   | "duplicate_merge"       // two objects likely represent the same thing
   | "character_enrichment"  // add attributes to a spiritual character
@@ -81,8 +83,10 @@ export interface UniversalRecommendation {
 export const REC_KIND_LABELS: Record<RecommendationKind, string> = {
   identity_fix:         "Identity",
   metadata:             "Metadata",
+  canonical_promotion:  "Canonical",
+  duplicate_detected:   "Duplicate",
   relationship:         "सम्बन्ध",
-  duplicate_merge:      "Duplicate",
+  duplicate_merge:      "Merge",
   character_enrichment: "Character",
   sanskrit_term:        "Sanskrit",
   media_grounding:      "Media",
@@ -104,6 +108,8 @@ export const REC_TARGET_LABELS: Record<RecommendationTarget, string> = {
 export const REC_KIND_COLORS: Record<RecommendationKind, string> = {
   identity_fix:         "bg-purple-900/30 text-purple-300",
   metadata:             "bg-sky-900/30 text-sky-300",
+  canonical_promotion:  "bg-violet-900/30 text-violet-300",
+  duplicate_detected:   "bg-orange-900/30 text-orange-300",
   relationship:         "bg-indigo-900/30 text-indigo-300",
   duplicate_merge:      "bg-orange-900/30 text-orange-300",
   character_enrichment: "bg-rose-900/30 text-rose-300",

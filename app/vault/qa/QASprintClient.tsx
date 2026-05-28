@@ -25,7 +25,11 @@ import {
   type IdentityField,
 } from "../../../lib/vault/identityEnrichment";
 import { patchDocumentIdentity } from "../../../lib/vault/firestore";
-import { generateDocumentRecommendations } from "../../../lib/vault/recommendationEngine";
+import {
+  generateDocumentRecommendations,
+  generateCanonicalPromotionRecommendation,
+  generateDuplicateDetectionRecommendations,
+} from "../../../lib/vault/recommendationEngine";
 import { useRecommendationQueue } from "../../../hooks/vault/useRecommendationQueue";
 import { UniversalRecommendationQueue } from "../../../components/vault/UniversalRecommendationQueue";
 
@@ -497,7 +501,15 @@ export default function QASprintClient() {
       folder: k.folder, siteUrl: k.siteUrl, title: k.title,
       tags: k.tags, parts: k.parts, lifecycle: k.lifecycle,
     }));
-    const generated = docs.flatMap(d => generateDocumentRecommendations(uid, d as ResolvableDoc, kRecs));
+    const extendedDocs = docs as (ResolvableDoc & { canonicalId?: string; docYear?: number | null })[];
+    const generated = [
+      ...extendedDocs.flatMap(d => generateDocumentRecommendations(uid, d, kRecs)),
+      ...extendedDocs.flatMap(d => {
+        const rec = generateCanonicalPromotionRecommendation(uid, d);
+        return rec ? [rec] : [];
+      }),
+      ...extendedDocs.flatMap(d => generateDuplicateDetectionRecommendations(uid, d, extendedDocs)),
+    ];
     if (generated.length > 0) void persistQueue.persist(generated);
   }, [docs]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -909,6 +921,7 @@ export default function QASprintClient() {
             <UniversalRecommendationQueue
               recs={persistQueue.recs}
               onRefresh={persistQueue.refresh}
+              ownerId={uid ?? undefined}
             />
           </div>
         )}

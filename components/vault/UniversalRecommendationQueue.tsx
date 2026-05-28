@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { patchDocumentIdentity, reviewRecommendation } from "../../lib/vault/firestore";
+import { promoteAndLink } from "../../lib/vault/canonicalRegistry";
 import type { UniversalRecommendation } from "../../lib/types/recommendations";
 import {
   REC_KIND_LABELS,
@@ -14,6 +15,7 @@ import {
 interface Props {
   recs:       UniversalRecommendation[];
   onRefresh:  () => void;
+  ownerId?:   string;   // required for canonical_promotion approvals
   collapsed?: boolean;
 }
 
@@ -24,7 +26,7 @@ function suggestedDisplay(value: unknown): string {
   return String(value).slice(0, 60);
 }
 
-export function UniversalRecommendationQueue({ recs, onRefresh, collapsed: initCollapsed = false }: Props) {
+export function UniversalRecommendationQueue({ recs, onRefresh, ownerId, collapsed: initCollapsed = false }: Props) {
   const [open,   setOpen]   = useState(!initCollapsed);
   const [saving, setSaving] = useState<string | null>(null);
 
@@ -39,8 +41,13 @@ export function UniversalRecommendationQueue({ recs, onRefresh, collapsed: initC
   async function approve(rec: UniversalRecommendation) {
     setSaving(rec.id);
     try {
-      if (rec.targetType === "document" && rec.field) {
-        await patchDocumentIdentity(rec.targetId, { [rec.field]: rec.suggested } as Parameters<typeof patchDocumentIdentity>[1]);
+      if (rec.targetType === "document") {
+        if (rec.kind === "canonical_promotion" && ownerId) {
+          // Promote doc to canonical_documents + set canonicalId on the doc
+          await promoteAndLink(ownerId, rec.targetId, {});
+        } else if (rec.field) {
+          await patchDocumentIdentity(rec.targetId, { [rec.field]: rec.suggested } as Parameters<typeof patchDocumentIdentity>[1]);
+        }
       }
       await reviewRecommendation(rec.id, "approved");
       onRefresh();

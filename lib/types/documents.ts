@@ -184,6 +184,11 @@ export interface IntelligenceDocument {
   originalSourceUrl?:     string;              // exact URL where the PDF was downloaded from
   archiveVerifiedAt?:     string;              // ISO timestamp confirming R2 copy is intact
   expectedUpdateWindow?:  string;              // "Shrawan–Bhadra 2082" — next version expected
+  // ── Canonical identity (links to canonical_documents collection) ──────────
+  // Set after the document is promoted to a canonical identity object.
+  // Once set, this document's identity is anchored to the canonical record.
+  canonicalId?:        string;   // canonical_documents doc ID
+  contentHash?:        string;   // SHA-256 of raw file content (for exact dedup)
   // ── Metadata ──────────────────────────────────────────────────────────────
   pageCount?:          number;
   language?:           string;
