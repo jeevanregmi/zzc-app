@@ -18,6 +18,12 @@ import {
   type DocMatch,
   type ResolvableDoc,
 } from "../../../lib/vault/documentResolver";
+import {
+  getIdentityQueue,
+  buildIdentityPatch,
+  type DocEnrichmentResult,
+  type IdentityField,
+} from "../../../lib/vault/identityEnrichment";
 import { patchDocumentIdentity } from "../../../lib/vault/firestore";
 
 // ── QA Document Kit ───────────────────────────────────────────────────────────
@@ -427,8 +433,11 @@ export default function QASprintClient() {
   const [partsWithData, setPartsWithData] = useState(0);
   const [loading,      setLoading]      = useState(false);
   const [fetchError,   setFetchError]   = useState<string | null>(null);
-  const [linkingIdx,   setLinkingIdx]   = useState<number | null>(null);
-  const [linkSaving,   setLinkSaving]   = useState<string | null>(null);  // docId being saved
+  const [linkingIdx,       setLinkingIdx]       = useState<number | null>(null);
+  const [linkSaving,       setLinkSaving]       = useState<string | null>(null);
+  const [identitySkipped,  setIdentitySkipped]  = useState<Set<string>>(new Set());
+  const [identitySaving,   setIdentitySaving]   = useState<string | null>(null); // docId being patched
+  const [identityExpanded, setIdentityExpanded] = useState(false);
 
   const TARGET = 10;
 
@@ -490,6 +499,36 @@ export default function QASprintClient() {
   );
   const kitCompleteCount  = kitResults.filter(r => r.status === "complete").length;
   const kitProgressCount  = kitResults.filter(r => r.status === "in_progress").length;
+
+  // Identity enrichment queue — only when docs are loaded
+  const kitRecs = KIT_DOCS.map(k => ({
+    folder: k.folder, siteUrl: k.siteUrl, title: k.title,
+    tags: k.tags, parts: k.parts, lifecycle: k.lifecycle,
+  }));
+  const identityQueue: DocEnrichmentResult[] = docs.length > 0
+    ? getIdentityQueue(docs as ResolvableDoc[], kitRecs, identitySkipped)
+    : [];
+
+  const handleIdentityApprove = async (
+    docId: string,
+    result: DocEnrichmentResult,
+    accepted: IdentityField[],
+  ) => {
+    setIdentitySaving(docId);
+    try {
+      const patch = buildIdentityPatch(result.suggestions, accepted);
+      if (Object.keys(patch).length > 0) {
+        await patchDocumentIdentity(docId, patch as Parameters<typeof patchDocumentIdentity>[1]);
+      }
+      // Remove from queue by marking skipped (it'll also re-evaluate after fetchData)
+      setIdentitySkipped(prev => new Set([...prev, docId]));
+      fetchData();
+    } catch (e) {
+      console.error("[QASprint] identity approve failed:", e);
+    } finally {
+      setIdentitySaving(null);
+    }
+  };
 
   const handleLink = async (kitIdx: number, docId: string) => {
     const kit = KIT_DOCS[kitIdx];
@@ -727,6 +766,117 @@ export default function QASprintClient() {
               <Link href="/vault/constitution/health" className="flex-1 text-center text-xs font-black py-2 rounded-xl border border-green-800 text-green-400 hover:bg-green-950 transition-colors">Branch Health →</Link>
               <Link href="/vault/media" className="flex-1 text-center text-xs font-black py-2 rounded-xl bg-green-700 hover:bg-green-600 text-white transition-colors">Media Content →</Link>
             </div>
+          </div>
+        )}
+
+        {/* Identity Queue */}
+        {!loading && docs.length > 0 && (
+          <div className="border-t border-zinc-800 pt-4">
+            <button
+              onClick={() => setIdentityExpanded(p => !p)}
+              className="w-full flex items-center justify-between py-1"
+            >
+              <div className="flex items-center gap-2">
+                <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-black">
+                  Identity Queue
+                </p>
+                {identityQueue.length > 0 && (
+                  <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-amber-900/40 text-amber-400 border border-amber-800/50">
+                    {identityQueue.length} document
+                  </span>
+                )}
+              </div>
+              <span className="text-zinc-600 text-[10px]">{identityExpanded ? "▲" : "▼"}</span>
+            </button>
+
+            {identityExpanded && (
+              <div className="mt-3 space-y-3">
+                {identityQueue.length === 0 ? (
+                  <div className="rounded-lg border border-green-900/30 bg-green-950/10 px-3 py-3 text-center">
+                    <p className="text-green-400 text-xs font-bold">✓ सबै documents identity OK छ</p>
+                    <p className="text-zinc-600 text-[9px] mt-1">Missing metadata भएका documents देखिएनन्।</p>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-[9px] text-zinc-600 leading-relaxed">
+                      यी documents मा metadata missing वा incomplete छ। System ले AI-extracted data र recommendation matching बाट values suggest गरेको छ — approve गर्नुस् वा skip गर्नुस्।
+                    </p>
+                    <div className="space-y-2">
+                      {identityQueue.map(result => {
+                        const docTitle = result.doc.title ?? result.doc.fileName ?? result.doc.id;
+                        const isSaving = identitySaving === result.doc.id;
+                        const highConf = result.suggestions.filter(s => s.confidence >= 60);
+                        const allFields = result.suggestions.map(s => s.field);
+                        return (
+                          <div key={result.doc.id} className="rounded-lg border border-zinc-700 bg-zinc-900/30 p-3 space-y-2">
+                            {/* Doc title + kit match badge */}
+                            <div className="flex items-start gap-2 flex-wrap">
+                              <p className="text-xs font-bold text-white flex-1 min-w-0 truncate">{docTitle}</p>
+                              {result.kitMatch && (
+                                <span className="text-[8px] px-1.5 py-0.5 rounded-full bg-blue-950/40 text-blue-400 border border-blue-900/40 shrink-0">
+                                  {result.kitMatch.score}% → {result.kitMatch.folder}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Suggestion rows */}
+                            <div className="space-y-1.5">
+                              {result.suggestions.map((s, i) => (
+                                <div key={i} className="flex items-start gap-2 text-[9px]">
+                                  <span className={`font-black px-1.5 py-0.5 rounded shrink-0 ${
+                                    s.confidence >= 70 ? "bg-green-950/40 text-green-400" :
+                                    s.confidence >= 40 ? "bg-amber-950/40 text-amber-400" :
+                                    "bg-zinc-800 text-zinc-500"
+                                  }`}>
+                                    {s.confidence}%
+                                  </span>
+                                  <div className="flex-1 min-w-0">
+                                    <span className="text-zinc-500 font-bold">{s.field}: </span>
+                                    <span className="text-white font-bold">
+                                      {Array.isArray(s.suggested)
+                                        ? (s.suggested as unknown[]).join(", ")
+                                        : String(s.suggested)}
+                                    </span>
+                                    <p className="text-zinc-600 mt-0.5 leading-tight">{s.reason}</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Action buttons */}
+                            <div className="flex items-center gap-1.5 pt-1">
+                              {highConf.length > 0 && (
+                                <button
+                                  onClick={() => void handleIdentityApprove(result.doc.id, result, highConf.map(s => s.field))}
+                                  disabled={!!identitySaving}
+                                  className="text-[9px] font-black px-2.5 py-1 rounded-md bg-green-700 hover:bg-green-600 text-white disabled:opacity-40 transition-colors"
+                                >
+                                  {isSaving ? "…" : `✓ High-confidence approve (${highConf.length})`}
+                                </button>
+                              )}
+                              <button
+                                onClick={() => void handleIdentityApprove(result.doc.id, result, allFields)}
+                                disabled={!!identitySaving}
+                                className="text-[9px] font-black px-2.5 py-1 rounded-md border border-green-800/50 text-green-500 hover:bg-green-950/30 disabled:opacity-40 transition-colors"
+                              >
+                                {isSaving ? "…" : "सबै approve"}
+                              </button>
+                              <button
+                                onClick={() => setIdentitySkipped(prev => new Set([...prev, result.doc.id]))}
+                                disabled={!!identitySaving}
+                                className="text-[9px] font-black px-2.5 py-1 rounded-md border border-zinc-700 text-zinc-500 hover:text-white disabled:opacity-40 transition-colors"
+                              >
+                                Skip
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         )}
 
