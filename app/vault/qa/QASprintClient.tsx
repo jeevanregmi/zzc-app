@@ -6,6 +6,12 @@ import { collection, getDocs, limit, query, where } from "firebase/firestore";
 import { db } from "../../firebase";
 import { VaultShell } from "../../../components/vault/VaultShell";
 import { useVaultAuth } from "../../../hooks/vault/useVaultAuth";
+import {
+  getDocPipelineState,
+  getRecMatchResult,
+  type PipelineDoc,
+  type RecMatchResult,
+} from "../../../lib/vault/pipelineState";
 
 // ── QA Document Kit ───────────────────────────────────────────────────────────
 
@@ -14,11 +20,11 @@ interface KitDoc {
   parts:        number[];
   cat:          string;
   tags:         string;
-  folder:       string;
-  siteUrl:      string;
+  folder:       string;   // govFolder to match
+  siteUrl:      string;   // official site URL (domain fallback)
   siteLabel:    string;
-  searchQuery:  string;   // Google fallback when official site is down
-  archiveQuery: string;   // Wayback Machine query when site is completely dead
+  searchQuery:  string;
+  archiveQuery: string;
   lifecycle:    string;
   importance:   string;
 }
@@ -49,29 +55,69 @@ function buildUploadUrl(doc: KitDoc): string {
     tags:      doc.tags,
     govFolder: doc.folder,
     lifecycle: doc.lifecycle,
+    sourceUrl: doc.siteUrl,
   });
   if (doc.parts[0]) params.set("parts", String(doc.parts[0]));
-  params.set("sourceUrl", doc.siteUrl);
   return `/vault/documents?${params.toString()}`;
 }
 
-function DocKitRow({ doc, idx, done }: { doc: KitDoc; idx: number; done: boolean }) {
+// ── Kit row ───────────────────────────────────────────────────────────────────
+
+function DocKitRow({ doc, idx, result }: { doc: KitDoc; idx: number; result: RecMatchResult }) {
+  const done       = result.status === "complete";
+  const inProgress = result.status === "in_progress";
+
   return (
     <div className={`rounded-lg border px-3 py-3 space-y-2 ${
-      done ? "border-green-900/40 bg-green-950/10" : "border-zinc-800 bg-zinc-900/20"
+      done       ? "border-green-900/40 bg-green-950/10" :
+      inProgress ? "border-amber-900/30 bg-amber-950/10" :
+                   "border-zinc-800 bg-zinc-900/20"
     }`}>
       {/* Title row */}
       <div className="flex items-start gap-3">
-        <span className={`text-xs font-black w-5 shrink-0 pt-0.5 ${done ? "text-green-500" : "text-zinc-600"}`}>
-          {done ? "✓" : idx + 1}
+        <span className={`text-xs font-black w-5 shrink-0 pt-0.5 ${
+          done ? "text-green-500" : inProgress ? "text-amber-500" : "text-zinc-600"
+        }`}>
+          {done ? "✓" : inProgress ? "⚡" : idx + 1}
         </span>
         <div className="flex-1 min-w-0">
-          <p className={`text-xs font-bold leading-tight ${done ? "text-green-400" : "text-white"}`}>
+          <p className={`text-xs font-bold leading-tight ${
+            done ? "text-green-400" : inProgress ? "text-amber-300" : "text-white"
+          }`}>
             {doc.title}
           </p>
+
+          {/* Status badge + evidence pills */}
+          <div className="flex flex-wrap gap-1 mt-1">
+            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold border ${
+              done       ? "bg-green-950/40 text-green-400 border-green-900/50" :
+              inProgress ? "bg-amber-950/40 text-amber-400 border-amber-900/50" :
+                           "bg-zinc-800 text-zinc-500 border-zinc-700"
+            }`}>
+              {result.label}
+            </span>
+            {result.reasons.map((r, i) => (
+              <span key={i} className={`text-[9px] px-1.5 py-0.5 rounded-full border ${
+                r.startsWith("✓")
+                  ? "bg-green-950/20 text-green-500/80 border-green-900/30"
+                  : "bg-zinc-800 text-zinc-500 border-zinc-700"
+              }`}>
+                {r}
+              </span>
+            ))}
+          </div>
+
+          {/* Matched doc title — for in_progress, helps identify which doc was found */}
+          {inProgress && result.matchedDocTitle && (
+            <p className="text-[9px] text-zinc-600 mt-1 truncate">
+              → {result.matchedDocTitle}
+            </p>
+          )}
+
+          {/* Constitution part chips */}
           <div className="flex flex-wrap gap-1 mt-1">
             {doc.parts.map(p => (
-              <span key={p} className="text-[9px] px-1.5 py-0.5 rounded-full bg-zinc-800 text-zinc-400 font-semibold border border-zinc-700">
+              <span key={p} className="text-[9px] px-1.5 py-0.5 rounded-full bg-zinc-800/60 text-zinc-500 border border-zinc-700/50">
                 भाग {p} — {PART_LABELS_KIT[p] ?? `Part ${p}`}
               </span>
             ))}
@@ -87,85 +133,57 @@ function DocKitRow({ doc, idx, done }: { doc: KitDoc; idx: number; done: boolean
           </div>
         </div>
       </div>
-      {/* Action row — only when not done */}
+
+      {/* Action row — shown when not complete */}
       {!done && (
         <div className="space-y-1.5 pl-8">
-          {/* Step 1: three source options */}
-          <p className="text-[9px] text-zinc-600 font-bold">१. PDF खोज्नुस् — कुनै एक काम गर्छ:</p>
-          <div className="grid grid-cols-3 gap-1">
-            <a
-              href={doc.siteUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-center text-[9px] font-bold py-1.5 rounded-lg border border-blue-800/60 bg-blue-950/30 text-blue-400 hover:bg-blue-900/40 transition-colors"
+          {result.status === "missing" && (
+            <>
+              <p className="text-[9px] text-zinc-600 font-bold">१. PDF खोज्नुस् — कुनै एक काम गर्छ:</p>
+              <div className="grid grid-cols-3 gap-1">
+                <a href={doc.siteUrl} target="_blank" rel="noopener noreferrer"
+                  className="text-center text-[9px] font-bold py-1.5 rounded-lg border border-blue-800/60 bg-blue-950/30 text-blue-400 hover:bg-blue-900/40 transition-colors">
+                  Official →
+                </a>
+                <a href={`https://www.google.com/search?q=${encodeURIComponent(doc.searchQuery)}`} target="_blank" rel="noopener noreferrer"
+                  className="text-center text-[9px] font-bold py-1.5 rounded-lg border border-zinc-700 bg-zinc-900/40 text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors">
+                  Google →
+                </a>
+                <a href={`https://web.archive.org/web/*/${encodeURIComponent(doc.siteUrl)}`} target="_blank" rel="noopener noreferrer"
+                  className="text-center text-[9px] font-bold py-1.5 rounded-lg border border-violet-800/50 bg-violet-950/20 text-violet-400 hover:bg-violet-900/30 transition-colors">
+                  Archive →
+                </a>
+              </div>
+              <p className="text-[9px] text-zinc-700">Site बन्द? → Google → वा Archive → मा PDF खोज्नुस् → Download → अनि Upload</p>
+              <Link href={buildUploadUrl(doc)}
+                className="block w-full text-center text-[10px] font-black py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-black transition-colors">
+                २. PDF Download भएपछि — Upload →
+              </Link>
+            </>
+          )}
+          {result.status === "in_progress" && result.state && (
+            <Link
+              href={
+                result.state.blockingStep === "analyze"  ? "/vault/documents" :
+                result.state.blockingStep === "extract"  ? "/vault/documents" :
+                "/vault/admin?tab=documents"
+              }
+              className="block w-full text-center text-[10px] font-black py-1.5 rounded-lg border border-amber-700/50 bg-amber-950/20 text-amber-400 hover:bg-amber-900/30 transition-colors"
             >
-              Official →
-            </a>
-            <a
-              href={`https://www.google.com/search?q=${encodeURIComponent(doc.searchQuery)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-center text-[9px] font-bold py-1.5 rounded-lg border border-zinc-700 bg-zinc-900/40 text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors"
-            >
-              Google →
-            </a>
-            <a
-              href={`https://web.archive.org/web/*/${encodeURIComponent(doc.siteUrl)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              title="Internet Archive — पुरानो copy हेर्नुस् जब official site बन्द छ"
-              className="text-center text-[9px] font-bold py-1.5 rounded-lg border border-violet-800/50 bg-violet-950/20 text-violet-400 hover:bg-violet-900/30 transition-colors"
-            >
-              Archive →
-            </a>
-          </div>
-          <p className="text-[9px] text-zinc-700">
-            Site बन्द? → Google → वा Archive → मा PDF खोज्नुस् → Download → अनि Upload
-          </p>
-          {/* Step 2: upload */}
-          <Link
-            href={buildUploadUrl(doc)}
-            className="block w-full text-center text-[10px] font-black py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-black transition-colors"
-          >
-            २. PDF Download भएपछि — Upload →
-          </Link>
+              {result.state.blockingLabel} →
+            </Link>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface QADoc {
-  id:                   string;
-  title?:               string;
-  fileName?:            string;
-  processingStatus?:    string;
-  adminApprovalStatus?: string;
-  uploadedAt?:          string;
-  aiSummary?:           string;
-  govFolder?:           string;
-  downloadUrl?:         string;
-}
-
-interface StageCount {
-  uploaded:        number;
-  analyzed:        number;
-  reviewed:        number;
-  approved:        number;
-  extracted:       number;
-  branchHealthPct: number;
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-const safe = <T,>(p: Promise<T>, fb: T): Promise<T> =>
-  p.catch(e => { console.warn("[QASprint]", e?.code ?? e); return fb; });
 
 const EMPTY = { docs: [], size: 0 } as unknown as import("firebase/firestore").QuerySnapshot;
 
-function docTitle(d: QADoc): string {
+function docTitle(d: PipelineDoc): string {
   return String(d.title ?? d.fileName ?? d.id).slice(0, 50);
 }
 
@@ -186,8 +204,7 @@ function StagePill({ done, label }: { done: boolean; label: string }) {
 // ── Pipeline funnel stage ─────────────────────────────────────────────────────
 
 function FunnelStage({
-  step, label, labelNp, count, target, done, href, btnLabel,
-  active,
+  step, label, labelNp, count, target, done, href, btnLabel, active,
 }: {
   step:     number;
   label:    string;
@@ -201,11 +218,9 @@ function FunnelStage({
 }) {
   return (
     <div className={`rounded-xl border p-3 space-y-2.5 transition-colors ${
-      active
-        ? "border-amber-800/60 bg-amber-950/15"
-        : done
-          ? "border-green-900/40 bg-green-950/10"
-          : "border-zinc-800 bg-zinc-900/30"
+      active ? "border-amber-800/60 bg-amber-950/15" :
+      done   ? "border-green-900/40 bg-green-950/10" :
+               "border-zinc-800 bg-zinc-900/30"
     }`}>
       <div className="flex items-center gap-2.5">
         <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${
@@ -214,31 +229,31 @@ function FunnelStage({
           {done ? "✓" : step}
         </span>
         <div className="flex-1 min-w-0">
-          <p className={`text-xs font-black leading-none ${done ? "text-green-400" : active ? "text-amber-300" : "text-zinc-400"}`}>
+          <p className={`text-xs font-black leading-none ${
+            done ? "text-green-400" : active ? "text-amber-300" : "text-zinc-400"
+          }`}>
             {labelNp}
           </p>
           <p className="text-zinc-600 text-[9px] mt-0.5">{label}</p>
         </div>
         <div className="text-right shrink-0">
-          <p className={`text-lg font-black leading-none ${done ? "text-green-400" : active ? "text-amber-400" : "text-zinc-500"}`}>
+          <p className={`text-lg font-black leading-none ${
+            done ? "text-green-400" : active ? "text-amber-400" : "text-zinc-500"
+          }`}>
             {count}
             {target !== undefined && <span className="text-[10px] text-zinc-600">/{target}</span>}
           </p>
         </div>
       </div>
       {active && (
-        <Link
-          href={href}
-          className="block w-full text-center text-xs font-black py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-black transition-colors"
-        >
+        <Link href={href}
+          className="block w-full text-center text-xs font-black py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-black transition-colors">
           {btnLabel} →
         </Link>
       )}
       {!active && !done && (
-        <Link
-          href={href}
-          className="block w-full text-center text-xs font-black py-2 rounded-lg border border-zinc-700 text-zinc-500 hover:text-white hover:border-zinc-500 transition-colors"
-        >
+        <Link href={href}
+          className="block w-full text-center text-xs font-black py-2 rounded-lg border border-zinc-700 text-zinc-500 hover:text-white hover:border-zinc-500 transition-colors">
           {btnLabel} →
         </Link>
       )}
@@ -248,27 +263,30 @@ function FunnelStage({
 
 // ── Document row ──────────────────────────────────────────────────────────────
 
-function DocRow({ doc }: { doc: QADoc }) {
+function DocRow({ doc, intelCount }: { doc: PipelineDoc; intelCount: number }) {
+  const state = getDocPipelineState(doc, intelCount);
   const stages = [
-    { key: "upload",   done: true,                                                           label: "Upload"   },
-    { key: "analyze",  done: !!doc.aiSummary || doc.processingStatus === "ai_ready",         label: "Analyze"  },
-    { key: "review",   done: !!doc.adminApprovalStatus && doc.adminApprovalStatus !== "pending_review", label: "Review"   },
-    { key: "approved", done: doc.adminApprovalStatus === "approved",                         label: "Approved" },
+    { key: "upload",   done: true,              label: "Upload"   },
+    { key: "analyze",  done: state.isAnalyzed,  label: "Analyze"  },
+    { key: "review",   done: state.isReviewed,  label: "Review"   },
+    { key: "approved", done: state.isApproved,  label: "Approved" },
+    { key: "extract",  done: state.isExtracted, label: "Extracted" },
   ];
-
-  const allDone = stages.every(s => s.done);
 
   return (
     <div className={`rounded-lg border px-3 py-2 flex items-center gap-3 ${
-      allDone ? "border-green-900/40 bg-green-950/10" : "border-zinc-800 bg-zinc-900/30"
+      state.isComplete ? "border-green-900/40 bg-green-950/10" : "border-zinc-800 bg-zinc-900/30"
     }`}>
       <div className="flex-1 min-w-0">
         <p className="text-xs font-bold text-white truncate">{docTitle(doc)}</p>
         <div className="flex flex-wrap gap-1 mt-1">
           {stages.map(s => <StagePill key={s.key} done={s.done} label={s.label} />)}
         </div>
+        {!state.isComplete && state.blockingLabel && (
+          <p className="text-[9px] text-amber-500/70 mt-1">⚡ {state.blockingLabel}</p>
+        )}
       </div>
-      {allDone && <span className="text-green-500 text-sm shrink-0">✓</span>}
+      {state.isComplete && <span className="text-green-500 text-sm shrink-0">✓</span>}
     </div>
   );
 }
@@ -279,11 +297,11 @@ export default function QASprintClient() {
   const { user, loading: authLoading } = useVaultAuth();
   const uid = user?.uid ?? null;
 
-  const [docs,       setDocs]       = useState<QADoc[]>([]);
-  const [intelByDoc, setIntelByDoc] = useState<Record<string, number>>({});
+  const [docs,         setDocs]         = useState<PipelineDoc[]>([]);
+  const [intelByDoc,   setIntelByDoc]   = useState<Record<string, number>>({});
   const [partsWithData, setPartsWithData] = useState(0);
-  const [loading,    setLoading]    = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [loading,      setLoading]      = useState(false);
+  const [fetchError,   setFetchError]   = useState<string | null>(null);
 
   const TARGET = 10;
 
@@ -291,20 +309,23 @@ export default function QASprintClient() {
     if (!uid) return;
     setLoading(true);
     setFetchError(null);
-    const safeErr = <T,>(p: Promise<T>, fb: T, label: string): Promise<T> =>
+
+    const safeQ = <T,>(p: Promise<T>, fb: T, label: string): Promise<T> =>
       p.catch(e => {
-        const msg = e?.code ? `${label}: ${e.code}` : `${label}: ${String(e)}`;
+        const msg = e?.code ? `${label}: ${String(e.code)}` : `${label}: ${String(e)}`;
         console.warn("[QASprint]", msg, e);
         setFetchError(msg);
         return fb;
       });
+
     void Promise.all([
-      safeErr(getDocs(query(collection(db, "vault_documents"), where("ownerId", "==", uid), limit(200))), EMPTY, "vault_documents"),
-      safeErr(getDocs(query(collection(db, "janta_intelligence"), where("ownerId", "==", uid), limit(500))), EMPTY, "janta_intelligence"),
-      safeErr(getDocs(query(collection(db, "constitutional_framework"), where("ownerId", "==", uid), limit(500))), EMPTY, "constitutional_framework"),
+      safeQ(getDocs(query(collection(db, "vault_documents"),       where("ownerId", "==", uid), limit(200))), EMPTY, "vault_documents"),
+      safeQ(getDocs(query(collection(db, "janta_intelligence"),    where("ownerId", "==", uid), limit(500))), EMPTY, "janta_intelligence"),
+      safeQ(getDocs(query(collection(db, "constitutional_framework"), where("ownerId", "==", uid), limit(500))), EMPTY, "constitutional_framework"),
     ]).then(([docsSnap, intelSnap, fwSnap]) => {
-      const rawDocs: QADoc[] = (docsSnap.docs ?? [])
-        .map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) } as QADoc))
+
+      const rawDocs: PipelineDoc[] = (docsSnap.docs ?? [])
+        .map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) } as PipelineDoc))
         .filter(d => !(d as unknown as Record<string, unknown>).archived);
       setDocs(rawDocs);
 
@@ -329,31 +350,23 @@ export default function QASprintClient() {
 
   if (authLoading) return null;
 
-  const uploaded   = docs.length;
-  const analyzed   = docs.filter(d => !!d.aiSummary || d.processingStatus === "ai_ready" || d.processingStatus === "ai_paused").length;
-  const reviewed   = docs.filter(d => d.adminApprovalStatus && d.adminApprovalStatus !== "pending_review").length;
-  const approved   = docs.filter(d => d.adminApprovalStatus === "approved").length;
-  const extracted  = docs.filter(d => d.adminApprovalStatus === "approved" && (intelByDoc[d.id] ?? 0) > 0).length;
+  // Pipeline funnel counts — derived from actual doc fields via pipeline engine
+  const uploaded  = docs.length;
+  const analyzed  = docs.filter(d => getDocPipelineState(d, 0).isAnalyzed).length;
+  const reviewed  = docs.filter(d => getDocPipelineState(d, 0).isReviewed).length;
+  const approved  = docs.filter(d => getDocPipelineState(d, 0).isApproved).length;
+  const extracted = docs.filter(d => getDocPipelineState(d, intelByDoc[d.id] ?? 0).isExtracted).length;
 
-  // Match kit doc → vault doc by govFolder, or by domain appearing in any stored URL
-  function kitDone(kitDoc: KitDoc): boolean {
-    let kitHost = "";
-    try { kitHost = new URL(kitDoc.siteUrl).hostname.replace(/^www\./, ""); } catch { /* skip */ }
-    return docs.some(d => {
-      if (d.govFolder === kitDoc.folder) return true;
-      const url = d.downloadUrl ?? "";
-      if (!url) return false;
-      try { return new URL(url).hostname.replace(/^www\./, "").includes(kitHost); }
-      catch { return !!kitHost && url.includes(kitHost); }
-    });
-  }
-  const kitUploadedCount = KIT_DOCS.filter(kitDone).length;
-
-  const stages: StageCount = { uploaded, analyzed, reviewed, approved, extracted, branchHealthPct: Math.round((partsWithData / 35) * 100) };
+  // QA kit results — each recommendation checked against all docs via pipeline engine
+  const kitResults: RecMatchResult[] = KIT_DOCS.map(k =>
+    getRecMatchResult({ folder: k.folder, siteUrl: k.siteUrl }, docs, intelByDoc)
+  );
+  const kitCompleteCount  = kitResults.filter(r => r.status === "complete").length;
+  const kitProgressCount  = kitResults.filter(r => r.status === "in_progress").length;
 
   // Current blocking step
   const nextStep =
-    uploaded === 0  ? 1 :
+    uploaded  === 0 ? 1 :
     analyzed  < uploaded ? 2 :
     reviewed  < analyzed ? 3 :
     approved  < TARGET   ? 4 :
@@ -390,9 +403,8 @@ export default function QASprintClient() {
           <div className="rounded-lg border border-red-900/50 bg-red-950/20 px-3 py-2 flex items-start gap-2">
             <span className="text-red-400 text-xs shrink-0">⚠</span>
             <div className="min-w-0">
-              <p className="text-[10px] text-red-400 font-bold">Firestore query error</p>
+              <p className="text-[10px] text-red-400 font-bold">Firestore error — data load गर्न सकिएन</p>
               <p className="text-[9px] text-red-400/70 font-mono break-all">{fetchError}</p>
-              <p className="text-[9px] text-zinc-500 mt-1">uid: {uid ?? "null"} · docs loaded: {docs.length}</p>
             </div>
           </div>
         )}
@@ -424,32 +436,32 @@ export default function QASprintClient() {
           <div className="space-y-2">
             <FunnelStage
               step={1} label="vault_documents — total" labelNp="Upload गरिएको"
-              count={stages.uploaded} done={stages.uploaded > 0}
+              count={uploaded} done={uploaded > 0}
               active={nextStep === 1} href="/vault/documents?upload=1" btnLabel="Documents Upload गर्नुस्"
             />
             <FunnelStage
               step={2} label="processingStatus = ai_ready" labelNp="AI Analyze गरिएको"
-              count={stages.analyzed} done={stages.analyzed >= stages.uploaded && stages.uploaded > 0}
+              count={analyzed} done={analyzed >= uploaded && uploaded > 0}
               active={nextStep === 2} href="/vault/documents" btnLabel="Documents → AI Analyze"
             />
             <FunnelStage
               step={3} label="adminApprovalStatus reviewed" labelNp="Admin Review गरिएको"
-              count={stages.reviewed} done={stages.reviewed >= stages.analyzed && stages.analyzed > 0}
+              count={reviewed} done={reviewed >= analyzed && analyzed > 0}
               active={nextStep === 3} href="/vault/admin?tab=documents" btnLabel="Admin Vault → Review गर्नुस्"
             />
             <FunnelStage
               step={4} label="adminApprovalStatus = approved" labelNp="Approve गरिएको"
-              count={stages.approved} target={TARGET} done={stages.approved >= TARGET}
+              count={approved} target={TARGET} done={approved >= TARGET}
               active={nextStep === 4} href="/vault/admin?tab=documents" btnLabel="Documents Approve गर्नुस्"
             />
             <FunnelStage
               step={5} label="janta_intelligence records > 0" labelNp="Intelligence Extract गरिएको"
-              count={stages.extracted} done={stages.extracted >= stages.approved && stages.approved > 0}
+              count={extracted} done={extracted >= approved && approved > 0}
               active={nextStep === 5} href="/vault/documents" btnLabel="Intelligence Extract गर्नुस्"
             />
             <FunnelStage
               step={6} label="constitutional_framework parts mapped" labelNp="Branch Health Check"
-              count={partsWithData} target={35} done={stages.branchHealthPct >= 50}
+              count={partsWithData} target={35} done={partsWithData >= 18}
               active={nextStep === 6} href="/vault/constitution/health" btnLabel="Branch Health हेर्नुस्"
             />
           </div>
@@ -460,17 +472,22 @@ export default function QASprintClient() {
           <div>
             <div className="flex items-center justify-between mb-2">
               <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-black">10 Document Kit — सुझाव</p>
-              <span className="text-[9px] text-zinc-600">{kitUploadedCount}/{TARGET} upload गरिएको</span>
+              <div className="flex items-center gap-2">
+                {kitProgressCount > 0 && (
+                  <span className="text-[9px] text-amber-500">⚡ {kitProgressCount} प्रक्रियामा</span>
+                )}
+                <span className="text-[9px] text-zinc-600">{kitCompleteCount}/{TARGET} पूरा</span>
+              </div>
             </div>
             <div className="rounded-lg border border-amber-900/30 bg-amber-950/10 px-3 py-2 mb-3 flex items-start gap-2">
               <span className="text-amber-500 text-xs shrink-0">⚠</span>
               <p className="text-[10px] text-amber-400/80 leading-relaxed">
-                नेपाल सरकारका websites कहिलेकाहीँ बन्द हुन्छन्। Official site नखुलेमा <strong>Google →</strong> button प्रयोग गर्नुस् — PDF खोजिन्छ।
+                नेपाल सरकारका websites कहिलेकाहीँ बन्द हुन्छन्। Official site नखुलेमा <strong>Google →</strong> button प्रयोग गर्नुस्।
               </p>
             </div>
             <div className="space-y-1.5">
               {KIT_DOCS.map((doc, i) => (
-                <DocKitRow key={i} doc={doc} idx={i} done={kitDone(doc)} />
+                <DocKitRow key={i} doc={doc} idx={i} result={kitResults[i]} />
               ))}
             </div>
             <p className="text-zinc-700 text-[9px] mt-2 px-1">
@@ -486,15 +503,17 @@ export default function QASprintClient() {
           <div>
             <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-black mb-2">Documents ({docs.length})</p>
             <div className="space-y-1.5">
-              {docs.map(d => <DocRow key={d.id} doc={d} />)}
+              {docs.map(d => <DocRow key={d.id} doc={d} intelCount={intelByDoc[d.id] ?? 0} />)}
             </div>
           </div>
         ) : (
           <div className="rounded-xl border border-dashed border-zinc-700 p-6 text-center space-y-3">
             <p className="text-3xl">📄</p>
             <p className="text-zinc-400 text-sm font-bold">कुनै document upload गरिएको छैन</p>
-            {!fetchError && (
-              <p className="text-zinc-600 text-[9px]">uid: {uid ?? "null"} · Firestore query ठीक छ तर 0 records फर्काएको</p>
+            {!fetchError && uid && (
+              <p className="text-zinc-600 text-[9px]">
+                Firestore query सफल — vault_documents मा 0 records (uid: {uid.slice(0, 8)}…)
+              </p>
             )}
             <Link
               href="/vault/documents?upload=1"
@@ -511,13 +530,13 @@ export default function QASprintClient() {
             <p className="text-[9px] text-amber-500 uppercase tracking-widest font-black">अर्को Step — अहिले गर्नुस्</p>
             {nextStep === 2 && (
               <>
-                <p className="text-amber-300 text-sm font-bold">{stages.uploaded - stages.analyzed} documents AI analyze बाँकी</p>
+                <p className="text-amber-300 text-sm font-bold">{uploaded - analyzed} documents AI analyze बाँकी</p>
                 <Link href="/vault/documents" className="block text-center text-sm font-black py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-black transition-colors">Documents → AI Analyze →</Link>
               </>
             )}
             {nextStep === 3 && (
               <>
-                <p className="text-amber-300 text-sm font-bold">{stages.analyzed - stages.reviewed} documents Admin Review पर्खिरहेका</p>
+                <p className="text-amber-300 text-sm font-bold">{analyzed - reviewed} documents Admin Review पर्खिरहेका</p>
                 <Link href="/vault/admin?tab=documents" className="block text-center text-sm font-black py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-black transition-colors">Admin Vault → Review →</Link>
               </>
             )}
@@ -529,7 +548,7 @@ export default function QASprintClient() {
             )}
             {nextStep === 5 && (
               <>
-                <p className="text-amber-300 text-sm font-bold">{stages.approved - stages.extracted} approved documents बाट intelligence extract बाँकी</p>
+                <p className="text-amber-300 text-sm font-bold">{approved - extracted} approved documents बाट intelligence extract बाँकी</p>
                 <Link href="/vault/documents" className="block text-center text-sm font-black py-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-black transition-colors">Documents → Intelligence Extract →</Link>
               </>
             )}
