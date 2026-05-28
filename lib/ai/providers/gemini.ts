@@ -102,10 +102,14 @@ export async function callGemini(opts: {
     usageMetadata?: { promptTokenCount: number; candidatesTokenCount: number };
   };
 
-  // Skip thought parts — only use the actual response part
+  // Concatenate all non-thought text parts — Gemini 2.5 sometimes returns
+  // multiple parts (e.g. a brief preamble in part 1, JSON in part 2).
   const parts = data.candidates?.[0]?.content?.parts ?? [];
-  const textPart = parts.find(p => !p.thought && p.text != null);
-  const text = textPart?.text?.trim() ?? "";
+  const text = parts
+    .filter(p => !p.thought && p.text != null)
+    .map(p => p.text ?? "")
+    .join("")
+    .trim();
 
   return {
     text,

@@ -153,12 +153,28 @@ export function extractJson<T = unknown>(text: string): [T, null] | [null, strin
   const sanitized = fixJsonNewlines(stripped);
   try { const d = JSON.parse(sanitized); if (d && typeof d === "object") return [d as T, null]; } catch {}
 
-  // 4. Extract first {...} block (handles preamble/postamble)
-  const match = sanitized.match(/\{[\s\S]*\}/);
-  if (!match) return [null, "No JSON object found in AI response"];
-  try {
-    return [JSON.parse(match[0]) as T, null];
-  } catch (e) {
-    return [null, `AI response JSON parse failed: ${e instanceof Error ? e.message : String(e)}`];
+  // 4. Balanced bracket scan — more reliable than greedy regex when the preamble
+  //    or postamble contains { } characters (common in Gemini 2.5 verbose responses).
+  //    Scans for each top-level { and tries to find its matching }, then parses.
+  for (let i = 0; i < sanitized.length; i++) {
+    if (sanitized[i] !== "{") continue;
+    let depth = 0, inStr = false, esc = false, j = i;
+    for (; j < sanitized.length; j++) {
+      const c = sanitized[j];
+      if (esc)                         { esc = false; continue; }
+      if (c === "\\" && inStr)         { esc = true;  continue; }
+      if (c === '"')                   { inStr = !inStr; continue; }
+      if (inStr)                       continue;
+      if (c === "{")                   depth++;
+      else if (c === "}") { depth--; if (depth === 0) break; }
+    }
+    if (depth === 0) {
+      try {
+        const d = JSON.parse(sanitized.slice(i, j + 1));
+        if (d && typeof d === "object") return [d as T, null];
+      } catch {}
+    }
   }
+
+  return [null, "No parseable JSON object found in AI response"];
 }
