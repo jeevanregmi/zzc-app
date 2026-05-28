@@ -702,7 +702,7 @@ export default function DocumentsClient() {
           ].filter(Boolean).join("\n\n");
 
       if (!text) {
-        alert("Document मा text छैन — पहिले AI analyze गर्नुस् त्यसपछि Deep Extract गर्नुस्।");
+        alert("Document मा text छैन — पहिले AI analyze गर्नुस् त्यसपछि Intelligence Extract गर्नुस्।");
         return;
       }
 

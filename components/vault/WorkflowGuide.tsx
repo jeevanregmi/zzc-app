@@ -72,10 +72,10 @@ export const DOC_INTEL_STEPS: WorkflowStep[] = [
   {
     id:       "extract",
     icon:     "🔍",
-    labelNp:  "Deep Extract गर्नुहोस्",
-    labelEn:  "Deep extract",
-    whyNp:    "Document को पूरा intelligence — Janta cards, policy points र relationships — निकाल्नको लागि।",
-    actionLabel: "Deep Extract गर्नुहोस्",
+    labelNp:  "Intelligence Extract गर्नुहोस्",
+    labelEn:  "Intelligence extract",
+    whyNp:    "Document को structured intelligence — Janta cards, policy points र relationships — निकाल्नको लागि।",
+    actionLabel: "Intelligence Extract गर्नुहोस्",
   },
   {
     id:       "match",

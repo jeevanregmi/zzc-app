@@ -61,13 +61,13 @@ export const SUGGESTION_STATUS_LABELS: Record<SuggestionStatus, string> = {
 // ── Typed payload per suggestion type ─────────────────────────────────────────
 
 export interface ShlokaAtomPayload {
-  type:              "shloka_atom";
-  originalLine:      string;
-  nepaliMeaning:     string;
-  hindiMeaning?:     string;
-  englishSupport?:   string;
-  keyTerms:          string[];
-  devotionalEmotion?:string;  // DevotionalRasa value
+  type:               "shloka_atom";
+  originalLine:       string;
+  nepaliMeaning:      string;
+  hindiMeaning?:      string;
+  englishSupport?:    string;
+  keyTerms:           string[];
+  devotionalEmotion?: import("./extraction-pipeline").DevotionalRasa;
 }
 
 export interface SanskritTermPayload {

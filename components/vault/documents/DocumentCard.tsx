@@ -117,7 +117,7 @@ const DOC_ACTIONS: DocActionDef[] = [
   {
     id:       "deepintel",
     icon:     "🏛️",
-    label:    "Deep Intelligence Extract",
+    label:    "Intelligence Extract",
     color:    "border-indigo-700 text-indigo-300",
     bgColor:  "bg-indigo-950/30",
     aiSees:   "doc.ocrText — paragraph by paragraph scan। AI ले document लाई chunks मा divide गर्छ र प्रत्येक chunk मा trackable commitments खोज्छ।",
@@ -776,19 +776,19 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
         </div>
       )}
 
-      {/* Deep Intelligence Extract — national civic memory layer */}
+      {/* Intelligence Extract — structured janta_intelligence records */}
       {isApproved && !isConstitutionDoc(doc) && !!onExtractIntel && !isExtractingIntel && !isMatchingIntel && intelCount === 0 && (
         <button
           onClick={() => onExtractIntel!(doc)}
           className="w-full text-xs font-bold py-2.5 rounded-xl bg-indigo-900/50 hover:bg-indigo-900 text-indigo-200 border border-indigo-700 transition-colors"
         >
-          🏛️ Deep Intelligence निकाल्नुहोस्
+          🏛️ Intelligence निकाल्नुहोस्
         </button>
       )}
 
       {isExtractingIntel && (
         <div className="w-full rounded-xl bg-indigo-950/40 border border-indigo-800 px-3 py-3 space-y-1.5">
-          <p className="text-indigo-300 text-xs font-bold animate-pulse">🏛️ Deep extraction चल्दैछ…</p>
+          <p className="text-indigo-300 text-xs font-bold animate-pulse">🏛️ Intelligence extraction चल्दैछ…</p>
           <p className="text-indigo-600/80 text-xs leading-relaxed">
             सबै sections scan गर्दैछ — budget lines, projects, institutions, targets, reforms सबै निकाल्दैछ।
           </p>

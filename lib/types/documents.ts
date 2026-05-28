@@ -184,6 +184,13 @@ export interface IntelligenceDocument {
   originalSourceUrl?:     string;              // exact URL where the PDF was downloaded from
   archiveVerifiedAt?:     string;              // ISO timestamp confirming R2 copy is intact
   expectedUpdateWindow?:  string;              // "Shrawan–Bhadra 2082" — next version expected
+  // ── Extraction tier — honest depth label ────────────────────────────────
+  // Set explicitly by the extraction pipeline at each stage:
+  //   "operational" → set when AI Analyze completes (Tier 1)
+  //   "structured"  → set when Intelligence Extract completes (Tier 1.5)
+  //   "atomic"      → set when Phase 2 atomic extraction runs (future)
+  // Do NOT infer tier from processingStatus — use this field directly.
+  extractionTier?:     import("./extraction-pipeline").ExtractionTier;
   // ── Canonical identity (links to canonical_documents collection) ──────────
   // Set after the document is promoted to a canonical identity object.
   // Once set, this document's identity is anchored to the canonical record.

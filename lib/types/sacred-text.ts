@@ -1,5 +1,6 @@
 import type { MultilingualText, SpiritualTradition } from "./semantic-atom";
 import type { TempleVisibility } from "./temple-vault";
+import type { DevotionalRasa } from "./extraction-pipeline";
 
 // Sacred text intake types for the Living Spiritual Intelligence Graph.
 //
@@ -84,20 +85,26 @@ export const AUTHOR_TYPE_LABELS: Record<AuthorType, string> = {
 };
 
 // ── Processing status ──────────────────────────────────────────────────────────
+// Maps to ExtractionTier (lib/types/extraction-pipeline.ts):
+//   raw              → ExtractionTier "none"
+//   review_ready     → ExtractionTier "operational"  (founder-tagged, no atom extraction yet)
+//   atoms_extracted  → ExtractionTier "structured"   (Phase 2 — NOT YET BUILT)
+//   character_updated→ ExtractionTier "atomic"        (Phase 3 — NOT YET BUILT)
+//   published        → ExtractionTier "atomic"        (promoted to Bhakti Chautari)
 
 export type SacredTextStatus =
-  | "raw"              // uploaded, no processing yet
-  | "atoms_extracted"  // Phase 2: shloka atoms extracted
-  | "character_updated"// Phase 3: character graph enriched
-  | "review_ready"     // founder has reviewed, ready for Bhakti Chautari
-  | "published";       // published to Bhakti Chautari
+  | "raw"               // Tier: none     — uploaded, no processing yet (default)
+  | "review_ready"      // Tier: operational — founder reviewed, tagged, metadata set
+  | "atoms_extracted"   // Tier: structured  — Phase 2: shloka atoms extracted (NOT YET BUILT)
+  | "character_updated" // Tier: atomic      — Phase 3: character graph enriched (NOT YET BUILT)
+  | "published";        // Tier: atomic      — published to Bhakti Chautari
 
 export const SACRED_TEXT_STATUS_LABELS: Record<SacredTextStatus, string> = {
-  raw:              "Raw",
-  atoms_extracted:  "Atoms",
-  character_updated:"Graph",
-  review_ready:     "समीक्षा",
-  published:        "प्रकाशित",
+  raw:               "कच्चा",
+  review_ready:      "समीक्षा",
+  atoms_extracted:   "Atoms",
+  character_updated: "Graph",
+  published:         "प्रकाशित",
 };
 
 // ── Main SacredText document ───────────────────────────────────────────────────
@@ -169,7 +176,7 @@ export interface ShlokaAtom {
   // Semantic analysis
   keyTerms:         string[];  // Sanskrit terms encountered — seeds the dictionary
   philosophicalConcept?: string;
-  devotionalEmotion?:    string;  // rasa label
+  devotionalEmotion?:    DevotionalRasa;  // Phase 2: classified rasa
 
   // Graph connections
   relatedCharacterId?: string;
