@@ -21,11 +21,12 @@
 import { routeDocumentAnalysis }  from "../../lib/ai/vault-router";
 import { log }                    from "./_shared";
 import type { RouterEnv }         from "../../lib/ai/vault-router";
+import type { R2Bucket }          from "@cloudflare/workers-types";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface Env extends RouterEnv {
-  // RouterEnv already covers all AI provider vars; nothing extra needed here.
+  VAULT_BUCKET?: R2Bucket;
 }
 
 interface PagesContext {
@@ -196,42 +197,34 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     return json({ error: "downloadUrl, mimeType, fileName required", code: "VALIDATION_ERROR" }, 400);
   }
 
-  // ── Fetch file from R2 ─────────────────────────────────────────────────────
-  // Total budget: CF Pages Functions have a ~30s wall-clock timeout.
-  // We abort after 25s so we can return a clean error instead of being killed silently.
-  const abort   = new AbortController();
-  const abortId = setTimeout(() => abort.abort(), 25_000);
-
-  let fileRes: Response;
-  try {
-    fileRes = await fetch(downloadUrl, { signal: abort.signal });
-    if (!fileRes.ok) throw new Error(`R2 returned HTTP ${fileRes.status}`);
-  } catch (err) {
-    clearTimeout(abortId);
-    const isTimeout = err instanceof Error && err.name === "AbortError";
-    return json({
-      error:            isTimeout
-        ? "Request timeout — document is safe. Large PDFs (>500KB) can take up to 30s. Retry using the button on the card."
-        : `Could not fetch document: ${String(err)}`,
-      code:             isTimeout ? "TIMEOUT" : "FETCH_ERROR",
-      processingStatus: "ai_paused",
-    }, isTimeout ? 504 : 500);
-  }
-  clearTimeout(abortId);
-
-  // ── Build DocumentPayload ──────────────────────────────────────────────────
+  // ── Fetch file from R2 (direct binding — avoids Cloudflare loopback 525) ──
   const isText = TEXT_MIMES.has(mimeType);
   let textBody: string | undefined;
   let base64:   string | undefined;
 
-  if (isText) {
-    textBody = (await fileRes.text()).slice(0, 80_000);
-  } else {
-    const buf = await fileRes.arrayBuffer();
-    if (buf.byteLength > MAX_BYTES) {
-      return json({ error: `File too large (${(buf.byteLength / 1024 / 1024).toFixed(1)} MB). Max 15 MB.`, code: "FILE_TOO_LARGE" }, 413);
+  try {
+    const r2Key = new URL(downloadUrl).searchParams.get("key") ?? "";
+    if (!r2Key || !context.env.VAULT_BUCKET) {
+      throw new Error("R2 binding unavailable or key missing in download URL");
     }
-    base64 = toBase64(buf);
+    const obj = await context.env.VAULT_BUCKET.get(r2Key);
+    if (!obj) throw new Error("Document not found in R2 storage");
+
+    if (isText) {
+      textBody = (await obj.text()).slice(0, 80_000);
+    } else {
+      const buf = await obj.arrayBuffer();
+      if (buf.byteLength > MAX_BYTES) {
+        return json({ error: `File too large (${(buf.byteLength / 1024 / 1024).toFixed(1)} MB). Max 15 MB.`, code: "FILE_TOO_LARGE" }, 413);
+      }
+      base64 = toBase64(buf);
+    }
+  } catch (err) {
+    return json({
+      error:            `Could not fetch document: ${String(err)}`,
+      code:             "FETCH_ERROR",
+      processingStatus: "ai_paused",
+    }, 500);
   }
 
   // ── Route to AI provider ───────────────────────────────────────────────────

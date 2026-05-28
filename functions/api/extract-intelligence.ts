@@ -17,8 +17,9 @@
 
 import { callGemini, GeminiCallError } from "../../lib/ai/providers/gemini";
 import { CORS, extractJson, log, clientError, providerError, internalError } from "./_shared";
+import type { R2Bucket } from "@cloudflare/workers-types";
 
-interface Env { GEMINI_API_KEY: string; }
+interface Env { GEMINI_API_KEY: string; VAULT_BUCKET?: R2Bucket; }
 interface PagesContext { request: Request; env: Env; }
 
 interface ExtractRequest {
@@ -207,16 +208,14 @@ async function extractFromPdf(
 
   let base64: string;
   try {
-    const abort = new AbortController();
-    const tid   = setTimeout(() => abort.abort(), 20_000);
-    let res: Response;
-    try {
-      res = await fetch(body.downloadUrl!, { signal: abort.signal });
-    } finally {
-      clearTimeout(tid);
+    // Direct R2 binding — avoids Cloudflare loopback (HTTP 525)
+    const r2Key = new URL(body.downloadUrl!).searchParams.get("key") ?? "";
+    if (!r2Key || !context.env.VAULT_BUCKET) {
+      throw new Error("R2 binding unavailable or key missing in download URL");
     }
-    if (!res.ok) throw new Error(`PDF fetch failed: HTTP ${res.status} from ${body.downloadUrl!.slice(0, 80)}`);
-    const buf = await res.arrayBuffer();
+    const obj = await context.env.VAULT_BUCKET.get(r2Key);
+    if (!obj) throw new Error(`Document not found in R2 storage: ${r2Key.slice(0, 80)}`);
+    const buf = await obj.arrayBuffer();
     const sizeMB = buf.byteLength / 1024 / 1024;
     // Gemini inline_data accepts up to ~20 MB base64 ≈ 15 MB raw binary.
     // Files larger than this get rejected with a 400 — return a clear error.

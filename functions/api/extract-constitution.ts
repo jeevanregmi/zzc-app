@@ -11,11 +11,13 @@
 
 import { CORS, clientError, providerError, internalError, log, extractJson } from "./_shared";
 import { callGemini, GeminiCallError }                                       from "../../lib/ai/providers/gemini";
+import type { R2Bucket }                                                     from "@cloudflare/workers-types";
 
 interface Env {
   GEMINI_API_KEY?:    string;
   GEMINI_MODEL?:      string;
   ANTHROPIC_API_KEY?: string;
+  VAULT_BUCKET?:      R2Bucket;
 }
 
 interface ExtractConstitutionRequest {
@@ -86,15 +88,18 @@ Return ONLY valid JSON (ascending धारा number order):
 }`;
 }
 
-// ─── PDF fetch + base64 ───────────────────────────────────────────────────────
+// ─── PDF fetch + base64 (direct R2 binding — avoids Cloudflare loopback 525) ──
 
-async function fetchPdfBase64(url: string): Promise<{ base64: string; sizeBytes: number } | { error: string }> {
-  const controller = new AbortController();
-  const timeout    = setTimeout(() => controller.abort(), 25_000);
+async function fetchPdfBase64(
+  url: string,
+  bucket: R2Bucket,
+): Promise<{ base64: string; sizeBytes: number } | { error: string }> {
   try {
-    const res = await fetch(url, { signal: controller.signal });
-    if (!res.ok) return { error: `Storage fetch failed: HTTP ${res.status}` };
-    const buf   = await res.arrayBuffer();
+    const r2Key = new URL(url).searchParams.get("key") ?? "";
+    if (!r2Key) return { error: "No R2 key in download URL" };
+    const obj = await bucket.get(r2Key);
+    if (!obj) return { error: `Document not found in R2 storage: ${r2Key.slice(0, 80)}` };
+    const buf   = await obj.arrayBuffer();
     const bytes = new Uint8Array(buf);
     if (bytes.length > 18_000_000) return { error: `PDF too large: ${(bytes.length / 1_000_000).toFixed(1)} MB (max 18 MB)` };
     let bin = "";
@@ -102,8 +107,6 @@ async function fetchPdfBase64(url: string): Promise<{ base64: string; sizeBytes:
     return { base64: btoa(bin), sizeBytes: bytes.length };
   } catch (e) {
     return { error: e instanceof Error ? e.message : String(e) };
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
@@ -253,6 +256,10 @@ export const onRequestPost = async ({ request, env }: PagesContext): Promise<Res
       return providerError("GEMINI_API_KEY not configured in Cloudflare Pages env vars", "CONFIG_ERROR");
     }
 
+    if (!env.VAULT_BUCKET) {
+      return providerError("VAULT_BUCKET R2 binding not configured in Cloudflare Pages", "CONFIG_ERROR");
+    }
+
     log("extract-constitution", "start", { docId: body.documentId, mimeType: body.mimeType, articleRange: body.articleRange });
 
     // ── Fetch PDF ──────────────────────────────────────────────────────────────
@@ -260,7 +267,7 @@ export const onRequestPost = async ({ request, env }: PagesContext): Promise<Res
       return clientError("Constitution must be a PDF file", 400, "NOT_PDF");
     }
 
-    const pdfResult = await fetchPdfBase64(body.downloadUrl);
+    const pdfResult = await fetchPdfBase64(body.downloadUrl, env.VAULT_BUCKET);
     if ("error" in pdfResult) {
       return providerError(`PDF fetch failed: ${pdfResult.error}`, "PDF_FETCH_ERROR");
     }
