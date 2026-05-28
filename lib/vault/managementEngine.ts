@@ -76,12 +76,12 @@ function kv(
 // ─── Department briefings ─────────────────────────────────────────────────────
 
 function buildOperationsBriefing(ctx: CopilotContext): DepartmentBriefing {
-  const { pipeline, costRisk, qa } = ctx;
+  const { pipeline, costRisk, qa, lifecycle } = ctx;
   const tasks: ManagementTask[] = [];
 
   if (pipeline.aiPaused > 0) {
     tasks.push(task(
-      `${pipeline.aiPaused} documents ai_paused — API key हेर्नुस्`,
+      `${pipeline.aiPaused} documents AI analyze रोकिएको छ — API key जाँच्नुस्`,
       "operations", "urgent", "open",
       "System Settings →", "/vault/system",
       { costLevel: "none", blockedReason: "Billing failure" },
@@ -101,12 +101,29 @@ function buildOperationsBriefing(ctx: CopilotContext): DepartmentBriefing {
       "QA Sprint →", "/vault/qa",
     ));
   }
+  if (lifecycle.overdueCount > 0) {
+    tasks.push(task(
+      `${lifecycle.overdueCount} वटा documents को नयाँ version आइसकेको हुन सक्छ — check गर्नुस्`,
+      "operations", "medium", "open",
+      "Lifecycle हेर्नुस् →", "/vault/documents?view=lifecycle",
+    ));
+  }
+  if (lifecycle.needsTypeSet > 0) {
+    tasks.push(task(
+      `${lifecycle.needsTypeSet} documents को lifecycle type set गरिएको छैन`,
+      "operations", "low", "open",
+      "Lifecycle →", "/vault/documents?view=lifecycle",
+    ));
+  }
 
   const status: DepartmentStatus =
     pipeline.aiPaused > 0            ? "critical" :
     pipeline.pendingAI > 0           ? "needs_attention" :
     !qa.onTrack                       ? "needs_attention" :
+    lifecycle.overdueCount > 0        ? "needs_attention" :
     costRisk.pendingExtracts > 0      ? "needs_attention" : "on_track";
+
+  const summary = buildLifecycleSummaryText(lifecycle);
 
   return {
     department:  "operations",
@@ -118,12 +135,22 @@ function buildOperationsBriefing(ctx: CopilotContext): DepartmentBriefing {
     kpis: [
       kv("aiPaused",     "AI Paused Documents", "documents",  pipeline.aiPaused,        0,  "lower_is_better"),
       kv("qaProgress",   "QA Sprint Progress",  "documents",  qa.approvedDocs,          10, "higher_is_better"),
-      kv("pendingExtract","Extract Pending",     "documents",  costRisk.pendingExtracts, 0,  "lower_is_better"),
+      kv("overdueCheck", "Update Check Overdue","documents",  lifecycle.overdueCount,   0,  "lower_is_better"),
     ],
-    nextAction:      tasks[0]?.titleNp ?? "सबै systems राम्रो छन्",
-    nextActionHref:  tasks[0]?.actionHref ?? "/vault/qa",
-    nextActionLabel: tasks[0]?.actionLabel ?? "QA Sprint →",
+    nextAction:      tasks[0]?.titleNp ?? summary,
+    nextActionHref:  tasks[0]?.actionHref ?? "/vault/documents?view=lifecycle",
+    nextActionLabel: tasks[0]?.actionLabel ?? "Lifecycle हेर्नुस् →",
   };
+}
+
+function buildLifecycleSummaryText(lc: CopilotContext["lifecycle"]): string {
+  const parts: string[] = [];
+  if (lc.overdueCount > 0)      parts.push(`${lc.overdueCount} वटा documents update check गर्नुपर्ने भयो`);
+  if (lc.annualReportCount > 0) parts.push(`${lc.annualReportCount} वटा वार्षिक प्रतिवेदन archive मा छन्`);
+  if (lc.amendmentCount > 0)    parts.push(`${lc.amendmentCount} वटा कानून amendment monitoring मा छन्`);
+  if (lc.needsTypeSet > 0)      parts.push(`${lc.needsTypeSet} documents को type set गर्नुपर्छ`);
+  if (parts.length === 0)       return "सबै documents को lifecycle राम्रो छ";
+  return parts.join(" · ");
 }
 
 function buildIntelligenceBriefing(ctx: CopilotContext): DepartmentBriefing {

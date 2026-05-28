@@ -20,8 +20,127 @@ import { CivicIntelligencePipeline } from "../../../components/vault/CivicIntell
 import { useLearningMode } from "../../../contexts/LearningModeContext";
 import type { IntelligenceDocument, GovFolder, LifecycleType } from "../../../lib/types/documents";
 import { GOV_FOLDER_META } from "../../../lib/types/documents";
+import {
+  getLifecycleProfile,
+  groupDocsByLifecycle,
+  isOverdue,
+  LIFECYCLE_GROUP_ORDER,
+  type LifecycleGroupKey,
+} from "../../../lib/vault/lifecycleHelpers";
+import { DocumentLifecycleCard } from "../../../components/vault/documents/DocumentLifecycleCard";
 import { WorkflowGuide, DOC_INTEL_STEPS, docIntelStep } from "../../../components/vault/WorkflowGuide";
 import type { QueueContentType, QueuePlatform } from "../../../lib/types/queue";
+
+// ── Lifecycle View ────────────────────────────────────────────────────────────
+// Founder-friendly grouped view. One section per lifecycle type. Plain Nepali.
+
+function LifecycleView({ docs }: { docs: IntelligenceDocument[] }) {
+  const grouped  = groupDocsByLifecycle(docs);
+  const overdue  = docs.filter(isOverdue);
+  const noType   = docs.filter(d => !d.lifecycleType);
+
+  return (
+    <div className="space-y-6">
+
+      {/* Summary banner */}
+      {(overdue.length > 0 || noType.length > 0) && (
+        <div className="space-y-2">
+          {overdue.length > 0 && (
+            <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl border border-amber-800/50 bg-amber-950/10">
+              <span className="text-amber-500 text-sm shrink-0 pt-0.5">⚠</span>
+              <div>
+                <p className="text-amber-300 text-xs font-black">
+                  {overdue.length} वटा documents को नयाँ version आइसकेको हुन सक्छ
+                </p>
+                <p className="text-amber-500/70 text-[10px] mt-0.5">
+                  तलका groups मा ⚠ भएका documents check गर्नुस्।
+                </p>
+              </div>
+            </div>
+          )}
+          {noType.length > 0 && (
+            <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl border border-zinc-700 bg-zinc-900/30">
+              <span className="text-zinc-500 text-sm shrink-0 pt-0.5">❓</span>
+              <p className="text-zinc-400 text-xs">
+                <span className="font-black">{noType.length} documents</span> को lifecycle type set गरिएको छैन — upload modal मा set गर्न सकिन्छ।
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Groups */}
+      {LIFECYCLE_GROUP_ORDER.map(key => {
+        const group = grouped.get(key as LifecycleGroupKey) ?? [];
+        if (group.length === 0) return null;
+
+        const profile    = key === "unknown" ? {
+          label: "Lifecycle type नभएका",
+          emoji: "❓",
+          nextAction: "Upload modal मा lifecycle type set गर्नुस्।",
+          color: "border-zinc-700",
+          description: "",
+          frequency: "",
+          archiveNote: "",
+        } : getLifecycleProfile(key as LifecycleType);
+        const groupOverdue = group.filter(isOverdue);
+
+        return (
+          <div key={key} className="space-y-3">
+            {/* Group header */}
+            <div className={`flex items-center gap-3 pb-2 border-b ${profile.color}`}>
+              <span className="text-xl">{profile.emoji}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-black text-white">{profile.label}</p>
+                {profile.description && (
+                  <p className="text-zinc-600 text-[10px] mt-0.5">{profile.description}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {groupOverdue.length > 0 && (
+                  <span className="text-[9px] font-black px-2 py-0.5 rounded-full bg-amber-900/30 text-amber-400 border border-amber-800/40">
+                    ⚠ {groupOverdue.length} overdue
+                  </span>
+                )}
+                <span className="text-zinc-600 text-xs font-semibold">{group.length} docs</span>
+              </div>
+            </div>
+
+            {/* Next action hint for the group */}
+            {profile.nextAction && (
+              <p className="text-[10px] text-zinc-600 px-1">
+                <span className="text-zinc-500 font-black">अब के गर्ने:</span> {profile.nextAction}
+              </p>
+            )}
+
+            {/* Document list */}
+            <div className="space-y-1.5">
+              {group.map(doc => (
+                <div key={doc.id} className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <DocumentLifecycleCard doc={doc} compact />
+                  </div>
+                  <p className="text-[9px] text-zinc-700 truncate max-w-[120px] shrink-0 hidden sm:block">
+                    {String(doc.title ?? doc.fileName ?? "").slice(0, 30)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Empty state */}
+      {docs.length === 0 && (
+        <div className="rounded-xl border border-dashed border-zinc-700 p-8 text-center space-y-2">
+          <p className="text-3xl">📋</p>
+          <p className="text-zinc-400 text-sm font-bold">कुनै document upload गरिएको छैन</p>
+          <p className="text-zinc-600 text-xs">QA Sprint मा गई documents upload गर्नुस्।</p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function inferContentType(idea: string): QueueContentType {
   const l = idea.toLowerCase();
@@ -83,7 +202,7 @@ export default function DocumentsClient() {
 
   const [search,       setSearch]      = useState("");
   const [filter,       setFilter]      = useState<FilterCategory>("all");
-  const [viewMode,     setViewMode]    = useState<"recent" | "library">("recent");
+  const [viewMode,     setViewMode]    = useState<"recent" | "library" | "lifecycle">("recent");
   const [showUpload,           setShowUpload]           = useState(false);
   const [uploadGovFolder,        setUploadGovFolder]        = useState<GovFolder | undefined>(undefined);
   const [uploadInitTags,         setUploadInitTags]         = useState<string>("");
@@ -91,6 +210,14 @@ export default function DocumentsClient() {
   const [uploadInitPartNumber,   setUploadInitPartNumber]   = useState<number | undefined>(undefined);
   const [uploadInitLifecycle,    setUploadInitLifecycle]    = useState<LifecycleType | undefined>(undefined);
   const [uploadInitSourceUrl,    setUploadInitSourceUrl]    = useState<string>("");
+
+  // Auto-switch to lifecycle view — reads ?view=lifecycle from URL
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.location.search.includes("view=lifecycle")) {
+      setViewMode("lifecycle");
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
 
   // Auto-open upload modal — reads ?upload=1&govFolder=...&tags=...&title=...&parts=N&lifecycle=...&sourceUrl=... from URL
   useEffect(() => {
@@ -1313,6 +1440,13 @@ export default function DocumentsClient() {
               >
                 📁
               </button>
+              <button
+                onClick={() => setViewMode("lifecycle")}
+                title="Lifecycle view — document update schedule"
+                className={`px-3 py-2 text-xs font-bold transition-colors border-l border-zinc-800 ${viewMode === "lifecycle" ? "bg-green-500 text-black" : "bg-zinc-900 text-zinc-400 hover:bg-zinc-800"}`}
+              >
+                🔄
+              </button>
             </div>
           </div>
           {/* Horizontal-scroll filter chips — only shown in recent view */}
@@ -1484,6 +1618,9 @@ export default function DocumentsClient() {
               );
             })}
           </div>
+        ) : viewMode === "lifecycle" ? (
+          /* ── Lifecycle view — document update schedule ── */
+          <LifecycleView docs={docs} />
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.map(doc => (

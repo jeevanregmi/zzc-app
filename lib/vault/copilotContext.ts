@@ -88,6 +88,18 @@ export interface EntrepreneurSummary {
   founderNote:        string;  // one sentence synthesis
 }
 
+// ─── Lifecycle state (computed from vault_documents — no new reads) ───────────
+
+export interface LifecycleSummary {
+  total:             number;
+  overdueCount:      number;   // annual/quarterly docs past their expected update date
+  needsTypeSet:      number;   // docs with no lifecycleType assigned yet
+  annualReportCount: number;
+  quarterlyCount:    number;
+  perpetualCount:    number;
+  amendmentCount:    number;
+}
+
 // ─── Temple state (minimal — used by Management OS / COO, not CTO Assistant) ──
 
 export interface TempleState {
@@ -109,6 +121,7 @@ export interface CopilotContext {
   qa:               QAProgress;
   entrepreneur:     EntrepreneurSummary;
   temple:           TempleState;
+  lifecycle:        LifecycleSummary;
 
   // Page-aware guidance cache (keyed by route prefix)
   pageHints:        Record<string, string[]>;
@@ -318,6 +331,38 @@ export async function buildCopilotContext(
     bhaktiAtoms:    bhaktiAtomsSnap.size ?? 0,
   };
 
+  // ── Lifecycle state — computed from vault_documents, no new reads ──────────
+
+  const DAYS = 86_400_000;
+  const now  = Date.now();
+  let overdueCount    = 0;
+  let needsTypeSet    = 0;
+  let annualCount     = 0;
+  let quarterlyCount  = 0;
+  let perpetualCount  = 0;
+  let amendmentCount  = 0;
+
+  for (const doc of docs) {
+    const lct    = doc.lifecycleType as string | undefined;
+    const upDate = new Date(String(doc.uploadedAt ?? "")).getTime();
+    const ageD   = isNaN(upDate) ? 0 : (now - upDate) / DAYS;
+    if (!lct) { needsTypeSet++; continue; }
+    if (lct === "annual_report")   { annualCount++;     if (ageD > 365) overdueCount++; }
+    if (lct === "quarterly")       { quarterlyCount++;  if (ageD > 120) overdueCount++; }
+    if (lct === "perpetual")       perpetualCount++;
+    if (lct === "amendment_based") amendmentCount++;
+  }
+
+  const lifecycle: LifecycleSummary = {
+    total:             docs.length,
+    overdueCount,
+    needsTypeSet,
+    annualReportCount: annualCount,
+    quarterlyCount,
+    perpetualCount,
+    amendmentCount,
+  };
+
   return {
     pipeline,
     intelligence,
@@ -328,6 +373,7 @@ export async function buildCopilotContext(
     qa,
     entrepreneur,
     temple,
+    lifecycle,
     pageHints,
     computedAt: new Date().toISOString(),
     durationMs: Date.now() - start,
