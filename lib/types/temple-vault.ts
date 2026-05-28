@@ -17,7 +17,7 @@
  *   - semantic_dictionary (shared with civic domain — domain: "spiritual")
  */
 
-import type { SpiritualTradition, SpiritualSemanticAtom } from "./semantic-atom";
+import type { SpiritualTradition, SpiritualSemanticAtom, MultilingualText } from "./semantic-atom";
 
 // ─── Chamber ──────────────────────────────────────────────────────────────────
 
@@ -263,3 +263,153 @@ export interface BhaktiAtom {
 
 // ─── Re-export spiritual semantic type ───────────────────────────────────────
 export type { SpiritualSemanticAtom };
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LAYER 2 — SPIRITUAL CHARACTER INTELLIGENCE GRAPH
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Spiritual parallel to janta_intelligence in the civic world.
+// Characters are full intelligence nodes — not just UI containers.
+//
+// Each SpiritualCharacter stores names, forms, symbols, relationships, leelas,
+// emotional tone, visual identity, connected scriptures, bhajans, and festivals.
+// Firestore collection: spiritual_characters (owner write, public read Phase 5+)
+//
+// IMPORTANT: Sacred Chambers are UI surfaces. SpiritualCharacter records are
+// the intelligence layer. A chamber "Shiva" loads its SpiritualCharacter node.
+
+export type CharacterType =
+  | "deity"           // Shiva, Vishnu, Lakshmi, Devi — primary cosmic beings
+  | "avatar"          // Krishna, Rama, Parashurama — divine incarnations
+  | "sage_acharya"    // Adi Shankaracharya, Patanjali, Valmiki — realized teachers
+  | "devotee_saint"   // Mirabai, Tukaram, Andal, Kabir — bhakta-poets
+  | "scripture"       // Bhagavad Gita, Upanishads — scriptures as graph nodes
+  | "event_place"     // Kurukshetra, Vrindavan — places/events that anchor stories
+  | "festival";       // Navaratri, Diwali — festivals as cultural anchors
+
+// The nine devotional moods (nava-rasas of bhakti tradition)
+export type DevotionalRasa =
+  | "shanta"     // peaceful equanimity — Upanishadic meditation
+  | "dasya"      // servant devotion — Hanuman to Rama
+  | "sakhya"     // friendship — Arjuna to Krishna
+  | "vatsalya"   // parental love — Yashoda to Krishna
+  | "madhurya"   // lover devotion — Radha to Krishna, Mirabai to Krishna
+  | "vira"       // heroic devotion — Durga, warrior Shiva
+  | "rudra"      // fierce / transformative — Kali, Nataraja's dance
+  | "karuna"     // compassion — Buddha, Annapurna
+  | "adbhuta";   // wonder/awe — cosmic Vishwaroopa
+
+export interface SpiritualCharacter {
+  id?:             string;
+  ownerId:         string;
+
+  // ── Identity ───────────────────────────────────────────────────────────────
+  characterType:   CharacterType;
+  primaryName:     MultilingualText;    // canonical name in all languages
+  alternateNames:  MultilingualText[];  // Mahadeva, Nataraja, Mahakala, Pashupati...
+  epithets:        string[];            // "Destroyer", "Consciousness", "Auspicious"
+
+  // ── Tradition context ──────────────────────────────────────────────────────
+  traditions:      SpiritualTradition[];
+  primaryTradition: SpiritualTradition;
+
+  // ── Essence / meaning ──────────────────────────────────────────────────────
+  essence:         MultilingualText;    // what this character represents / embodies
+  philosophicalNote?: string;           // Vedantic or Puranic significance
+  devotionalNote?: string;              // how devotees relate — heart context
+
+  // ── Visual / symbolic identity ─────────────────────────────────────────────
+  symbols:         string[];            // ["trident", "third_eye", "crescent_moon", "damaru"]
+  colors:          string[];            // ["ash_white", "deep_blue", "saffron"]
+  iconographicDesc?: string;            // canonical visual description for media grounding
+  vehicleMount?:   string;             // vahana: "bull (Nandi)", "garuda", "mouse"
+
+  // ── Devotional tone ────────────────────────────────────────────────────────
+  primaryRasa:     DevotionalRasa;
+  moods:           string[];           // ["shiva_as_nataraja", "shiva_as_ardhanarishvara"]
+
+  // ── Teachings ─────────────────────────────────────────────────────────────
+  coreTeachings:   MultilingualText[]; // key philosophical or devotional teachings
+  keyShlokas?:     string[];           // important verses (text in Devanagari)
+
+  // ── Story / Leela summaries ────────────────────────────────────────────────
+  leelaHighlights: MultilingualText[]; // key divine plays / episodes
+
+  // ── Graph connections (IDs to other SpiritualCharacter records) ───────────
+  spouseIds?:       string[];          // Shiva ↔ Parvati
+  childIds?:        string[];          // Shiva → Ganesha, Kartikeya
+  guruIds?:         string[];          // teacher relationships
+  shishyaIds?:      string[];          // student relationships
+  manifestationOfId?: string;          // Durga is manifestation of Devi
+
+  // ── Connected content (semantic_dictionary atom IDs) ──────────────────────
+  semanticAtomIds:  string[];          // dharma, karma, shakti, maya...
+
+  // ── Connected scriptures, bhajans, festivals ──────────────────────────────
+  scriptureRefs:    string[];          // "Shiva Purana", "Rigveda 2.33", "Shaiva Agamas"
+  bhajanRefs?:      string[];          // bhajan titles or temple_content IDs
+  festivals?:       string[];          // "Mahashivaratri", "Navaratri"
+  mantras?:         string[];          // "Om Namah Shivaya", "Om Namo Bhagavate Vasudevaya"
+
+  // ── Media grounding (for Phase 6 bhakti media generation) ─────────────────
+  // AI media MUST reference this description — never generate without context
+  canonicalMediaContext?: string;      // visual/emotional context for grounded generation
+
+  // ── Source grounding ──────────────────────────────────────────────────────
+  primarySources:   string[];          // which scriptures this is drawn from
+  verified:         boolean;           // founder-reviewed
+  createdAt:        string;
+  updatedAt:        string;
+  visibility:       TempleVisibility;  // private until founder publishes to Bhakti Chautari
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// LAYER 3 — STORY / LEELA GRAPH (spiritual_relationships)
+// ═══════════════════════════════════════════════════════════════════════════════
+//
+// Spiritual parallel to janta_relationships in the civic world.
+// Graph edges connecting characters, concepts, scriptures, and events.
+//
+// Example graph path:
+//   Krishna → Arjuna (sakhya) → Kurukshetra (set_in) → Bhagavad Gita (reveals)
+//   → Dharma conflict (embodies dharma) → Karma Yoga (teaches) → Vishwaroopa (reveals)
+//
+// Firestore collection: spiritual_relationships (owner write, public read Phase 5+)
+
+export type LeelaRelationType =
+  | "participated_in"  // character was present in this event/leela
+  | "teaches"          // character taught this concept/person
+  | "loves"            // devotional love relationship
+  | "embodies"         // character embodies this semantic atom
+  | "created"          // created or composed this
+  | "destroyed"        // destroyed or transformed
+  | "opposes"          // meaningful conflict or opposition
+  | "blesses"          // bestowed grace or boon
+  | "incarnation_of"   // avatar relationship (Krishna is avatar of Vishnu)
+  | "set_in"           // story or event set in this place
+  | "reveals"          // character reveals this truth or teaching
+  | "companion_of"     // close companion or sakha
+  | "composed";        // authored this scripture, bhajan, or stotra
+
+export type LeelaNodeType = "character" | "atom" | "scripture" | "event" | "place" | "festival";
+
+export interface SpiritualRelationship {
+  id?:           string;
+  ownerId:       string;
+
+  fromId:        string;           // SpiritualCharacter ID or semantic_dictionary ID
+  fromType:      LeelaNodeType;
+  fromName?:     string;           // denormalized label for display
+
+  toId:          string;           // target node ID
+  toType:        LeelaNodeType;
+  toName?:       string;           // denormalized label for display
+
+  relationType:  LeelaRelationType;
+  contextNote?:  MultilingualText; // narrative context — why/how this relation exists
+  scriptureRef?: string;           // which scripture describes this relationship
+  leelaEpisode?: string;           // specific episode name if applicable
+
+  verified:      boolean;
+  createdAt:     string;
+}

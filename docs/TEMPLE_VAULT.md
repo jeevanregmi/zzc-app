@@ -1,7 +1,7 @@
 # ZZC Temple Vault & ZZ Spiritual World
 
-> Version: 1.0 — Phase 1 design document
-> Status: Spec / types only — no routes, no collections created yet
+> Version: 2.0 — Living Spiritual Intelligence Graph
+> Status: Architecture defined — types complete — no routes or collections built yet
 > Author: Jeevan Regmi + Claude Code
 > Last updated: 2026-05-28
 
@@ -26,8 +26,118 @@ ONE Semantic Intelligence Core
               Audience:  Devotees, seekers, Sanskrit-curious, bhakti listeners
               Language:  Sanskrit + Nepali + Hindi + English
               Purpose:   Devotion, scripture, mantra, semantic spiritual learning
-              Atoms:     sanskrit_atoms, bhakti_atoms, mantra_atoms (Phase 3+)
+              Atoms:     semantic_dictionary (spiritual) + spiritual_characters + spiritual_relationships
 ```
+
+---
+
+## Four-Layer Spiritual Intelligence Architecture
+
+> This is the architectural north star for ZZ Spiritual.
+> Not a dictionary. Not a bhajan storage.
+> A living multilingual devotional civilization layer.
+
+The spiritual world mirrors the civic world's two-layer intelligence model exactly:
+
+```
+CIVIC WORLD                         SPIRITUAL WORLD
+─────────────────────────────────   ─────────────────────────────────────────
+Layer 1: constitutional_framework   Layer 1: semantic_dictionary (spiritual)
+  Static atoms — articles,            Static atoms — dharma, karma, moksha,
+  fundamental rights, parts           maya, advaita, bhakti, shakti
+  Sanskrit + IAST + Nepali + Hindi + English
+  Source-grounded (Monier-Williams, Apte, DCS)
+
+Layer 2: janta_intelligence         Layer 2: spiritual_characters
+  Dynamic nodes — policy records,      Intelligence nodes — Shiva, Krishna,
+  citizen-facing extractions           Hanuman, Shankaracharya, Mirabai
+  Names/forms, symbols, moods, leelas, teachings,
+  visual identity, connected scriptures, bhajans, festivals
+
+Graph: janta_relationships          Graph: spiritual_relationships (leela graph)
+  Cross-doc edges — policy ↔ policy    Story/relation edges:
+  relationships, impact chains         Krishna → Arjuna → Bhagavad Gita
+                                       → Dharma conflict → Karma Yoga
+
+Media: media_atoms (future)         Media: bhakti_atoms
+  Expression layer — references        Expression layer — shloka breakdowns,
+  intelligence atoms, never            mantra explainers, leela stories
+  duplicates them                      ALL grounded in L1+L2+L3 context
+```
+
+### Layer 1 — Semantic Spiritual Atoms
+
+**Firestore collection**: `semantic_dictionary` (`domain: "spiritual"`)
+
+Each atom (dharma, karma, moksha, maya...):
+- Sanskrit in Devanagari
+- IAST transliteration
+- Nepali / Hindi / English meaning layers
+- Source grounding (Monier-Williams, Apte, DCS — public domain)
+- Philosophical notes (Vedantic depth)
+- Devotional notes (heart context)
+- Grammatical root (dhatu)
+- Relationships to other atoms
+
+### Layer 2 — Character Intelligence Graph
+
+**Firestore collection**: `spiritual_characters` (Phase 2+)
+**Type**: `SpiritualCharacter` in `lib/types/temple-vault.ts`
+
+Each character node (Shiva, Krishna, Hanuman, Shankaracharya...):
+- Primary name + alternate names (Mahadeva, Nataraja, Mahakala...)
+- Essence and philosophical meaning
+- Symbols (trident, flute, lotus, mace)
+- Devotional rasa (dasya, madhurya, vira, karuna...)
+- Core teachings and key shlokas
+- Leela highlights
+- Visual/iconographic description (for grounded media, Phase 6)
+- Connections: spouses, children, guru-shishya, manifestations
+- Linked semantic atoms, scriptures, bhajans, festivals, mantras
+
+**Sacred Chambers are the UI surface.**
+`SpiritualCharacter` records are the intelligence layer.
+A chamber "Shiva" loads the Shiva character node and all its connected content.
+
+### Layer 3 — Story / Leela Graph
+
+**Firestore collection**: `spiritual_relationships` (Phase 2+)
+**Type**: `SpiritualRelationship` in `lib/types/temple-vault.ts`
+
+Graph edges connecting characters, atoms, scriptures, and events:
+
+```
+Example path — The Mahabharata axis:
+Krishna (deity)
+  ──sakhya──> Arjuna (character)
+  ──set_in──> Kurukshetra (event_place)
+  ──reveals──> Bhagavad Gita (scripture)
+  ──teaches──> Karma Yoga (atom/concept)
+  ──reveals──> Vishwaroopa (event/leela)
+  ──embodies──> dharma (semantic atom)
+
+Example path — The Advaita axis:
+Adi Shankaracharya (sage_acharya)
+  ──composed──> Vivekachudamani (scripture)
+  ──teaches──> advaita (semantic atom)
+  ──teaches──> maya (semantic atom)
+  ──teaches──> moksha (semantic atom)
+```
+
+This enables: deep retrieval, meaningful media generation, cross-character semantic discovery.
+
+### Layer 4 — Devotional Media System
+
+**Firestore collection**: `bhakti_atoms` (Phase 5+)
+**Type**: `BhaktiAtom` in `lib/types/temple-vault.ts`
+
+AI media generation is **only** permitted when grounded in L1+L2+L3 context:
+- Canonical iconographic description from `SpiritualCharacter.canonicalMediaContext`
+- Emotional tone from `SpiritualCharacter.primaryRasa`
+- Symbolic accuracy from `SpiritualCharacter.symbols`
+- Devotional context from the leela graph
+
+AI NEVER generates random spiritual visuals. Every output is traceable to character + atom + scripture context.
 
 These are two *experience worlds*, not two separate brains.
 Same atom protocol. Same relationship graph structure. Different domains, different audiences.
@@ -281,31 +391,46 @@ There is no "make public" option on Temple Notes.
 
 ---
 
-## Firestore Collections (Phase 2+)
+## Firestore Collections
 
-None created yet. When Phase 2 begins:
+None created yet. When Phase 2 begins, add to `firestore.rules`:
 
 ```javascript
-// firestore.rules additions:
+// Layer 2 — Character Intelligence Graph
+match /spiritual_characters/{id} {
+  allow read, write: if isOwner();
+  // Phase 5: allow read: if resource.data.visibility == "published";
+}
 
+// Layer 3 — Leela / Story Graph
+match /spiritual_relationships/{id} {
+  allow read, write: if isOwner();
+  // Phase 5: allow read: if resource.data.verified == true;
+}
+
+// Layer 5 (public expression) — Bhakti Atoms
+match /bhakti_atoms/{id} {
+  allow write: if isOwner();
+  allow read: if resource.data.isPublic == true;
+}
+
+// Private sanctuary (always owner-only)
 match /temple_chambers/{id} {
   allow read, write: if isOwner();
 }
-
 match /temple_notes/{id} {
   allow read, write: if isOwner();
 }
-
 match /temple_content/{id} {
   allow read, write: if isOwner();
 }
 
-// Spiritual dictionary terms — PRIVATE in Phase 2
-// May become public read in Phase 3+ (ZZ Spiritual Public)
+// Layer 1 — Spiritual dictionary terms — PRIVATE in Phase 2
+// Becomes public read when isPublic=true in Phase 5
 match /semantic_dictionary/{id} {
-  allow read: if isOwner();   // private for now
   allow write: if isOwner();
-  // Phase 3: update to `allow read: if resource.data.isPublic == true;`
+  allow read: if isOwner();
+  // Phase 5: allow read: if resource.data.isPublic == true;
 }
 ```
 
@@ -334,41 +459,48 @@ This cross-domain semantic graph is a long-term asset.
 
 ## Build Phases
 
-### Phase 1 (NOW) — Design only
-- [x] `docs/TEMPLE_VAULT.md`
-- [x] `lib/types/temple-vault.ts`
-- [x] `lib/types/semantic-atom.ts`
+### Phase 1 (COMPLETE) — Architecture & Types
+- [x] `docs/TEMPLE_VAULT.md` — full architecture defined
+- [x] `lib/types/temple-vault.ts` — all types including L2 SpiritualCharacter + L3 SpiritualRelationship
+- [x] `lib/types/semantic-atom.ts` — universal atom protocol
 - No routes, no Firestore collections, no UI
 
-### Phase 2 — Private Sanctuary
+### Phase 2 — Private Sanctuary + Intelligence Seeding
 - [ ] `/vault/temple/page.tsx` — calm landing, chamber selector
-- [ ] `/vault/temple/[chamber]/page.tsx` — individual chamber
+- [ ] `/vault/temple/[chamber]/page.tsx` — chamber loads its SpiritualCharacter node
+- [ ] Firestore: `spiritual_characters` — seed 12 core characters (Shiva, Krishna, Hanuman, Devi, Shankaracharya...)
+- [ ] Firestore: `spiritual_relationships` — seed core leela graph edges
 - [ ] Temple Notes CRUD (Firestore: `temple_notes`)
 - [ ] Temple Content viewer (Firestore: `temple_content`)
-- [ ] Sacred UX: dark indigo theme, Devanagari typography
-- [ ] Personal dictionary entry: `semantic_dictionary` (spiritual domain)
+- [ ] Sacred UX: dark indigo theme, Devanagari typography (see Sacred UX Principles below)
+- [ ] Personal dictionary: `semantic_dictionary` with `domain: "spiritual"`
 - [ ] Add to VaultShell nav — below Management OS, subtle placement
 
-### Phase 3 — Spiritual Dictionary Foundation
-- [ ] Seed 30 priority Sanskrit terms manually
-- [ ] Monier-Williams XML ingestion pipeline
-- [ ] Sanskrit → Nepali → Hindi → English mapping UI
-- [ ] Source grounding display
+### Phase 3 — Semantic Dictionary Foundation (Layer 1)
+- [ ] Seed 30 priority Sanskrit terms (dharma, karma, moksha, maya, advaita...)
+- [ ] Monier-Williams XML ingestion pipeline for source grounding
+- [ ] Sanskrit → Nepali → Hindi → English layers with IAST
 - [ ] Dictionary browser at `/vault/temple/dictionary`
+- [ ] Cross-domain: civic term "social justice" ↔ spiritual term "dharma"
 
-### Phase 4 — Immersive Experience
-- [ ] Chamber atmosphere themes (color, typography, background)
-- [ ] Audio support (mantra/bhajan) — only with verified public domain sources
-- [ ] Meditation/focus mode
-- [ ] Sanskrit text rendering with IAST transliteration
-- [ ] Semantic relationship graph (related terms web)
+### Phase 4 — Character Intelligence Builder
+- [ ] Character edit UI — add/edit names, symbols, teachings, leelas
+- [ ] Leela graph builder — draw relationships between characters and concepts
+- [ ] Chamber atmosphere themes (color, typography per tradition)
+- [ ] Audio support — only public domain recordings verified explicitly
+- [ ] Sanskrit IAST rendering
 
-### Phase 5 — ZZ Spiritual Public World
-- [ ] Public routes: `/spiritual` or `zz.jeevanregmi.com.np`
-- [ ] Public `semantic_dictionary` read access for `isPublic: true` terms
-- [ ] Public bhajan/stotra library
-- [ ] Sanskrit semantic learning experience
-- [ ] Devotional content separate from founder's private vault
+### Phase 5 — ZZ Bhakti Chautari (Public World)
+- [ ] Public routes: `/spiritual` or separate domain
+- [ ] Public semantic_dictionary (`isPublic: true` atoms)
+- [ ] Public spiritual_characters (visibility === "published")
+- [ ] Bhakti Atoms expression layer — shloka breakdowns, mantra explainers, leela stories
+- [ ] All public media grounded in L2 character context (canonicalMediaContext required)
+
+### Phase 6 — Grounded Devotional Media
+- [ ] bhakti_atoms with visual/audio generation
+- [ ] AI media only permitted with: character context + rasa + symbols + iconographic desc
+- [ ] All outputs traceable to character node + scripture reference
 
 ---
 
