@@ -283,16 +283,25 @@ export default function QASprintClient() {
   const [intelByDoc, setIntelByDoc] = useState<Record<string, number>>({});
   const [partsWithData, setPartsWithData] = useState(0);
   const [loading,    setLoading]    = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const TARGET = 10;
 
   const fetchData = () => {
     if (!uid) return;
     setLoading(true);
+    setFetchError(null);
+    const safeErr = <T,>(p: Promise<T>, fb: T, label: string): Promise<T> =>
+      p.catch(e => {
+        const msg = e?.code ? `${label}: ${e.code}` : `${label}: ${String(e)}`;
+        console.warn("[QASprint]", msg, e);
+        setFetchError(msg);
+        return fb;
+      });
     void Promise.all([
-      safe(getDocs(query(collection(db, "vault_documents"), where("ownerId", "==", uid), limit(200))), EMPTY),
-      safe(getDocs(query(collection(db, "janta_intelligence"), where("ownerId", "==", uid), limit(500))), EMPTY),
-      safe(getDocs(query(collection(db, "constitutional_framework"), where("ownerId", "==", uid), limit(500))), EMPTY),
+      safeErr(getDocs(query(collection(db, "vault_documents"), where("ownerId", "==", uid), limit(200))), EMPTY, "vault_documents"),
+      safeErr(getDocs(query(collection(db, "janta_intelligence"), where("ownerId", "==", uid), limit(500))), EMPTY, "janta_intelligence"),
+      safeErr(getDocs(query(collection(db, "constitutional_framework"), where("ownerId", "==", uid), limit(500))), EMPTY, "constitutional_framework"),
     ]).then(([docsSnap, intelSnap, fwSnap]) => {
       const rawDocs: QADoc[] = (docsSnap.docs ?? [])
         .map(d => ({ id: d.id, ...(d.data() as Record<string, unknown>) } as QADoc))
@@ -375,6 +384,18 @@ export default function QASprintClient() {
             {TARGET} documents पूरा pipeline मा पार गर्ने लक्ष्य — civic intelligence system को foundation prove गर्ने।
           </p>
         </div>
+
+        {/* Firestore error banner */}
+        {fetchError && (
+          <div className="rounded-lg border border-red-900/50 bg-red-950/20 px-3 py-2 flex items-start gap-2">
+            <span className="text-red-400 text-xs shrink-0">⚠</span>
+            <div className="min-w-0">
+              <p className="text-[10px] text-red-400 font-bold">Firestore query error</p>
+              <p className="text-[9px] text-red-400/70 font-mono break-all">{fetchError}</p>
+              <p className="text-[9px] text-zinc-500 mt-1">uid: {uid ?? "null"} · docs loaded: {docs.length}</p>
+            </div>
+          </div>
+        )}
 
         {/* Progress */}
         <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 space-y-3">
@@ -472,6 +493,9 @@ export default function QASprintClient() {
           <div className="rounded-xl border border-dashed border-zinc-700 p-6 text-center space-y-3">
             <p className="text-3xl">📄</p>
             <p className="text-zinc-400 text-sm font-bold">कुनै document upload गरिएको छैन</p>
+            {!fetchError && (
+              <p className="text-zinc-600 text-[9px]">uid: {uid ?? "null"} · Firestore query ठीक छ तर 0 records फर्काएको</p>
+            )}
             <Link
               href="/vault/documents?upload=1"
               className="inline-block text-xs font-black px-4 py-2 rounded-xl bg-white text-black hover:bg-zinc-100 transition-colors"
