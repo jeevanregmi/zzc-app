@@ -10,8 +10,9 @@ import { useVaultAuth } from "../../../hooks/vault/useVaultAuth";
 import type { TempleNote, NoteType, TempleVisibility } from "../../../lib/types/temple-vault";
 import { SACRED_CHAMBERS } from "../../../lib/types/temple-vault";
 import { CharacterIntelligencePanel } from "../../../components/vault/temple/CharacterIntelligencePanel";
+import { SacredTextIntakePanel } from "../../../components/vault/temple/SacredTextIntakePanel";
 
-type ActiveTab = "mantra" | "charitra";
+type ActiveTab = "mantra" | "charitra" | "granth";
 
 // ─── Chamber accent palette ────────────────────────────────────────────────────
 
@@ -784,35 +785,39 @@ export default function TempleClient() {
   return (
     <div className="min-h-screen bg-[#070714]">
 
-      {/* Tab bar — मन्दिर (notes) ↔ चरित्र (intelligence graph) */}
+      {/* Tab bar — मन्दिर · चरित्र · ग्रन्थ */}
       <div className="flex items-end justify-center gap-10 pt-5 border-b border-white/[0.03]">
-        <button
-          onClick={() => setActiveTab("mantra")}
-          className={`pb-3 text-xs tracking-widest transition-colors duration-300 ${
-            activeTab === "mantra"
-              ? "text-zinc-400 border-b border-zinc-600"
-              : "text-zinc-700 hover:text-zinc-500"
-          }`}
-        >
-          मन्दिर
-        </button>
-        <button
-          onClick={() => setActiveTab("charitra")}
-          className={`pb-3 text-xs tracking-widest transition-colors duration-300 ${
-            activeTab === "charitra"
-              ? "text-zinc-400 border-b border-zinc-600"
-              : "text-zinc-700 hover:text-zinc-500"
-          }`}
-        >
-          चरित्र
-        </button>
+        {(["mantra", "charitra", "granth"] as const).map(tab => {
+          const labels: Record<ActiveTab, string> = {
+            mantra:   "मन्दिर",
+            charitra: "चरित्र",
+            granth:   "ग्रन्थ",
+          };
+          return (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              className={`pb-3 text-xs tracking-widest transition-colors duration-300 ${
+                activeTab === tab
+                  ? "text-zinc-400 border-b border-zinc-600"
+                  : "text-zinc-700 hover:text-zinc-500"
+              }`}
+            >
+              {labels[tab]}
+            </button>
+          );
+        })}
       </div>
 
       {activeTab === "mantra" ? (
         <TempleLanding uid={user.uid} onEnter={setActiveChamber} />
-      ) : (
+      ) : activeTab === "charitra" ? (
         <div className="px-5 sm:px-8 py-8">
           <CharacterIntelligencePanel ownerId={user.uid} />
+        </div>
+      ) : (
+        <div className="px-5 sm:px-8 py-8">
+          <SacredTextIntakePanel ownerId={user.uid} />
         </div>
       )}
     </div>

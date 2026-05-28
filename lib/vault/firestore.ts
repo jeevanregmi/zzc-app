@@ -23,6 +23,7 @@ import { db } from "../../app/firebase";
 import type { VaultMedia, VaultFolder, VaultDocument } from "./types";
 import type { IntelligenceDocument } from "../types/documents";
 import type { SpiritualCharacter, SpiritualRelationship } from "../types/temple-vault";
+import type { SacredText, ShlokaAtom } from "../types/sacred-text";
 import type { QueueItem } from "../types/queue";
 import type { SourceSignal, MonitoredSource, IntelligenceTopic } from "../types/signals";
 import { writeAtomsForDoc } from "./atoms";
@@ -1182,4 +1183,66 @@ export async function upsertSpiritualRelationship(
     ...data,
     createdAt: new Date().toISOString(),
   });
+}
+
+// ─── Sacred Text Intake ──────────────────────────────────────────────────────
+// Phase 1: store uploaded sacred texts in the temple vault.
+// Phase 2+: shloka atom extraction + character graph enrichment.
+
+const COL_SACRED_TEXTS  = "sacred_texts";
+const COL_SHLOKA_ATOMS  = "shloka_atoms";
+
+export async function addSacredText(
+  text: Omit<SacredText, "id" | "createdAt" | "updatedAt">,
+): Promise<string> {
+  const ts = now();
+  const ref = await addDoc(collection(db, COL_SACRED_TEXTS), {
+    ...text,
+    createdAt: ts,
+    updatedAt: ts,
+  });
+  return ref.id;
+}
+
+export async function updateSacredText(id: string, patch: Partial<SacredText>): Promise<void> {
+  await updateDoc(doc(db, COL_SACRED_TEXTS, id), { ...patch, updatedAt: now() });
+}
+
+export async function getSacredTexts(
+  ownerId: string,
+): Promise<(SacredText & { id: string })[]> {
+  const snap = await getDocs(query(
+    collection(db, COL_SACRED_TEXTS),
+    where("ownerId", "==", ownerId),
+    limit(200),
+  ));
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as SacredText & { id: string }));
+}
+
+export async function deleteSacredText(id: string): Promise<void> {
+  await deleteDoc(doc(db, COL_SACRED_TEXTS, id));
+}
+
+export async function addShlokaAtom(
+  atom: Omit<ShlokaAtom, "id" | "createdAt">,
+): Promise<string> {
+  const ref = await addDoc(collection(db, COL_SHLOKA_ATOMS), {
+    ...atom,
+    createdAt: now(),
+  });
+  return ref.id;
+}
+
+export async function getShlokaAtoms(
+  ownerId: string,
+  sourceTextId?: string,
+): Promise<(ShlokaAtom & { id: string })[]> {
+  const snap = await getDocs(query(
+    collection(db, COL_SHLOKA_ATOMS),
+    where("ownerId", "==", ownerId),
+    limit(500),
+  ));
+  const all = snap.docs.map(d => ({ id: d.id, ...d.data() } as ShlokaAtom & { id: string }));
+  if (!sourceTextId) return all;
+  return all.filter(a => a.sourceTextId === sourceTextId);
 }
