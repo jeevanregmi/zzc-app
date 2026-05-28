@@ -376,7 +376,7 @@ function CommandCenter({ uid }: { uid: string }) {
     setAnalyzeSt("running"); setShowAnalyze(false);
     addLog("🤖 pending documents scan गर्दैछ…");
     try {
-      const snap = await getDocs(query(collection(db, "vault_documents"), where("ownerId", "==", uid)));
+      const snap = await getDocs(query(collection(db, "vault_intelligence_docs"), where("ownerId", "==", uid)));
       const pending = snap.docs
         .map(d => ({ id: d.id, ...d.data() } as VaultDoc))
         .filter(d => d.processingStatus === "ready");
@@ -388,7 +388,7 @@ function CommandCenter({ uid }: { uid: string }) {
       let done = 0;
       for (const d of pending) {
         addLog(`🔄 (${done + 1}/${pending.length}) ${String(d.title || d.fileName || d.id).slice(0, 40)}…`);
-        await updateDoc(firestoreDoc(db, "vault_documents", d.id), { processingStatus: "processing_ai" });
+        await updateDoc(firestoreDoc(db, "vault_intelligence_docs", d.id), { processingStatus: "processing_ai" });
         try {
           const res = await fetch("/api/process-document", {
             method: "POST", headers: { "Content-Type": "application/json" },
@@ -397,15 +397,15 @@ function CommandCenter({ uid }: { uid: string }) {
           const data = await res.json() as { ok?: boolean; error?: string; code?: string };
           if (!res.ok || data.error) {
             const aiPaused = ["BILLING_EXHAUSTED", "NO_PROVIDERS", "AI_UNAVAILABLE", "TIMEOUT"].includes(data.code ?? "");
-            await updateDoc(firestoreDoc(db, "vault_documents", d.id), { processingStatus: aiPaused ? "ai_paused" : "ready" });
+            await updateDoc(firestoreDoc(db, "vault_intelligence_docs", d.id), { processingStatus: aiPaused ? "ai_paused" : "ready" });
             addLog(`⚠ ${String(d.title || d.id).slice(0, 30)} — ${data.error ?? "failed"}`);
           } else {
-            await updateDoc(firestoreDoc(db, "vault_documents", d.id), { processingStatus: "ai_ready", adminApprovalStatus: "pending_review" });
+            await updateDoc(firestoreDoc(db, "vault_intelligence_docs", d.id), { processingStatus: "ai_ready", adminApprovalStatus: "pending_review" });
             addLog(`✓ ${String(d.title || d.id).slice(0, 30)} — AI ready`);
             done++;
           }
         } catch (err) {
-          await updateDoc(firestoreDoc(db, "vault_documents", d.id), { processingStatus: "ready" });
+          await updateDoc(firestoreDoc(db, "vault_intelligence_docs", d.id), { processingStatus: "ready" });
           addLog(`❌ ${String(d.title || d.id).slice(0, 30)} — ${err instanceof Error ? err.message : "error"}`);
         }
       }
@@ -423,7 +423,7 @@ function CommandCenter({ uid }: { uid: string }) {
     addLog("⚡ approved documents scan गर्दैछ…");
     try {
       const [docsSnap, intelSnap] = await Promise.all([
-        getDocs(query(collection(db, "vault_documents"), where("ownerId", "==", uid))),
+        getDocs(query(collection(db, "vault_intelligence_docs"), where("ownerId", "==", uid))),
         getDocs(query(collection(db, "janta_intelligence"), where("ownerId", "==", uid))),
       ]);
       const intelByDoc: Record<string, number> = {};

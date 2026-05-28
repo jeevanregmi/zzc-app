@@ -163,7 +163,7 @@ export async function buildCopilotContext(
     templeNotesSnap,
     bhaktiAtomsSnap,
   ] = await Promise.all([
-    safe(q("vault_documents",         200), EMPTY_SNAP),
+    safe(q("vault_intelligence_docs",  200), EMPTY_SNAP),
     safe(q("janta_intelligence",      500), EMPTY_SNAP),
     safe(q("constitutional_framework",500), EMPTY_SNAP),
     safe(q("janta_relationships",     200), EMPTY_SNAP),

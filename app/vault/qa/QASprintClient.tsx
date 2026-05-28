@@ -319,7 +319,7 @@ export default function QASprintClient() {
       });
 
     void Promise.all([
-      safeQ(getDocs(query(collection(db, "vault_documents"),       where("ownerId", "==", uid), limit(200))), EMPTY, "vault_documents"),
+      safeQ(getDocs(query(collection(db, "vault_intelligence_docs"), where("ownerId", "==", uid), limit(200))), EMPTY, "vault_intelligence_docs"),
       safeQ(getDocs(query(collection(db, "janta_intelligence"),    where("ownerId", "==", uid), limit(500))), EMPTY, "janta_intelligence"),
       safeQ(getDocs(query(collection(db, "constitutional_framework"), where("ownerId", "==", uid), limit(500))), EMPTY, "constitutional_framework"),
     ]).then(([docsSnap, intelSnap, fwSnap]) => {
@@ -435,7 +435,7 @@ export default function QASprintClient() {
           <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-black mb-3">Pipeline Funnel</p>
           <div className="space-y-2">
             <FunnelStage
-              step={1} label="vault_documents — total" labelNp="Upload गरिएको"
+              step={1} label="vault_intelligence_docs — total" labelNp="Upload गरिएको"
               count={uploaded} done={uploaded > 0}
               active={nextStep === 1} href="/vault/documents?upload=1" btnLabel="Documents Upload गर्नुस्"
             />
@@ -512,7 +512,7 @@ export default function QASprintClient() {
             <p className="text-zinc-400 text-sm font-bold">कुनै document upload गरिएको छैन</p>
             {!fetchError && uid && (
               <p className="text-zinc-600 text-[9px]">
-                Firestore query सफल — vault_documents मा 0 records (uid: {uid.slice(0, 8)}…)
+                Firestore query सफल — vault_intelligence_docs मा 0 records (uid: {uid.slice(0, 8)}…)
               </p>
             )}
             <Link

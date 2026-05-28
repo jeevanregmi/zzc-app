@@ -21,7 +21,7 @@ export function useCTOInsights(uid: string | null) {
       const EMPTY = { docs: [], size: 0 } as unknown as import("firebase/firestore").QuerySnapshot;
 
       const [docsSnap, intelSnap, frameworkSnap, relSnap, signalSnap] = await Promise.all([
-        safe(getDocs(query(collection(db, "vault_documents"),       where("ownerId", "==", uid), limit(200))), EMPTY),
+        safe(getDocs(query(collection(db, "vault_intelligence_docs"), where("ownerId", "==", uid), limit(200))), EMPTY),
         safe(getDocs(query(collection(db, "janta_intelligence"),    where("ownerId", "==", uid), limit(500))), EMPTY),
         safe(getDocs(query(collection(db, "constitutional_framework"), where("ownerId", "==", uid), limit(500))), EMPTY),
         safe(getDocs(query(collection(db, "janta_relationships"),   where("ownerId", "==", uid), limit(200))), EMPTY),

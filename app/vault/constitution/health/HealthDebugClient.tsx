@@ -1261,7 +1261,7 @@ export default function HealthDebugClient() {
       safe(getDocs(query(collection(db, "civic_signals"),            where("ownerId", "==", uid))), EMPTY_SNAP),
 
       // Vault documents — for recommendation satisfaction tag-matching
-      safe(getDocs(query(collection(db, "vault_documents"),          where("ownerId", "==", uid))), EMPTY_SNAP),
+      safe(getDocs(query(collection(db, "vault_intelligence_docs"),  where("ownerId", "==", uid))), EMPTY_SNAP),
     ])
       .then(([frameworkSnap, jantaSnap, signalsSnap, vaultSnap]) => {
 
