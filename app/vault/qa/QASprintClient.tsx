@@ -10,29 +10,30 @@ import { useVaultAuth } from "../../../hooks/vault/useVaultAuth";
 // ── QA Document Kit ───────────────────────────────────────────────────────────
 
 interface KitDoc {
-  title:       string;
-  parts:       number[];
-  cat:         string;
-  tags:        string;
-  folder:      string;
-  siteUrl:     string;
-  siteLabel:   string;
-  searchQuery: string;   // Google fallback when official site is down
-  lifecycle:   string;   // LifecycleType value for upload modal
-  importance:  string;   // ImportanceLevel value
+  title:        string;
+  parts:        number[];
+  cat:          string;
+  tags:         string;
+  folder:       string;
+  siteUrl:      string;
+  siteLabel:    string;
+  searchQuery:  string;   // Google fallback when official site is down
+  archiveQuery: string;   // Wayback Machine query when site is completely dead
+  lifecycle:    string;
+  importance:   string;
 }
 
 const KIT_DOCS: KitDoc[] = [
-  { title: "राष्ट्रिय मानव अधिकार आयोग वार्षिक प्रतिवेदन",          parts: [28, 3],    cat: "research", tags: "मानव अधिकार,fundamental rights",    folder: "nhrc",                siteUrl: "https://nhrc.org.np",          siteLabel: "nhrc.org.np",         searchQuery: "NHRC Nepal annual report 2081 PDF",                      lifecycle: "annual_report", importance: "high"     },
-  { title: "अख्तियार दुरुपयोग अनुसन्धान आयोग वार्षिक प्रतिवेदन",   parts: [24],       cat: "legal",    tags: "CIAA,भ्रष्टाचार,anti-corruption",   folder: "ciaa",                siteUrl: "https://ciaa.gov.np",          siteLabel: "ciaa.gov.np",         searchQuery: "CIAA Nepal annual report 2081 PDF",                      lifecycle: "annual_report", importance: "high"     },
-  { title: "नेपाल सरकारको वार्षिक बजेट भाषण",                        parts: [23],       cat: "finance",  tags: "बजेट,सार्वजनिक खर्च,अर्थ",          folder: "mof",                 siteUrl: "https://mof.gov.np",           siteLabel: "mof.gov.np",          searchQuery: "Nepal budget speech 2081 PDF site:mof.gov.np",           lifecycle: "annual_report", importance: "critical" },
-  { title: "नेपाल राष्ट्र बैंक मौद्रिक नीति",                        parts: [23],       cat: "finance",  tags: "मौद्रिक नीति,NRB,banking",           folder: "nrb",                 siteUrl: "https://nrb.org.np",           siteLabel: "nrb.org.np",          searchQuery: "Nepal Rastra Bank monetary policy 2081 PDF",             lifecycle: "annual_report", importance: "critical" },
-  { title: "राष्ट्रिय शिक्षा नीति",                                   parts: [4, 3],     cat: "strategy", tags: "शिक्षा नीति,education,directive",     folder: "moe",                 siteUrl: "https://moest.gov.np",         siteLabel: "moest.gov.np",        searchQuery: "राष्ट्रिय शिक्षा नीति 2076 Nepal PDF",                  lifecycle: "amendment_based", importance: "high"   },
-  { title: "लोक सेवा आयोग वार्षिक प्रतिवेदन",                        parts: [26],       cat: "research", tags: "लोक सेवा,civil service,PSC",          folder: "psc",                 siteUrl: "https://psc.gov.np",           siteLabel: "psc.gov.np",          searchQuery: "Lok Sewa Aayog PSC Nepal annual report 2081 PDF",        lifecycle: "annual_report", importance: "medium"   },
-  { title: "निर्वाचन आयोग वार्षिक प्रतिवेदन",                        parts: [27],       cat: "research", tags: "निर्वाचन,election,democracy",         folder: "election-commission", siteUrl: "https://election.gov.np",      siteLabel: "election.gov.np",     searchQuery: "Election Commission Nepal annual report 2081 PDF",       lifecycle: "annual_report", importance: "high"     },
-  { title: "महालेखापरीक्षकको कार्यालय लेखापरीक्षण प्रतिवेदन",       parts: [25, 23],   cat: "finance",  tags: "लेखापरीक्षण,audit,OAG",               folder: "oag",                 siteUrl: "https://oag.gov.np",           siteLabel: "oag.gov.np",          searchQuery: "OAG Nepal Auditor General annual report 2081 PDF",       lifecycle: "annual_report", importance: "high"     },
-  { title: "राष्ट्रिय महिला आयोग वार्षिक प्रतिवेदन",                 parts: [29, 3],    cat: "research", tags: "महिला अधिकार,women,gender",           folder: "ncw",                 siteUrl: "https://ncwnepal.gov.np",      siteLabel: "ncwnepal.gov.np",     searchQuery: "National Women Commission Nepal annual report 2081 PDF", lifecycle: "annual_report", importance: "medium"   },
-  { title: "सर्वोच्च अदालत वार्षिक प्रतिवेदन",                       parts: [11, 3],    cat: "legal",    tags: "न्यायपालिका,judiciary,Supreme Court", folder: "judiciary",           siteUrl: "https://supremecourt.gov.np",  siteLabel: "supremecourt.gov.np", searchQuery: "Supreme Court Nepal annual report 2081 PDF",             lifecycle: "annual_report", importance: "high"     },
+  { title: "राष्ट्रिय मानव अधिकार आयोग वार्षिक प्रतिवेदन",          parts: [28, 3],    cat: "research", tags: "मानव अधिकार,fundamental rights",    folder: "nhrc",                siteUrl: "https://nhrcnepal.org",        siteLabel: "nhrcnepal.org",       searchQuery: "NHRC Nepal \"annual report\" 2081 filetype:pdf OR \"मानव अधिकार\" \"वार्षिक प्रतिवेदन\" 2081",    archiveQuery: "nhrcnepal.org annual report",           lifecycle: "annual_report", importance: "high"     },
+  { title: "अख्तियार दुरुपयोग अनुसन्धान आयोग वार्षिक प्रतिवेदन",   parts: [24],       cat: "legal",    tags: "CIAA,भ्रष्टाचार,anti-corruption",   folder: "ciaa",                siteUrl: "https://ciaa.gov.np",          siteLabel: "ciaa.gov.np",         searchQuery: "CIAA Nepal annual report 2081 filetype:pdf site:ciaa.gov.np",                                 archiveQuery: "ciaa.gov.np annual report",             lifecycle: "annual_report", importance: "high"     },
+  { title: "नेपाल सरकारको वार्षिक बजेट भाषण",                        parts: [23],       cat: "finance",  tags: "बजेट,सार्वजनिक खर्च,अर्थ",          folder: "mof",                 siteUrl: "https://mof.gov.np",           siteLabel: "mof.gov.np",          searchQuery: "Nepal budget speech 2081 filetype:pdf site:mof.gov.np",                                       archiveQuery: "mof.gov.np budget 2081",                lifecycle: "annual_report", importance: "critical" },
+  { title: "नेपाल राष्ट्र बैंक मौद्रिक नीति",                        parts: [23],       cat: "finance",  tags: "मौद्रिक नीति,NRB,banking",           folder: "nrb",                 siteUrl: "https://nrb.org.np",           siteLabel: "nrb.org.np",          searchQuery: "Nepal Rastra Bank monetary policy 2081 filetype:pdf site:nrb.org.np",                         archiveQuery: "nrb.org.np monetary policy 2081",       lifecycle: "annual_report", importance: "critical" },
+  { title: "राष्ट्रिय शिक्षा नीति",                                   parts: [4, 3],     cat: "strategy", tags: "शिक्षा नीति,education,directive",     folder: "moe",                 siteUrl: "https://moest.gov.np",         siteLabel: "moest.gov.np",        searchQuery: "राष्ट्रिय शिक्षा नीति 2076 filetype:pdf site:moest.gov.np",                                   archiveQuery: "moest.gov.np education policy",         lifecycle: "amendment_based", importance: "high"   },
+  { title: "लोक सेवा आयोग वार्षिक प्रतिवेदन",                        parts: [26],       cat: "research", tags: "लोक सेवा,civil service,PSC",          folder: "psc",                 siteUrl: "https://psc.gov.np",           siteLabel: "psc.gov.np",          searchQuery: "Lok Sewa Aayog PSC annual report 2081 filetype:pdf site:psc.gov.np",                          archiveQuery: "psc.gov.np annual report 2081",         lifecycle: "annual_report", importance: "medium"   },
+  { title: "निर्वाचन आयोग वार्षिक प्रतिवेदन",                        parts: [27],       cat: "research", tags: "निर्वाचन,election,democracy",         folder: "election-commission", siteUrl: "https://election.gov.np",      siteLabel: "election.gov.np",     searchQuery: "Election Commission Nepal annual report 2081 filetype:pdf site:election.gov.np",               archiveQuery: "election.gov.np annual report 2081",    lifecycle: "annual_report", importance: "high"     },
+  { title: "महालेखापरीक्षकको कार्यालय लेखापरीक्षण प्रतिवेदन",       parts: [25, 23],   cat: "finance",  tags: "लेखापरीक्षण,audit,OAG",               folder: "oag",                 siteUrl: "https://oag.gov.np",           siteLabel: "oag.gov.np",          searchQuery: "OAG Nepal Auditor General annual report 2081 filetype:pdf site:oag.gov.np",                   archiveQuery: "oag.gov.np auditor general report 2081",lifecycle: "annual_report", importance: "high"     },
+  { title: "राष्ट्रिय महिला आयोग वार्षिक प्रतिवेदन",                 parts: [29, 3],    cat: "research", tags: "महिला अधिकार,women,gender",           folder: "ncw",                 siteUrl: "https://ncwnepal.gov.np",      siteLabel: "ncwnepal.gov.np",     searchQuery: "National Women Commission Nepal annual report 2081 filetype:pdf site:ncwnepal.gov.np",         archiveQuery: "ncwnepal.gov.np annual report 2081",    lifecycle: "annual_report", importance: "medium"   },
+  { title: "सर्वोच्च अदालत वार्षिक प्रतिवेदन",                       parts: [11, 3],    cat: "legal",    tags: "न्यायपालिका,judiciary,Supreme Court", folder: "judiciary",           siteUrl: "https://supremecourt.gov.np",  siteLabel: "supremecourt.gov.np", searchQuery: "Supreme Court Nepal annual report 2081 filetype:pdf site:supremecourt.gov.np",                  archiveQuery: "supremecourt.gov.np annual report 2081",lifecycle: "annual_report", importance: "high"     },
 ];
 
 const PART_LABELS_KIT: Record<number, string> = {
@@ -89,25 +90,38 @@ function DocKitRow({ doc, idx, done }: { doc: KitDoc; idx: number; done: boolean
       {/* Action row — only when not done */}
       {!done && (
         <div className="space-y-1.5 pl-8">
-          {/* Step 1: two source options side by side */}
-          <div className="flex items-center gap-1.5">
+          {/* Step 1: three source options */}
+          <p className="text-[9px] text-zinc-600 font-bold">१. PDF खोज्नुस् — कुनै एक काम गर्छ:</p>
+          <div className="grid grid-cols-3 gap-1">
             <a
               href={doc.siteUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex-1 text-center text-[9px] font-bold py-1.5 rounded-lg border border-blue-800/60 bg-blue-950/30 text-blue-400 hover:bg-blue-900/40 transition-colors"
+              className="text-center text-[9px] font-bold py-1.5 rounded-lg border border-blue-800/60 bg-blue-950/30 text-blue-400 hover:bg-blue-900/40 transition-colors"
             >
-              १. Official Site →
+              Official →
             </a>
             <a
               href={`https://www.google.com/search?q=${encodeURIComponent(doc.searchQuery)}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex-1 text-center text-[9px] font-bold py-1.5 rounded-lg border border-zinc-700 bg-zinc-900/40 text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors"
+              className="text-center text-[9px] font-bold py-1.5 rounded-lg border border-zinc-700 bg-zinc-900/40 text-zinc-400 hover:text-white hover:border-zinc-500 transition-colors"
             >
-              Site बन्द? Google →
+              Google →
+            </a>
+            <a
+              href={`https://web.archive.org/web/*/${encodeURIComponent(doc.siteUrl)}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Internet Archive — पुरानो copy हेर्नुस् जब official site बन्द छ"
+              className="text-center text-[9px] font-bold py-1.5 rounded-lg border border-violet-800/50 bg-violet-950/20 text-violet-400 hover:bg-violet-900/30 transition-colors"
+            >
+              Archive →
             </a>
           </div>
+          <p className="text-[9px] text-zinc-700">
+            Site बन्द? → Google → वा Archive → मा PDF खोज्नुस् → Download → अनि Upload
+          </p>
           {/* Step 2: upload */}
           <Link
             href={buildUploadUrl(doc)}
