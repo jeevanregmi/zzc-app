@@ -25,6 +25,9 @@ import {
   type IdentityField,
 } from "../../../lib/vault/identityEnrichment";
 import { patchDocumentIdentity } from "../../../lib/vault/firestore";
+import { generateDocumentRecommendations } from "../../../lib/vault/recommendationEngine";
+import { useRecommendationQueue } from "../../../hooks/vault/useRecommendationQueue";
+import { UniversalRecommendationQueue } from "../../../components/vault/UniversalRecommendationQueue";
 
 // ── QA Document Kit ───────────────────────────────────────────────────────────
 
@@ -439,6 +442,8 @@ export default function QASprintClient() {
   const [identitySaving,   setIdentitySaving]   = useState<string | null>(null); // docId being patched
   const [identityExpanded, setIdentityExpanded] = useState(false);
 
+  const persistQueue = useRecommendationQueue(uid);
+
   const TARGET = 10;
 
   const fetchData = () => {
@@ -483,6 +488,18 @@ export default function QASprintClient() {
   };
 
   useEffect(() => { fetchData(); }, [uid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // After docs load, generate fresh document recommendations and persist NEW ones.
+  // persistQueue.persist() deduplicates by checking existing pending rec IDs.
+  useEffect(() => {
+    if (!uid || docs.length === 0) return;
+    const kRecs = KIT_DOCS.map(k => ({
+      folder: k.folder, siteUrl: k.siteUrl, title: k.title,
+      tags: k.tags, parts: k.parts, lifecycle: k.lifecycle,
+    }));
+    const generated = docs.flatMap(d => generateDocumentRecommendations(uid, d as ResolvableDoc, kRecs));
+    if (generated.length > 0) void persistQueue.persist(generated);
+  }, [docs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (authLoading) return null;
 
@@ -877,6 +894,22 @@ export default function QASprintClient() {
                 )}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Persistent recommendation queue — cross-session, cross-object-type */}
+        {!loading && (persistQueue.total > 0 || persistQueue.loading) && (
+          <div>
+            <p className="text-[9px] text-zinc-600 uppercase tracking-widest font-black mb-2">
+              Intelligence Enrichment Queue
+            </p>
+            {persistQueue.error && (
+              <p className="text-[9px] text-red-400/70 font-mono mb-2">{persistQueue.error}</p>
+            )}
+            <UniversalRecommendationQueue
+              recs={persistQueue.recs}
+              onRefresh={persistQueue.refresh}
+            />
           </div>
         )}
 

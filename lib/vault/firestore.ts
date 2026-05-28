@@ -15,7 +15,7 @@
  */
 
 import {
-  collection, doc, addDoc, updateDoc, deleteDoc, getDoc, setDoc,
+  collection, doc, addDoc, updateDoc, deleteDoc, getDoc, setDoc, writeBatch,
   getDocs, onSnapshot, query, where, orderBy, limit, Timestamp,
   arrayUnion,
   type Unsubscribe,
@@ -1329,4 +1329,60 @@ export async function enrichSpiritualCharacter(
     [field]:    arrayUnion(...values),
     updatedAt:  now(),
   } as Record<string, unknown>);
+}
+
+// ─── Universal Recommendation Queue ──────────────────────────────────────────
+
+import type { UniversalRecommendation, RecommendationTarget, RecommendationStatus } from "../types/recommendations";
+
+const COL_REC_QUEUE = "recommendation_queue";
+
+/**
+ * Persist recommendations to Firestore using deterministic IDs.
+ * Only writes recs whose IDs are not already in the pending set passed by caller
+ * (caller calls getPendingRecommendations first, then filters).
+ * Batched in groups of 499 to respect Firestore write limits.
+ */
+export async function saveRecommendations(recs: UniversalRecommendation[]): Promise<void> {
+  if (recs.length === 0) return;
+  const CHUNK = 499;
+  for (let i = 0; i < recs.length; i += CHUNK) {
+    const batch = writeBatch(db);
+    recs.slice(i, i + CHUNK).forEach(rec => {
+      batch.set(doc(db, COL_REC_QUEUE, rec.id), rec);
+    });
+    await batch.commit();
+  }
+}
+
+/**
+ * Fetch all pending recommendations for the owner.
+ * Optional targetType filter narrows to a single object class.
+ */
+export async function getPendingRecommendations(
+  ownerId:     string,
+  targetType?: RecommendationTarget,
+): Promise<UniversalRecommendation[]> {
+  const snap = await getDocs(query(
+    collection(db, COL_REC_QUEUE),
+    where("ownerId",  "==", ownerId),
+    where("status",   "==", "pending"),
+    limit(500),
+  ));
+  const all = snap.docs.map(d => ({ ...d.data(), id: d.id } as UniversalRecommendation));
+  return targetType ? all.filter(r => r.targetType === targetType) : all;
+}
+
+/**
+ * Mark a recommendation as approved / rejected / snoozed.
+ * Does NOT apply the patch — caller is responsible for patching the target object.
+ */
+export async function reviewRecommendation(
+  id:     string,
+  status: RecommendationStatus,
+  note?:  string,
+): Promise<void> {
+  const patch: Record<string, unknown> = { status, reviewedAt: now() };
+  if (note) patch.reviewNote = note;
+  await updateDoc(doc(db, COL_REC_QUEUE, id), patch);
 }
