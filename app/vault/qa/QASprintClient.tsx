@@ -12,6 +12,13 @@ import {
   type PipelineDoc,
   type RecMatchResult,
 } from "../../../lib/vault/pipelineState";
+import {
+  resolveDocsForRec,
+  confidenceLabel,
+  type DocMatch,
+  type ResolvableDoc,
+} from "../../../lib/vault/documentResolver";
+import { patchDocumentIdentity } from "../../../lib/vault/firestore";
 
 // ── QA Document Kit ───────────────────────────────────────────────────────────
 
@@ -61,16 +68,114 @@ function buildUploadUrl(doc: KitDoc): string {
   return `/vault/documents?${params.toString()}`;
 }
 
+// ── Link panel (inline) ───────────────────────────────────────────────────────
+
+function ConfidenceBadge({ score }: { score: number }) {
+  const level = confidenceLabel(score);
+  return (
+    <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full border ${
+      level === "high"   ? "bg-green-950/40 text-green-400 border-green-900/50" :
+      level === "medium" ? "bg-amber-950/40 text-amber-400 border-amber-900/50" :
+                           "bg-zinc-800 text-zinc-500 border-zinc-700"
+    }`}>
+      {score}%
+    </span>
+  );
+}
+
+function LinkPanel({
+  matches,
+  saving,
+  onLink,
+  onClose,
+}: {
+  matches:  DocMatch[];
+  saving:   string | null;  // docId being saved
+  onLink:   (docId: string) => void;
+  onClose:  () => void;
+}) {
+  const top = matches.slice(0, 5);
+
+  return (
+    <div className="rounded-lg border border-blue-900/40 bg-blue-950/15 p-3 space-y-2.5">
+      <div className="flex items-center justify-between">
+        <p className="text-[10px] font-black text-blue-300">ZZC मा भेटिएका documents</p>
+        <button onClick={onClose} className="text-zinc-600 hover:text-white text-xs transition-colors">✕</button>
+      </div>
+
+      {top.length === 0 ? (
+        <p className="text-[9px] text-zinc-600">कुनै matching document भेटिएन — Upload गर्नुस् वा metadata थप्नुस्।</p>
+      ) : (
+        <div className="space-y-1.5">
+          {top.map(m => {
+            const title = m.doc.title ?? m.doc.fileName ?? m.doc.id;
+            const isSaving = saving === m.doc.id;
+            return (
+              <div key={m.doc.id} className="flex items-start gap-2 rounded-md border border-zinc-800 bg-zinc-900/50 p-2">
+                <div className="flex-1 min-w-0 space-y-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <ConfidenceBadge score={m.totalScore} />
+                    <p className="text-[10px] font-bold text-white truncate">{title}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {m.signals.slice(0, 4).map((s, i) => (
+                      <span key={i} className="text-[8px] px-1 py-0.5 rounded bg-zinc-800 text-zinc-500 border border-zinc-700">
+                        ✓ {s.label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <button
+                  onClick={() => onLink(m.doc.id)}
+                  disabled={!!saving}
+                  className="shrink-0 text-[9px] font-black px-2 py-1 rounded-md bg-blue-700 hover:bg-blue-600 text-white disabled:opacity-40 transition-colors"
+                >
+                  {isSaving ? "…" : "जोड्नुहोस्"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <p className="text-[8px] text-zinc-700">
+        जोड्दा: govFolder, lifecycleType, र originalSourceUrl (नभएमा) update हुनेछ।
+      </p>
+    </div>
+  );
+}
+
 // ── Kit row ───────────────────────────────────────────────────────────────────
 
-function DocKitRow({ doc, idx, result }: { doc: KitDoc; idx: number; result: RecMatchResult }) {
+function DocKitRow({
+  doc, idx, result, allDocs,
+  linkingOpen, onLinkToggle, onLink, linkSaving,
+}: {
+  doc:         KitDoc;
+  idx:         number;
+  result:      RecMatchResult;
+  allDocs:     PipelineDoc[];
+  linkingOpen: boolean;
+  onLinkToggle: () => void;
+  onLink:       (docId: string) => void;
+  linkSaving:   string | null;
+}) {
   const done       = result.status === "complete";
   const inProgress = result.status === "in_progress";
+
+  // Resolver — runs only when link panel is open
+  const linkMatches: DocMatch[] = linkingOpen
+    ? resolveDocsForRec(
+        { folder: doc.folder, siteUrl: doc.siteUrl, title: doc.title, tags: doc.tags, parts: doc.parts, lifecycle: doc.lifecycle },
+        allDocs as ResolvableDoc[],
+      )
+    : [];
 
   return (
     <div className={`rounded-lg border px-3 py-3 space-y-2 ${
       done       ? "border-green-900/40 bg-green-950/10" :
       inProgress ? "border-amber-900/30 bg-amber-950/10" :
+      linkingOpen ? "border-blue-900/40 bg-blue-950/10" :
                    "border-zinc-800 bg-zinc-900/20"
     }`}>
       {/* Title row */}
@@ -107,11 +212,8 @@ function DocKitRow({ doc, idx, result }: { doc: KitDoc; idx: number; result: Rec
             ))}
           </div>
 
-          {/* Matched doc title — for in_progress, helps identify which doc was found */}
           {inProgress && result.matchedDocTitle && (
-            <p className="text-[9px] text-zinc-600 mt-1 truncate">
-              → {result.matchedDocTitle}
-            </p>
+            <p className="text-[9px] text-zinc-600 mt-1 truncate">→ {result.matchedDocTitle}</p>
           )}
 
           {/* Constitution part chips */}
@@ -134,12 +236,34 @@ function DocKitRow({ doc, idx, result }: { doc: KitDoc; idx: number; result: Rec
         </div>
       </div>
 
-      {/* Action row — shown when not complete */}
+      {/* Action area — shown when not complete */}
       {!done && (
         <div className="space-y-1.5 pl-8">
-          {result.status === "missing" && (
+
+          {/* Link existing document — available for both missing and in_progress */}
+          {!linkingOpen && (
+            <button
+              onClick={onLinkToggle}
+              className="w-full text-center text-[9px] font-black py-1.5 rounded-lg border border-blue-800/40 bg-blue-950/20 text-blue-400 hover:bg-blue-900/30 hover:border-blue-700/60 transition-colors"
+            >
+              Existing document जोड्ने →
+            </button>
+          )}
+
+          {/* Inline link panel */}
+          {linkingOpen && (
+            <LinkPanel
+              matches={linkMatches}
+              saving={linkSaving}
+              onLink={onLink}
+              onClose={onLinkToggle}
+            />
+          )}
+
+          {/* Upload options — only when missing and not in link mode */}
+          {result.status === "missing" && !linkingOpen && (
             <>
-              <p className="text-[9px] text-zinc-600 font-bold">१. PDF खोज्नुस् — कुनै एक काम गर्छ:</p>
+              <p className="text-[9px] text-zinc-600 font-bold">वा नयाँ PDF upload गर्नुस्:</p>
               <div className="grid grid-cols-3 gap-1">
                 <a href={doc.siteUrl} target="_blank" rel="noopener noreferrer"
                   className="text-center text-[9px] font-bold py-1.5 rounded-lg border border-blue-800/60 bg-blue-950/30 text-blue-400 hover:bg-blue-900/40 transition-colors">
@@ -154,18 +278,19 @@ function DocKitRow({ doc, idx, result }: { doc: KitDoc; idx: number; result: Rec
                   Archive →
                 </a>
               </div>
-              <p className="text-[9px] text-zinc-700">Site बन्द? → Google → वा Archive → मा PDF खोज्नुस् → Download → अनि Upload</p>
               <Link href={buildUploadUrl(doc)}
                 className="block w-full text-center text-[10px] font-black py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-black transition-colors">
-                २. PDF Download भएपछि — Upload →
+                PDF Download भएपछि — Upload →
               </Link>
             </>
           )}
-          {result.status === "in_progress" && result.state && (
+
+          {/* In-progress blocking action */}
+          {result.status === "in_progress" && !linkingOpen && result.state && (
             <Link
               href={
-                result.state.blockingStep === "analyze"  ? "/vault/documents" :
-                result.state.blockingStep === "extract"  ? "/vault/documents" :
+                result.state.blockingStep === "analyze" ? "/vault/documents" :
+                result.state.blockingStep === "extract" ? "/vault/documents" :
                 "/vault/admin?tab=documents"
               }
               className="block w-full text-center text-[10px] font-black py-1.5 rounded-lg border border-amber-700/50 bg-amber-950/20 text-amber-400 hover:bg-amber-900/30 transition-colors"
@@ -302,6 +427,8 @@ export default function QASprintClient() {
   const [partsWithData, setPartsWithData] = useState(0);
   const [loading,      setLoading]      = useState(false);
   const [fetchError,   setFetchError]   = useState<string | null>(null);
+  const [linkingIdx,   setLinkingIdx]   = useState<number | null>(null);
+  const [linkSaving,   setLinkSaving]   = useState<string | null>(null);  // docId being saved
 
   const TARGET = 10;
 
@@ -363,6 +490,29 @@ export default function QASprintClient() {
   );
   const kitCompleteCount  = kitResults.filter(r => r.status === "complete").length;
   const kitProgressCount  = kitResults.filter(r => r.status === "in_progress").length;
+
+  const handleLink = async (kitIdx: number, docId: string) => {
+    const kit = KIT_DOCS[kitIdx];
+    if (!kit) return;
+    setLinkSaving(docId);
+    try {
+      // Find the doc to check which fields need to be set
+      const target = docs.find(d => d.id === docId);
+      await patchDocumentIdentity(docId, {
+        govFolder:         kit.folder,
+        lifecycleType:     kit.lifecycle,
+        // Only set originalSourceUrl if not already set (never overwrite existing evidence)
+        ...(target && !target.originalSourceUrl ? { originalSourceUrl: kit.siteUrl } : {}),
+      });
+      // Refresh data so the kit row re-evaluates
+      setLinkingIdx(null);
+      fetchData();
+    } catch (e) {
+      console.error("[QASprint] link failed:", e);
+    } finally {
+      setLinkSaving(null);
+    }
+  };
 
   // Current blocking step
   const nextStep =
@@ -487,7 +637,17 @@ export default function QASprintClient() {
             </div>
             <div className="space-y-1.5">
               {KIT_DOCS.map((doc, i) => (
-                <DocKitRow key={i} doc={doc} idx={i} result={kitResults[i]} />
+                <DocKitRow
+                  key={i}
+                  doc={doc}
+                  idx={i}
+                  result={kitResults[i]}
+                  allDocs={docs}
+                  linkingOpen={linkingIdx === i}
+                  onLinkToggle={() => setLinkingIdx(linkingIdx === i ? null : i)}
+                  onLink={docId => void handleLink(i, docId)}
+                  linkSaving={linkingIdx === i ? linkSaving : null}
+                />
               ))}
             </div>
             <p className="text-zinc-700 text-[9px] mt-2 px-1">

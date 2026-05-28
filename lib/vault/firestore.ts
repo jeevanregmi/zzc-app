@@ -195,6 +195,31 @@ export async function deleteIntelligenceDoc(id: string): Promise<void> {
   await deleteDoc(doc(db, COL_INTEL_DOCS, id));
 }
 
+/**
+ * Patch only identity/classification fields on an existing intelligence doc.
+ * Called by the QA Sprint "Link existing document" flow and the metadata
+ * backfill tool. Never touches AI fields, processingStatus, or approval state.
+ */
+export async function patchDocumentIdentity(
+  id: string,
+  patch: {
+    govFolder?:          string;
+    lifecycleType?:      string;
+    originalSourceUrl?:  string;
+    institutionName?:    string;
+    importanceLevel?:    string;
+    tags?:               string[];
+  },
+): Promise<void> {
+  // Strip undefined values so we don't accidentally null out existing fields
+  const clean: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(patch)) {
+    if (v !== undefined && v !== "") clean[k] = v;
+  }
+  if (Object.keys(clean).length === 0) return;
+  await updateDoc(doc(db, COL_INTEL_DOCS, id), { ...clean, updatedAt: Timestamp.now() });
+}
+
 // Admin approval gates — called from Admin Intelligence Vault only.
 // These are the ONLY paths that set adminApprovalStatus.
 
