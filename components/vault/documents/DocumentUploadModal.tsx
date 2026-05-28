@@ -1,13 +1,14 @@
 "use client";
 
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import type { UploadDocMeta } from "../../../hooks/vault/useDocumentUpload";
-import type { DocUploadTask, DocCategory, GovFolder, LifecycleType } from "../../../lib/types/documents";
+import type { DocUploadTask, DocCategory, GovFolder, LifecycleType, ImportanceLevel } from "../../../lib/types/documents";
 import { GOV_FOLDER_META } from "../../../lib/types/documents";
 import { createIntelligenceDoc } from "../../../lib/vault/firestore";
 import { ActionLearnCard, type ActionLearnData } from "../../vault/LearnTip";
 import OfficialSourceLinks from "../OfficialSourceLinks";
+import { analyzeUrl, type IntakeSuggestion } from "../../../lib/vault/urlIntakeIntelligence";
 
 const ALLOWED_MIME = [
   "application/pdf",
@@ -125,32 +126,91 @@ interface Props {
   initialSourceUrl?:      string;
 }
 
-// ── URL ingest result preview ─────────────────────────────────────────────────
+// ── URL ingest result preview (from /api/ingest-url) ─────────────────────────
 
 interface IngestPreview {
-  title:         string;
-  summary:       string;
-  credibility:   string;
-  relevanceScore:number;
-  detectedTopics:string[];
-  aiInsights:    string[];
-  contentIdeas:  string[];
-  sourceType?:   string;
+  title:          string;
+  summary:        string;
+  credibility:    string;
+  relevanceScore: number;
+  detectedTopics: string[];
+  aiInsights:     string[];
+  contentIdeas:   string[];
+  sourceType?:    string;
   sourceAuthority?: string;
 }
 
+// ── Lifecycle type labels (Nepali) ────────────────────────────────────────────
+
+const LIFECYCLE_NP: Record<LifecycleType, string> = {
+  perpetual:       "📜 लामो समय चल्ने कानून",
+  amendment_based: "🔧 संशोधन आए मात्र बदलिने",
+  annual_report:   "📊 वार्षिक प्रतिवेदन",
+  quarterly:       "📅 त्रैमासिक",
+  circular:        "📌 परिपत्र / सूचना",
+  news:            "📰 समाचार",
+};
+
+const IMPORTANCE_NP: Record<ImportanceLevel, string> = {
+  critical: "🔴 सर्वोच्च प्राथमिकता",
+  high:     "🟠 उच्च",
+  medium:   "🟡 मध्यम",
+  low:      "⚪ सामान्य",
+};
+
+const CONFIDENCE_COLOR: Record<"high"|"medium"|"low", string> = {
+  high:   "border-green-800/60 bg-green-950/20",
+  medium: "border-amber-800/60 bg-amber-950/20",
+  low:    "border-zinc-700 bg-zinc-900/40",
+};
+
+const CONFIDENCE_BADGE: Record<"high"|"medium"|"low", string> = {
+  high:   "bg-green-900/60 text-green-400",
+  medium: "bg-amber-900/60 text-amber-400",
+  low:    "bg-zinc-800 text-zinc-400",
+};
+
+// ── UrlIngestPanel ────────────────────────────────────────────────────────────
+
 function UrlIngestPanel({ ownerId, onClose }: { ownerId: string; onClose: () => void }) {
   const [url,       setUrl]       = useState("");
-  const [source,    setSource]    = useState("");
+  const [intake,    setIntake]    = useState<IntakeSuggestion | null>(null);
+  // Editable fields — seeded from intake suggestion
+  const [title,     setTitle]     = useState("");
+  const [sourceName,setSourceName]= useState("");
+  const [govFolder, setGovFolder] = useState<GovFolder>("other");
+  const [lifecycle, setLifecycle] = useState<LifecycleType>("circular");
+  const [importance,setImportance]= useState<ImportanceLevel>("medium");
+  const [tags,      setTags]      = useState("");
   const [category,  setCategory]  = useState<DocCategory>("intelligence");
+  // State
   const [fetching,  setFetching]  = useState(false);
   const [saving,    setSaving]    = useState(false);
   const [preview,   setPreview]   = useState<IngestPreview | null>(null);
   const [error,     setError]     = useState<string | null>(null);
   const [saved,     setSaved]     = useState(false);
 
-  const handleIngest = async () => {
-    if (!url.trim() || !source.trim()) return;
+  // Instant intake intelligence on URL change (no API call)
+  useEffect(() => {
+    const trimmed = url.trim();
+    const suggestion = analyzeUrl(trimmed);
+    setIntake(suggestion);
+    if (suggestion) {
+      if (!sourceName || sourceName === intake?.institutionEn) {
+        setSourceName(suggestion.institutionEn);
+      }
+      setGovFolder(suggestion.govFolder);
+      setLifecycle(suggestion.lifecycleType);
+      setImportance(suggestion.importanceLevel);
+      if (!tags || tags === intake?.tags.join(", ")) {
+        setTags(suggestion.tags.join(", "));
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url]);
+
+  const handleAiFetch = async () => {
+    if (!url.trim()) return;
     setFetching(true);
     setError(null);
     setPreview(null);
@@ -158,7 +218,7 @@ function UrlIngestPanel({ ownerId, onClose }: { ownerId: string; onClose: () => 
       const res = await fetch("/api/ingest-url", {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ url: url.trim(), sourceName: source.trim() }),
+        body:    JSON.stringify({ url: url.trim(), sourceName: sourceName.trim() }),
       });
       const data = await res.json() as { ok?: boolean; error?: string } & IngestPreview;
       if (!res.ok || data.error) {
@@ -166,6 +226,8 @@ function UrlIngestPanel({ ownerId, onClose }: { ownerId: string; onClose: () => 
         return;
       }
       setPreview(data);
+      if (data.title && !title) setTitle(data.title);
+      if (data.detectedTopics?.length && !tags) setTags(data.detectedTopics.slice(0, 5).join(", "));
     } catch (err) {
       setError(String(err));
     } finally {
@@ -173,40 +235,48 @@ function UrlIngestPanel({ ownerId, onClose }: { ownerId: string; onClose: () => 
     }
   };
 
-  const handleSave = async () => {
-    if (!preview || !ownerId) return;
+  const buildDocPayload = (aiData?: IngestPreview) => ({
+    ownerId,
+    title:               title || aiData?.title || sourceName || url,
+    description:         aiData?.summary?.slice(0, 200) ?? "",
+    fileName:            url,
+    fileType:            "other" as const,
+    mimeType:            "text/html",
+    fileSize:            0,
+    storagePath:         url,
+    downloadUrl:         url,
+    folder:              govFolder,
+    govFolder,
+    tags:                tags.split(",").map(t => t.trim()).filter(Boolean),
+    category,
+    lifecycleType:       lifecycle,
+    importanceLevel:     importance,
+    sourceUrl:           url,
+    originalSourceUrl:   url,
+    processingStatus:    (aiData ? "ai_ready" : "ready") as "ai_ready" | "ready",
+    adminApprovalStatus: "pending_review" as const,
+    sourceType:          (intake?.trustLevel === "primary" ? "official" : "unofficial") as "official" | "unofficial",
+    sourceAuthority:     intake?.institutionNp ?? sourceName,
+    ...(aiData ? {
+      aiSummary:       aiData.summary,
+      aiKeyInsights:   aiData.aiInsights,
+      detectedTopics:  aiData.detectedTopics,
+      contentIdeas:    aiData.contentIdeas,
+      confidence:      aiData.relevanceScore,
+      sourceCredibility: aiData.credibility as "high" | "medium" | "low" | "unverified",
+      aiProvider:      "anthropic-sonnet",
+      aiRetryCount:    0,
+    } : {}),
+    uploadedAt: new Date().toISOString(),
+    updatedAt:  new Date().toISOString(),
+  });
+
+  const handleFastSave = async () => {
+    if (!url.trim() || !ownerId) return;
     setSaving(true);
+    setError(null);
     try {
-      await createIntelligenceDoc({
-        ownerId,
-        title:            preview.title || source,
-        description:      preview.summary.slice(0, 200),
-        fileName:         url,
-        fileType:         "other",
-        mimeType:         "text/html",
-        fileSize:         0,
-        storagePath:      url,
-        downloadUrl:      url,
-        folder:           "government-sources",
-        tags:             preview.detectedTopics.slice(0, 5),
-        category,
-        processingStatus: "ai_ready",
-        adminApprovalStatus: "pending_review",
-        aiSummary:        preview.summary,
-        aiKeyInsights:    preview.aiInsights,
-        detectedTopics:   preview.detectedTopics,
-        contentIdeas:     preview.contentIdeas,
-        confidence:       preview.relevanceScore,
-        sourceCredibility:preview.credibility as "high" | "medium" | "low" | "unverified",
-        sourceType:       (preview.sourceType ?? "unknown") as "official" | "unofficial" | "research" | "unknown",
-        sourceAuthority:  preview.sourceAuthority,
-        sourceUrl:        url,
-        language:         "English",
-        aiProvider:       "anthropic-sonnet",
-        aiRetryCount:     0,
-        uploadedAt:       new Date().toISOString(),
-        updatedAt:        new Date().toISOString(),
-      });
+      await createIntelligenceDoc(buildDocPayload());
       setSaved(true);
     } catch (err) {
       setError(String(err));
@@ -215,13 +285,24 @@ function UrlIngestPanel({ ownerId, onClose }: { ownerId: string; onClose: () => 
     }
   };
 
-  const catInfo = CATEGORY_INFO[category as Cat] ?? null;
+  const handleSaveWithAI = async () => {
+    if (!preview || !ownerId) return;
+    setSaving(true);
+    try {
+      await createIntelligenceDoc(buildDocPayload(preview));
+      setSaved(true);
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (saved) {
     return (
       <div className="flex flex-col items-center gap-4 py-8">
-        <p className="text-green-400 font-semibold">Intelligence Library मा save भयो</p>
-        <p className="text-zinc-500 text-sm text-center">Admin review पर्खिरहेको छ। Documents page बाट AI analysis पुनः चलाउन सकिन्छ।</p>
+        <p className="text-green-400 font-semibold">Intelligence Library मा save भयो ✓</p>
+        <p className="text-zinc-500 text-sm text-center">Documents page बाट AI analysis थाल्न सकिन्छ।</p>
         <button onClick={onClose} className="bg-green-500 hover:bg-green-400 text-black font-black px-6 py-2.5 rounded-xl text-sm">सम्पन्न</button>
       </div>
     );
@@ -229,82 +310,190 @@ function UrlIngestPanel({ ownerId, onClose }: { ownerId: string; onClose: () => 
 
   return (
     <div className="space-y-3">
-      <div className="space-y-2">
+
+      {/* URL input */}
+      <div className="space-y-1">
         <input
           type="url"
-          placeholder="https://nrb.org.np/... वा parliament.gov.np/..."
+          placeholder="https://nhrcnepal.org/... वा nrb.org.np/..."
           value={url}
           onChange={e => setUrl(e.target.value)}
           className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-green-500"
         />
-        <p className="text-zinc-600 text-xs px-1">NRB परिपत्र, संसद विधेयक, MoF सूचना, EPF/SSF pages, समाचार — सबै काम गर्छ</p>
-        <input
-          type="text"
-          placeholder="स्रोतको नाम (जस्तै: Nepal Rastra Bank, संसद सचिवालय)"
-          value={source}
-          onChange={e => setSource(e.target.value)}
-          className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2.5 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-green-500"
-        />
-        <p className="text-zinc-600 text-xs px-1">स्रोतको नाम AI को विश्वसनीयता मूल्याङ्कनमा प्रयोग हुन्छ</p>
-        <select
-          value={category}
-          onChange={e => setCategory(e.target.value as DocCategory)}
-          className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500"
-        >
-          {(["intelligence", "research", "finance", "legal", "strategy", "content", "other"] as Cat[]).map(c => (
-            <option key={c} value={c}>{CATEGORY_INFO[c].np} — {c}</option>
-          ))}
-        </select>
-        {catInfo && (
-          <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl px-3 py-2.5 space-y-1.5">
-            <p className="text-cyan-400 text-xs font-bold">{catInfo.np}</p>
-            <p className="text-zinc-300 text-xs">{catInfo.desc}</p>
-            <p className="text-zinc-500 text-xs">🤖 {catInfo.ai_does}</p>
-            <p className="text-zinc-600 text-xs">🌳 {catInfo.depends_on}</p>
-          </div>
-        )}
+        <p className="text-zinc-600 text-xs px-1">सरकारी website को URL paste गर्नुहोस् — तुरुन्त संस्था पहिचान हुन्छ</p>
       </div>
+
+      {/* Instant intelligence banner */}
+      {intake && (
+        <div className={`border rounded-xl px-3 py-2.5 space-y-2 ${CONFIDENCE_COLOR[intake.confidence]}`}>
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <p className="text-white font-semibold text-sm leading-tight">{intake.institutionNp}</p>
+              <p className="text-zinc-400 text-xs">{intake.institutionEn}</p>
+            </div>
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${CONFIDENCE_BADGE[intake.confidence]}`}>
+              {intake.confidence === "high" ? "पहिचान ✓" : intake.confidence === "medium" ? "आंशिक" : "अज्ञात"}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            <span className="text-[10px] bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded-full">
+              {GOV_FOLDER_META[intake.govFolder]?.icon} {GOV_FOLDER_META[intake.govFolder]?.np}
+            </span>
+            <span className="text-[10px] bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded-full">
+              {LIFECYCLE_NP[intake.lifecycleType]}
+            </span>
+            <span className="text-[10px] bg-zinc-800 text-zinc-300 px-2 py-0.5 rounded-full">
+              {intake.detectedDocTypeNp}
+            </span>
+          </div>
+          <p className="text-zinc-500 text-[10px] leading-relaxed">{intake.explanationNp}</p>
+        </div>
+      )}
+
+      {/* Editable fields */}
+      {url.trim() && (
+        <div className="space-y-2">
+          {/* Title */}
+          <input
+            type="text"
+            placeholder="शीर्षक (optional — AI fetch गर्दा auto-fill हुन्छ)"
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
+          />
+
+          {/* Source name */}
+          <input
+            type="text"
+            placeholder="संस्थाको नाम"
+            value={sourceName}
+            onChange={e => setSourceName(e.target.value)}
+            className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-sm text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
+          />
+
+          {/* GovFolder + Lifecycle row */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <p className="text-zinc-500 text-[10px] px-1">कहाँ राख्ने?</p>
+              <select
+                value={govFolder}
+                onChange={e => setGovFolder(e.target.value as GovFolder)}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-2 py-1.5 text-xs text-white focus:outline-none focus:border-zinc-500"
+              >
+                {(Object.entries(GOV_FOLDER_META) as [GovFolder, {np:string;icon:string}][]).map(([k, v]) => (
+                  <option key={k} value={k}>{v.icon} {v.np}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <p className="text-zinc-500 text-[10px] px-1">कति पटक update?</p>
+              <select
+                value={lifecycle}
+                onChange={e => setLifecycle(e.target.value as LifecycleType)}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-2 py-1.5 text-xs text-white focus:outline-none focus:border-zinc-500"
+              >
+                {(Object.entries(LIFECYCLE_NP) as [LifecycleType, string][]).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Importance + Category row */}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <p className="text-zinc-500 text-[10px] px-1">महत्त्व</p>
+              <select
+                value={importance}
+                onChange={e => setImportance(e.target.value as ImportanceLevel)}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-2 py-1.5 text-xs text-white focus:outline-none focus:border-zinc-500"
+              >
+                {(Object.entries(IMPORTANCE_NP) as [ImportanceLevel, string][]).map(([k, v]) => (
+                  <option key={k} value={k}>{v}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <p className="text-zinc-500 text-[10px] px-1">विषय वर्ग</p>
+              <select
+                value={category}
+                onChange={e => setCategory(e.target.value as DocCategory)}
+                className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-2 py-1.5 text-xs text-white focus:outline-none focus:border-zinc-500"
+              >
+                {(["intelligence", "research", "finance", "legal", "strategy", "content", "other"] as Cat[]).map(c => (
+                  <option key={c} value={c}>{CATEGORY_INFO[c].np}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Tags */}
+          <input
+            type="text"
+            placeholder="Tags (comma separated)"
+            value={tags}
+            onChange={e => setTags(e.target.value)}
+            className="w-full bg-zinc-900 border border-zinc-700 rounded-xl px-3 py-2 text-xs text-white placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
+          />
+        </div>
+      )}
 
       {error && <p className="text-red-400 text-sm bg-red-950/40 border border-red-900 rounded-xl px-3 py-2">{error}</p>}
 
-      {!preview ? (
-        <button
-          onClick={handleIngest}
-          disabled={fetching || !url.trim() || !source.trim()}
-          className="w-full bg-green-500 hover:bg-green-400 disabled:opacity-40 text-black font-black py-2.5 rounded-xl text-sm transition-colors"
-        >
-          {fetching ? "Fetch + AI विश्लेषण हुँदैछ…" : "Fetch गरेर AI विश्लेषण गर्नुहोस् →"}
-        </button>
-      ) : (
-        <div className="space-y-3">
-          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 space-y-2">
-            <p className="text-white font-semibold text-sm">{preview.title}</p>
-            <p className="text-zinc-400 text-xs line-clamp-3">{preview.summary}</p>
-            <div className="flex gap-2 flex-wrap">
-              {preview.detectedTopics.slice(0, 4).map(t => (
-                <span key={t} className="text-xs bg-cyan-950 text-cyan-400 border border-cyan-900 px-2 py-0.5 rounded-full">{t}</span>
-              ))}
+      {/* AI preview after fetch */}
+      {preview && (
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 space-y-2">
+          <p className="text-green-400 text-xs font-semibold">AI विश्लेषण तयार छ ✓</p>
+          {preview.title && <p className="text-white text-sm font-semibold">{preview.title}</p>}
+          {preview.summary && <p className="text-zinc-400 text-xs line-clamp-3">{preview.summary}</p>}
+          <div className="flex gap-1.5 flex-wrap">
+            {preview.detectedTopics.slice(0, 4).map(t => (
+              <span key={t} className="text-[10px] bg-cyan-950 text-cyan-400 border border-cyan-900 px-2 py-0.5 rounded-full">{t}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Action buttons */}
+      {url.trim() && (
+        <div className="space-y-2">
+          {!preview ? (
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={handleFastSave}
+                disabled={saving}
+                className="bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 text-white font-bold py-2.5 rounded-xl text-xs transition-colors"
+              >
+                {saving ? "Save हुँदैछ…" : "⚡ अभी Save गर्नुहोस्"}
+              </button>
+              <button
+                onClick={handleAiFetch}
+                disabled={fetching}
+                className="bg-green-500 hover:bg-green-400 disabled:opacity-40 text-black font-black py-2.5 rounded-xl text-xs transition-colors"
+              >
+                {fetching ? "AI हेर्दैछ…" : "🤖 AI Analysis →"}
+              </button>
             </div>
-            <p className="text-zinc-600 text-xs">
-              सान्दर्भिकता: {Math.round(preview.relevanceScore * 100)}% · विश्वसनीयता: {preview.credibility}
-              {preview.sourceAuthority && ` · ${preview.sourceAuthority}`}
-            </p>
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              className="flex-1 bg-green-500 hover:bg-green-400 disabled:opacity-40 text-black font-black py-2.5 rounded-xl text-sm transition-colors"
-            >
-              {saving ? "Save हुँदैछ…" : "Library मा Save गर्नुहोस् →"}
-            </button>
-            <button
-              onClick={() => setPreview(null)}
-              className="px-4 bg-zinc-800 hover:bg-zinc-700 text-white font-semibold py-2.5 rounded-xl text-sm"
-            >
-              फेरि Fetch
-            </button>
-          </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setPreview(null)}
+                className="bg-zinc-800 hover:bg-zinc-700 text-white font-semibold py-2.5 rounded-xl text-xs"
+              >
+                फेरि Fetch
+              </button>
+              <button
+                onClick={handleSaveWithAI}
+                disabled={saving}
+                className="bg-green-500 hover:bg-green-400 disabled:opacity-40 text-black font-black py-2.5 rounded-xl text-xs transition-colors"
+              >
+                {saving ? "Save हुँदैछ…" : "Library मा Save →"}
+              </button>
+            </div>
+          )}
+          <p className="text-zinc-600 text-[10px] text-center">
+            ⚡ = metadata सहित तुरुन्त save (AI पछि चलाउन सकिन्छ) · 🤖 = AI ले title/summary थप्छ
+          </p>
         </div>
       )}
     </div>

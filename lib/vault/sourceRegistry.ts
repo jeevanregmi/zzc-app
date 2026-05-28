@@ -541,3 +541,17 @@ export const SOURCE_REGISTRY: OfficialSource[] = [
 export const SOURCE_BY_ID: Record<string, OfficialSource> = Object.fromEntries(
   SOURCE_REGISTRY.map(s => [s.sourceId, s]),
 );
+
+// ─── Domain lookup (used by URL Intake Intelligence) ──────────────────────────
+
+export function findSourceByUrl(url: string): OfficialSource | null {
+  try {
+    const hostname = new URL(url.startsWith("http") ? url : `https://${url}`).hostname
+      .replace(/^www\./, "");
+    return SOURCE_REGISTRY.find(s =>
+      hostname === s.domain || hostname.endsWith(`.${s.domain}`),
+    ) ?? null;
+  } catch {
+    return null;
+  }
+}
