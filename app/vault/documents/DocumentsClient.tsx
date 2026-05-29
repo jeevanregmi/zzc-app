@@ -911,7 +911,10 @@ export default function DocumentsClient() {
   // Saves atomic records alongside existing structured records (does not replace them).
   const handleExtractAtomic = async (doc: IntelligenceDocument) => {
     if (!user?.uid) return;
-    if (doc.mimeType !== "application/pdf") {
+    const looksLikePdf = doc.mimeType?.includes("pdf")
+      || doc.fileName?.toLowerCase().endsWith(".pdf")
+      || doc.downloadUrl?.toLowerCase().includes(".pdf");
+    if (!looksLikePdf) {
       alert("Atomic extraction requires a PDF document.");
       return;
     }

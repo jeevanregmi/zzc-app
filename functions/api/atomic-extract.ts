@@ -235,7 +235,8 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     return clientError("docId, ownerId, downloadUrl, docTitle required", 400, "VALIDATION_ERROR");
   }
 
-  const isPdf = (body.mimeType ?? "").includes("pdf");
+  const isPdf = (body.mimeType ?? "").includes("pdf")
+    || (body.downloadUrl ?? "").toLowerCase().includes(".pdf");
   if (!isPdf) {
     return clientError(
       "Atomic extraction currently requires a PDF document. Non-PDF formats do not support page-level source tracing.",
