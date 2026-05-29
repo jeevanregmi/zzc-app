@@ -250,6 +250,8 @@ export default function DocumentsClient() {
   const [extractingIntelId, setExtractingIntelId] = useState<string | null>(null);
   const [intelCountByDoc, setIntelCountByDoc] = useState<Record<string, number>>({});
   const [relCountByDoc, setRelCountByDoc] = useState<Record<string, number>>({});
+  const [extractingAtomicId, setExtractingAtomicId] = useState<string | null>(null);
+  const [atomicCountByDoc, setAtomicCountByDoc]     = useState<Record<string, number>>({});
 
   // Load persisted intel + relationship counts from Firestore on mount
   useEffect(() => {
@@ -259,12 +261,20 @@ export default function DocumentsClient() {
       where("ownerId", "==", user.uid),
       limit(2000),
     )).then(snap => {
-      const counts: Record<string, number> = {};
+      const counts: Record<string, number>       = {};
+      const atomicCounts: Record<string, number> = {};
       snap.docs.forEach(d => {
-        const docId = (d.data() as Record<string, unknown>).sourceDocId as string;
-        if (docId) counts[docId] = (counts[docId] ?? 0) + 1;
+        const data  = d.data() as Record<string, unknown>;
+        const docId = data.sourceDocId as string;
+        if (docId) {
+          counts[docId] = (counts[docId] ?? 0) + 1;
+          if (data.extractionTier === "atomic") {
+            atomicCounts[docId] = (atomicCounts[docId] ?? 0) + 1;
+          }
+        }
       });
       setIntelCountByDoc(counts);
+      setAtomicCountByDoc(atomicCounts);
     }).catch(() => {});
 
     // Load constitutional_framework counts
@@ -894,6 +904,102 @@ export default function DocumentsClient() {
     }
     setReExtractGuardDoc(targetDoc);
   };
+
+  // ── Atomic Deep Extract — Tier 2, page/paragraph source-traced ──────────────
+  // Only runs on official approved PDFs. Founder-triggered, cost-guarded.
+  // Saves atomic records alongside existing structured records (does not replace them).
+  const handleExtractAtomic = async (doc: IntelligenceDocument) => {
+    if (!user?.uid) return;
+    if (doc.mimeType !== "application/pdf") {
+      alert("Atomic extraction requires a PDF document.");
+      return;
+    }
+    setExtractingAtomicId(doc.id);
+    try {
+      const res = await fetch("/api/atomic-extract", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          docId:       doc.id,
+          ownerId:     user.uid,
+          downloadUrl: doc.downloadUrl,
+          mimeType:    doc.mimeType,
+          docTitle:    doc.title,
+          docType:     (doc as unknown as Record<string,unknown>).docType as string | undefined ?? "official document",
+          sourceYear:  (doc as unknown as Record<string,unknown>).docYear?.toString() ?? new Date(doc.uploadedAt).getFullYear().toString(),
+          pageCount:   (doc as unknown as Record<string,unknown>).pageCount as number | undefined,
+          domain:      doc.category === "finance" ? "finance" : "janta",
+        }),
+      });
+
+      const data = await res.json() as {
+        ok:              boolean;
+        records?:        Record<string, unknown>[];
+        totalFound?:     number;
+        rejected?:       number;
+        error?:          string;
+        details?:        string;
+        extractionTier?: string;
+      };
+
+      if (!data.ok || !data.records) {
+        const msg = [data.error ?? "Atomic extraction failed", data.details].filter(Boolean).join(" — ");
+        throw new Error(msg);
+      }
+
+      // Save atomic records to janta_intelligence
+      // We do NOT delete existing structured records — atomic records are additive.
+      const now = new Date().toISOString();
+      const savePromises = data.records.map(r =>
+        addDoc(collection(db, "janta_intelligence"), {
+          summaryNepali:   "",
+          measurable:      true,
+          timeline:        null,
+          budgetAmount:    null,
+          geoScope:        "national",
+          governmentLevel: "federal",
+          tags:            [],
+          affectedGroups:  [],
+          affectedSectors: [],
+          department:      null,
+          ...r,
+          ownerId:              user.uid,
+          sourceDocId:          doc.id,
+          sourceDocTitle:       doc.title,
+          implementationStatus: "announced",
+          verificationStatus:   "ai_extracted",
+          extractionTier:       "atomic",
+          publishToJanta:       true,
+          published:            true,
+          createdAt:            now,
+          updatedAt:            now,
+        })
+      );
+      await Promise.all(savePromises);
+
+      const atomicCount = data.records.length;
+      setAtomicCountByDoc(prev => ({ ...prev, [doc.id]: atomicCount }));
+
+      // Write extractionTier = "atomic" to the source document
+      updateIntelligenceDoc(doc.id, {
+        extractionTier: "atomic",
+      } as unknown as Partial<IntelligenceDocument>).catch(() => {});
+
+      alert(`✅ ${atomicCount} atomic intelligence records saved.\n${data.rejected ?? 0} records rejected (missing page number or text evidence).`);
+    } catch (err) {
+      alert(`Atomic extraction failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setExtractingAtomicId(null);
+    }
+  };
+
+  // Compute cost estimate client-side from doc metadata
+  function atomicCostEstimate(doc: IntelligenceDocument): string {
+    const pages = (doc as unknown as Record<string, unknown>).pageCount as number | undefined;
+    const estimated = pages ?? Math.ceil(doc.fileSize / 2500);
+    const cost = Math.max(0.10, Math.ceil(estimated / 100) * 0.15);
+    return `~$${cost.toFixed(2)}`;
+  }
 
   // ── Constitution Framework extraction — 22 batches × 14 articles ──────────
   // 14 articles/batch keeps each Gemini call well under Cloudflare's 30s CPU limit.
@@ -1614,6 +1720,10 @@ export default function DocumentsClient() {
                         relCount={relCountByDoc[doc.id] ?? 0}
                         constitutionCount={constitutionCountByDoc[doc.id] ?? 0}
                         constitutionBatch={extractingConstitutionId === doc.id ? constitutionBatch : 0}
+                        onExtractAtomic={handleExtractAtomic}
+                        isExtractingAtomic={extractingAtomicId === doc.id}
+                        atomicIntelCount={atomicCountByDoc[doc.id] ?? 0}
+                        atomicCostEstimate={atomicCostEstimate(doc)}
                       />
                     ))}
                   </div>
@@ -1654,6 +1764,10 @@ export default function DocumentsClient() {
                 isExtractingConstitution={extractingConstitutionId === doc.id}
                 constitutionBatch={extractingConstitutionId === doc.id ? constitutionBatch : 0}
                 constitutionCount={constitutionCountByDoc[doc.id] ?? 0}
+                onExtractAtomic={handleExtractAtomic}
+                isExtractingAtomic={extractingAtomicId === doc.id}
+                atomicIntelCount={atomicCountByDoc[doc.id] ?? 0}
+                atomicCostEstimate={atomicCostEstimate(doc)}
                 onArchive={handleArchive}
                 isArchiving={archivingId === doc.id}
               />

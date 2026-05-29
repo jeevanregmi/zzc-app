@@ -4,6 +4,8 @@ import { useState } from "react";
 import Link from "next/link";
 import { LearnTip } from "../LearnTip";
 import type { IntelligenceDocument, AdminApprovalStatus, SourceType } from "../../../lib/types/documents";
+import { EXTRACTION_TIER_LABELS, EXTRACTION_TIER_BADGE } from "../../../lib/types/extraction-pipeline";
+import type { ExtractionTier } from "../../../lib/types/extraction-pipeline";
 import { TrustBadge }  from "../TrustBadge";
 import { trustFromDoc } from "../../../lib/intelligence/trust-score";
 
@@ -364,6 +366,10 @@ interface Props {
   isExtractingConstitution?: boolean;
   constitutionBatch?:      number; // 1–22 = which of 22 article-range batches is running
   constitutionCount?:      number;
+  onExtractAtomic?:        (doc: IntelligenceDocument) => void;
+  isExtractingAtomic?:     boolean;
+  atomicIntelCount?:       number;
+  atomicCostEstimate?:     string; // e.g. "~$0.30"
   onArchive?:              (doc: IntelligenceDocument) => void;
   isArchiving?:            boolean;
 }
@@ -391,9 +397,13 @@ function isConstitutionDoc(doc: IntelligenceDocument): boolean {
   );
 }
 
-export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onGenerateQueue, onResetStuck, onGenerateImage, isGeneratingImage = false, onExtractPoints, isExtractingPoints = false, pointCount = 0, onExtractPromises, isExtractingPromises = false, promiseCount = 0, onExtractIntel, isExtractingIntel = false, isMatchingIntel = false, intelCount = 0, relCount = 0, onExtractConstitution, isExtractingConstitution = false, constitutionBatch = 0, constitutionCount = 0, onArchive, isArchiving = false }: Props) {
-  const [showFullNotes, setShowFullNotes] = useState(false);
+export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onGenerateQueue, onResetStuck, onGenerateImage, isGeneratingImage = false, onExtractPoints, isExtractingPoints = false, pointCount = 0, onExtractPromises, isExtractingPromises = false, promiseCount = 0, onExtractIntel, isExtractingIntel = false, isMatchingIntel = false, intelCount = 0, relCount = 0, onExtractConstitution, isExtractingConstitution = false, constitutionBatch = 0, constitutionCount = 0, onExtractAtomic, isExtractingAtomic = false, atomicIntelCount = 0, atomicCostEstimate, onArchive, isArchiving = false }: Props) {
+  const [showFullNotes,      setShowFullNotes]      = useState(false);
+  const [confirmAtomic,      setConfirmAtomic]      = useState(false);
   const displayStatus  = isProcessing ? "processing_ai" : doc.processingStatus;
+  const tier           = (doc.extractionTier ?? "none") as ExtractionTier;
+  const tierMeta       = EXTRACTION_TIER_LABELS[tier];
+  const tierBadge      = EXTRACTION_TIER_BADGE[tier];
 
   // Detect stuck: Firestore says processing_ai but this browser session isn't the one running it
   const isStuck = doc.processingStatus === "processing_ai" && !isProcessing;
@@ -424,6 +434,13 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
           ) : (
             <span className={`text-xs px-2 py-0.5 rounded-full ${status.cls}`}>{status.label}</span>
           )}
+          {/* Extraction tier — always visible, honest label */}
+          <span
+            title={tierMeta.desc}
+            className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${tierBadge.bg} ${tierBadge.color} ${tierBadge.border}`}
+          >
+            {tierMeta.np}
+          </span>
           {doc.processingStatus === "ai_ready" && <TrustBadge trust={trust} />}
         </div>
       </div>
@@ -821,6 +838,70 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
               <span className="text-violet-400 text-xs">{relCount} relationships found across documents</span>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Atomic Deep Extract — Tier 2, founder-confirmed, official docs only */}
+      {isApproved && !isConstitutionDoc(doc) && doc.sourceType === "official" && tier !== "atomic" && !!onExtractAtomic && !isExtractingAtomic && atomicIntelCount === 0 && (
+        <>
+          {!confirmAtomic ? (
+            <button
+              onClick={() => setConfirmAtomic(true)}
+              className="w-full text-xs font-bold py-2.5 rounded-xl bg-violet-900/40 hover:bg-violet-900/70 text-violet-300 border border-violet-800 transition-colors"
+            >
+              ⚛ Atomic Deep Extract — page/paragraph traced
+            </button>
+          ) : (
+            <div className="rounded-xl border border-violet-700 bg-violet-950/50 px-3 py-3 space-y-2.5">
+              <p className="text-violet-200 text-xs font-bold">⚛ Atomic Intelligence — पक्का गर्नुहोस्</p>
+              <div className="space-y-1 text-[11px] text-violet-400/80 leading-relaxed">
+                <p>• प्रत्येक तथ्य page number + verbatim quote सहित save हुन्छ</p>
+                <p>• Tier 2 — source-traced, evidence-backed intelligence</p>
+                {atomicCostEstimate && (
+                  <p className="text-amber-400 font-bold">अनुमानित खर्च: {atomicCostEstimate}</p>
+                )}
+                <p className="text-zinc-500">Official trusted document मा मात्र run गर्नुहोस्।</p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => { setConfirmAtomic(false); onExtractAtomic!(doc); }}
+                  className="flex-1 text-xs font-bold py-2 rounded-xl bg-violet-700 hover:bg-violet-600 text-white transition-colors"
+                >
+                  हो, चलाउनुहोस्
+                </button>
+                <button
+                  onClick={() => setConfirmAtomic(false)}
+                  className="flex-1 text-xs py-2 rounded-xl border border-zinc-700 text-zinc-500 hover:text-zinc-300 transition-colors"
+                >
+                  रद्द गर्नुहोस्
+                </button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {isExtractingAtomic && (
+        <div className="w-full rounded-xl bg-violet-950/40 border border-violet-800 px-3 py-3 space-y-1.5">
+          <p className="text-violet-300 text-xs font-bold animate-pulse">⚛ Atomic extraction चल्दैछ — page by page…</p>
+          <p className="text-violet-600/80 text-xs leading-relaxed">
+            हरेक page scan गर्दैछ — तथ्य, संख्या, संस्था, सिफारिस — page number र verbatim quote सहित।
+          </p>
+        </div>
+      )}
+
+      {isApproved && atomicIntelCount > 0 && !isExtractingAtomic && (
+        <div className="w-full rounded-xl bg-violet-950/30 border border-violet-800/60 px-3 py-2.5 space-y-1">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-violet-300 text-xs font-bold">⚛ {atomicIntelCount} atomic records — source-traced</span>
+            <button
+              onClick={() => setConfirmAtomic(true)}
+              className="text-xs text-violet-700 hover:text-violet-400 underline shrink-0"
+            >
+              Re-extract
+            </button>
+          </div>
+          <p className="text-violet-700/70 text-[10px]">प्रत्येक record मा page number + verbatim quote छ</p>
         </div>
       )}
 

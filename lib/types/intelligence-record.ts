@@ -9,7 +9,13 @@
  * Domain-tagged: every record carries a `domain` field for routing.
  *
  * The moat is ONE shared structured national memory graph — not per-domain silos.
+ *
+ * Extraction tiers (set by extractionTier field):
+ *   "operational" → Tier 1: document-level summary, no source trace
+ *   "structured"  → Tier 1.5: structured records, chunk-level trace
+ *   "atomic"      → Tier 2: page/paragraph level, verbatim evidence required
  */
+import type { ExtractionTier } from "./extraction-pipeline";
 
 // ── Intelligence Domain ──────────────────────────────────────────────────────
 
@@ -167,6 +173,17 @@ export interface IntelligenceRecord {
 
   // ── Discovery ────────────────────────────────────────────────────────────
   tags: string[];  // searchable tags for citizen queries
+
+  // ── Extraction Tier — honest depth label ─────────────────────────────────
+  // Set by the extraction pipeline. Absent = pre-tier records (treat as structured).
+  // "atomic" records MUST have pageNumber + textEvidence.
+  extractionTier?: ExtractionTier;
+
+  // ── Atomic Source Trace (required for Tier 2, optional for lower tiers) ──
+  // When extractionTier === "atomic": pageNumber and textEvidence are mandatory.
+  pageNumber?:   number;  // physical page in the source PDF (1-indexed)
+  textEvidence?: string;  // verbatim quoted sentence(s) that contain this fact (max 400 chars)
+  paragraphIdx?: number;  // 0-indexed paragraph position on the page (if determinable)
 
   // ── Quality ──────────────────────────────────────────────────────────────
   confidence: number;  // 0.0-1.0

@@ -140,6 +140,7 @@ function StatCard({ s }: { s: AnalyticsStat }) {
 interface AnalyticsDashboardProps {
   totalCivicAtoms:     number;
   totalJanta:          number;
+  totalAtomicJanta:    number;
   totalFramework:      number;
   totalConstitAtoms:   number;
   totalRelationships:  number;
@@ -212,10 +213,11 @@ function AnalyticsDashboard(p: AnalyticsDashboardProps) {
                   fixHref: "/vault/documents", fixLabel: "📄 Documents →",
                 },
                 {
-                  label: "📋 Janta Intelligence", value: p.totalJanta, color: "#4ade80", sub: "janta_intelligence",
-                  what: "Upload गरिएका documents बाट AI ले निकालेका intelligence records — नीति, बजेट, प्रतिबद्धता, प्रगति।",
+                  label: "📋 Intelligence Records", value: p.totalJanta, color: "#4ade80",
+                  sub: `संरचित: ${p.totalJanta - p.totalAtomicJanta} · ⚛ Atomic: ${p.totalAtomicJanta}`,
+                  what: "Upload गरिएका documents बाट AI ले निकालेका intelligence records। संरचित (Tier 1.5) = chunk-level। Atomic (Tier 2) = page+paragraph+verbatim evidence।",
                   why0: "अझैसम्म कुनै document upload भएर 'AI Extract' गरिएको छैन, वा approve गरिएको छैन।",
-                  fix: "Documents पेजमा जानुस् → PDF upload गर्नुस् → AI Analyze → Approve गर्नुस्।",
+                  fix: "Documents पेजमा जानुस् → PDF upload गर्नुस् → AI Analyze → Approve → Extract Intelligence।",
                   fixHref: "/vault/documents", fixLabel: "📄 Documents →",
                 },
                 {
@@ -298,7 +300,8 @@ function AnalyticsDashboard(p: AnalyticsDashboardProps) {
             <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
               {([
                 { label: "⚛ Civic Atoms",        value: p.totalCivicAtoms,   color: "#67e8f9", sub: "vault_civic_atoms" },
-                { label: "📋 Janta Records",      value: p.totalJanta,        color: "#4ade80", sub: "janta_intelligence" },
+                { label: "📋 संरचित Intelligence", value: p.totalJanta - p.totalAtomicJanta, color: "#4ade80", sub: "Tier 1.5 — structured" },
+                { label: "⚛ Atomic Intelligence",  value: p.totalAtomicJanta,  color: "#a78bfa", sub: "Tier 2 — page/paragraph traced" },
                 { label: "📡 Civic Signals",       value: p.totalSignals,      color: "#f472b6", sub: "civic_signals" },
                 { label: "कुल Intelligence",      value: p.totalCivicAtoms + p.totalJanta + p.totalSignals, color: "#e2e8f0" },
                 { label: "✓ सकारात्मक संकेत",    value: totalPositive,       color: "#4ade80" },
@@ -1227,6 +1230,7 @@ export default function HealthDebugClient() {
 
   const [totalCivicAtoms,    setTotalCivicAtoms]    = useState(0);
   const [totalJanta,         setTotalJanta]         = useState(0);
+  const [totalAtomicJanta,   setTotalAtomicJanta]   = useState(0);
   const [totalFramework,     setTotalFramework]     = useState(0);
   const [totalConstitAtoms,  setTotalConstitAtoms]  = useState(0);
   const [totalRelationships, setTotalRelationships] = useState(0);
@@ -1272,6 +1276,8 @@ export default function HealthDebugClient() {
         const jantaRecs = jantaSnap.docs.map(d => ({ id: d.id, ...d.data() } as IntelligenceRecord));
         // Only published records feed into health scoring; count all for the stat card
         const publishedJanta = jantaRecs.filter(r => r.publishToJanta === true);
+        // Tier breakdown: atomic = page/paragraph-traced; structured = chunk-level
+        const atomicJanta = jantaRecs.filter(r => r.extractionTier === "atomic");
 
         // Vault document tags — for recommendation satisfaction cross-check
         const allVaultTags = new Set<string>();
@@ -1287,6 +1293,7 @@ export default function HealthDebugClient() {
         // Update raw counts (all used by StatCards)
         setTotalFramework(frameworkRecs.length);
         setTotalJanta(jantaRecs.length);
+        setTotalAtomicJanta(atomicJanta.length);
         setTotalSignals(signalsSnap.size);
         // Phantom collections — always 0 (removed from queries; kept as state for backward compat)
         setTotalCivicAtoms(0);
@@ -1456,6 +1463,7 @@ export default function HealthDebugClient() {
         <AnalyticsDashboard
           totalCivicAtoms={totalCivicAtoms}
           totalJanta={totalJanta}
+          totalAtomicJanta={totalAtomicJanta}
           totalFramework={totalFramework}
           totalConstitAtoms={totalConstitAtoms}
           totalRelationships={totalRelationships}
