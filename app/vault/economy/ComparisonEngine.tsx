@@ -13,6 +13,7 @@ import {
   type SectorTrend,
   type MovementImpact,
 } from "../../../lib/economy/comparison";
+import { ComparisonReview } from "./ComparisonReview";
 
 interface Props {
   atoms:            EconomicAtom[];
@@ -20,7 +21,7 @@ interface Props {
   onAtomsUpdated:   () => void;
 }
 
-type Tab = "sectors" | "repeated" | "new" | "removed" | "movement";
+type Tab = "sectors" | "repeated" | "new" | "removed" | "movement" | "review";
 
 const TAB_LABELS: Record<Tab, string> = {
   sectors:  "Sector Trends",
@@ -28,6 +29,7 @@ const TAB_LABELS: Record<Tab, string> = {
   new:      "New Programs",
   removed:  "Removed",
   movement: "Gen Z Impact",
+  review:   "🔍 Quality Review",
 };
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -261,12 +263,19 @@ export function ComparisonEngine({ atoms, fiscalYears, onAtomsUpdated }: Props) 
     onAtomsUpdated();
   }
 
+  const reviewCount = report
+    ? report.stats.repeatedCount +
+      report.stats.movementCount +
+      report.matches.filter(m => m.comparisonStatus === "increased" || m.comparisonStatus === "decreased").length
+    : 0;
+
   const tabCounts: Record<Tab, number> = {
     sectors:  report?.sectorTrends.length ?? 0,
     repeated: report?.stats.repeatedCount ?? 0,
     new:      report?.stats.newCount ?? 0,
     removed:  report?.stats.removedCount ?? 0,
     movement: report?.stats.movementCount ?? 0,
+    review:   reviewCount,
   };
 
   return (
@@ -487,6 +496,14 @@ export function ComparisonEngine({ atoms, fiscalYears, onAtomsUpdated }: Props) 
                   </>
                 )}
               </div>
+            )}
+
+            {/* Quality Review */}
+            {activeTab === "review" && (
+              <ComparisonReview
+                report={report}
+                onReviewsSaved={onAtomsUpdated}
+              />
             )}
 
             {/* Gen Z Movement Impact */}
