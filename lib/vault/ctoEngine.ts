@@ -136,7 +136,7 @@ export function generateInsights(snap: SystemSnapshot): CTOInsight[] {
       titleNp:     `${snap.docsApprovedNoExtract} document approve भयो — Intelligence निकाल्न बाँकी`,
       bodyNp:      snap.docsApprovedNoExtract === 1
         ? `"${first}" approve भएको छ। Intelligence निकाले Janta cards र connections तयार हुन्छन्।`
-        : `${snap.docsApprovedNoExtract} documents approve भए तर Intelligence अझै निकालिएन।`,
+        : `"${snap.approvedNoExtractTitles[0] ?? "?"}" र "${snap.approvedNoExtractTitles[1] ?? "?"}" — Intelligence अझै निकालिएन।`,
       impactNp:    "Document approve भयो तर Janta cards अझै बनेका छैनन् — जनताले content पाउँदैनन्।",
       nextStepNp:  "Documents page खोल्नुस् → approved document मा Intelligence Extract button थिच्नुस्।",
       whyNp:       "Approve गरेपछि पनि document static छ — Intelligence निकालेपछि मात्र Janta cards, policy points, र cross-document connections बन्छन्। यो step नगरे जनताले document बाट केही पाउँदैनन्।",
