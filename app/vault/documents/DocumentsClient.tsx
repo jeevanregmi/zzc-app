@@ -936,6 +936,11 @@ export default function DocumentsClient() {
         }),
       });
 
+      if (!res.ok && res.headers.get("content-type")?.includes("text/html")) {
+        const text = await res.text();
+        throw new Error(`HTTP ${res.status} — server returned HTML (function may not be deployed). First 200 chars: ${text.slice(0, 200)}`);
+      }
+
       const data = await res.json() as {
         ok:              boolean;
         records?:        Record<string, unknown>[];
