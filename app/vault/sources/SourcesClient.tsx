@@ -14,38 +14,7 @@ import { VaultShell } from "../../../components/vault/VaultShell";
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const safe = <T,>(p: Promise<T>, fb: T): Promise<T> =>
-  p.catch(e => { console.warn("[sources] read failed:", e?.code ?? e); return fb; });
-
-function fileTypeBadge(ft: SourceUpdate["fileType"]) {
-  const map: Record<string, { color: string; label: string }> = {
-    pdf:  { color: "#ef4444", label: "PDF" },
-    docx: { color: "#60a5fa", label: "DOCX" },
-    doc:  { color: "#60a5fa", label: "DOC" },
-    html: { color: "#94a3b8", label: "HTML" },
-    other:{ color: "#94a3b8", label: "FILE" },
-  };
-  const s = map[ft] ?? map.other;
-  return (
-    <span style={{ fontSize: "9px", fontWeight: 700, color: s.color, background: `${s.color}18`, border: `1px solid ${s.color}28`, borderRadius: "4px", padding: "1px 6px" }}>
-      {s.label}
-    </span>
-  );
-}
-
-function statusBadge(status: SourceUpdate["status"]) {
-  const map = {
-    new:      { color: "#fbbf24", label: "नयाँ" },
-    reviewed: { color: "#60a5fa", label: "हेरियो" },
-    uploaded: { color: "#4ade80", label: "Upload भयो" },
-    ignored:  { color: "#475569", label: "बेवास्ता" },
-  };
-  const s = map[status];
-  return (
-    <span style={{ fontSize: "9px", fontWeight: 700, color: s.color, background: `${s.color}18`, border: `1px solid ${s.color}28`, borderRadius: "4px", padding: "2px 7px" }}>
-      {s.label}
-    </span>
-  );
-}
+  p.catch(e => { console.warn("[sources]", e?.code ?? e); return fb; });
 
 function relativeTime(iso: string) {
   const diff = Date.now() - new Date(iso).getTime();
@@ -58,168 +27,263 @@ function relativeTime(iso: string) {
   return "भर्खरै";
 }
 
-// ─── SourceCard ───────────────────────────────────────────────────────────────
-
-interface SourceCardProps {
-  source:    OfficialSource;
-  watcher:   SourceWatcher | null;
-  updates:   SourceUpdate[];
-  onToggle:  (src: OfficialSource) => void;
-  onCheck:   (src: OfficialSource, watcher: SourceWatcher) => void;
-  onReview:  (update: SourceUpdate, status: SourceUpdate["status"]) => void;
-  checking:  boolean;
+function whatHappened(src: OfficialSource | undefined, update: SourceUpdate): string {
+  const name    = src?.nameNp ?? "सरकारी स्रोत";
+  const docType = update.fileType === "pdf"  ? "PDF दस्तावेज" :
+                  update.fileType === "docx" || update.fileType === "doc" ? "Word दस्तावेज" :
+                  "नयाँ सामग्री";
+  return `${name} ले ${docType} प्रकाशित गर्यो`;
 }
 
-function SourceCard({ source, watcher, updates, onToggle, onCheck, onReview, checking }: SourceCardProps) {
-  const [expanded, setExpanded] = useState(false);
-  const newCount = updates.filter(u => u.status === "new").length;
+// ─── Recommendation Card ───────────────────────────────────────────────────────
+// Each detected SourceUpdate becomes one recommendation — WHAT / WHY / NEXT.
+
+interface RecommendationCardProps {
+  update:   SourceUpdate;
+  source:   OfficialSource | undefined;
+  onAction: (update: SourceUpdate, action: SourceUpdate["status"]) => void;
+}
+
+function RecommendationCard({ update, source, onAction }: RecommendationCardProps) {
+  const isNew       = update.status === "new";
+  const isPostponed = update.status === "reviewed";
+
+  const uploadHref = `/vault/documents?upload=1&govFolder=${encodeURIComponent(update.likelyGovFolder)}&tags=${encodeURIComponent(update.tags.join(","))}`;
+
+  const PIPELINE = [
+    { num: 1, label: "PDF Download गर्नुहोस्",                  href: update.url,  external: true },
+    { num: 2, label: "Vault मा Upload गर्नुहोस्",               href: uploadHref,  external: false },
+    { num: 3, label: "Intelligence Extract चलाउनुहोस्",         href: null,        external: false },
+    { num: 4, label: "संविधान सन्दर्भ जोड्नुहोस्",             href: null,        external: false },
+    { num: 5, label: "नागरिक Knowledge Cards प्रकाशित गर्नुहोस्", href: null,     external: false },
+  ];
 
   return (
-    <div style={{
-      background:   watcher ? "rgba(30,41,59,0.8)" : "rgba(15,23,42,0.6)",
-      border:       `1px solid ${watcher ? "rgba(59,130,246,0.25)" : "rgba(51,65,85,0.4)"}`,
-      borderRadius: "10px",
-      padding:      "12px 14px",
-    }}>
-      {/* Header row */}
-      <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-            <span style={{ fontSize: "12px", fontWeight: 700, color: "#e2e8f0" }}>{source.nameNp}</span>
-            <span style={{
-              fontSize: "9px", padding: "1px 5px", borderRadius: "3px",
-              background: source.trustLevel === "primary" ? "rgba(34,197,94,0.12)" : "rgba(148,163,184,0.10)",
-              color:      source.trustLevel === "primary" ? "#86efac" : "#94a3b8",
-              border:     `1px solid ${source.trustLevel === "primary" ? "rgba(34,197,94,0.2)" : "rgba(148,163,184,0.15)"}`,
-            }}>
-              {source.trustLevel === "primary" ? "आधिकारिक" : source.trustLevel === "secondary" ? "सरकारी" : "सन्दर्भ"}
-            </span>
-            {newCount > 0 && (
-              <span style={{ fontSize: "9px", fontWeight: 800, color: "#fbbf24", background: "rgba(251,191,36,0.12)", border: "1px solid rgba(251,191,36,0.25)", borderRadius: "4px", padding: "1px 7px" }}>
-                {newCount} नयाँ
-              </span>
-            )}
-          </div>
-          <div style={{ fontSize: "10px", color: "#64748b", marginTop: "2px" }}>{source.domain}</div>
-          {source.noteNp && (
-            <div style={{ fontSize: "10px", color: "#475569", marginTop: "3px" }}>{source.noteNp}</div>
-          )}
-          <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", marginTop: "5px" }}>
-            {source.relatedParts.slice(0, 5).map(p => (
-              <span key={p} style={{ fontSize: "9px", color: "#60a5fa", background: "rgba(96,165,250,0.08)", border: "1px solid rgba(96,165,250,0.15)", borderRadius: "3px", padding: "1px 5px" }}>
+    <article className={`rounded-xl border p-5 space-y-4 transition-opacity ${
+      isNew       ? "bg-zinc-900/70 border-amber-800/40" :
+      isPostponed ? "bg-zinc-900/40 border-zinc-800/40 opacity-70" :
+                    "bg-zinc-950/30 border-zinc-800/30 opacity-40"
+    }`}>
+
+      {/* Source + time */}
+      <div className="flex items-center gap-2 flex-wrap">
+        {isNew && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />}
+        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+          {source?.nameNp ?? update.sourceId}
+        </span>
+        <span className="text-[10px] text-zinc-700">·</span>
+        <span className="text-[10px] text-zinc-700">{relativeTime(update.detectedAt)}</span>
+        {update.fileType === "pdf" && (
+          <span className="text-[9px] font-bold text-red-400 bg-red-950/30 border border-red-900/40 rounded px-1.5 py-0.5">
+            PDF
+          </span>
+        )}
+        {isPostponed && (
+          <span className="ml-auto text-[9px] text-zinc-600 bg-zinc-800/40 border border-zinc-700/30 rounded px-2 py-0.5">
+            पछि गर्ने
+          </span>
+        )}
+      </div>
+
+      {/* WHAT HAPPENED */}
+      <div className="space-y-1.5">
+        <p className="text-white font-black text-base leading-snug">
+          {whatHappened(source, update)}
+        </p>
+
+        {/* WHAT CHANGED — the document */}
+        <p className="text-zinc-400 text-sm leading-relaxed line-clamp-2">
+          {update.title || update.url}
+        </p>
+
+        {/* Constitutional context */}
+        {source && source.relatedParts.length > 0 && (
+          <div className="flex gap-1 flex-wrap pt-0.5">
+            {source.relatedParts.slice(0, 4).map(p => (
+              <span
+                key={p}
+                className="text-[10px] text-blue-500 bg-blue-950/20 border border-blue-900/30 rounded px-1.5 py-0.5 font-mono"
+              >
                 भाग {p}
               </span>
             ))}
-            {source.relatedParts.length > 5 && (
-              <span style={{ fontSize: "9px", color: "#475569" }}>+{source.relatedParts.length - 5}</span>
-            )}
           </div>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "5px", flexShrink: 0, alignItems: "flex-end" }}>
-          {/* Watch toggle */}
-          <button
-            onClick={() => onToggle(source)}
-            style={{
-              fontSize: "10px", fontWeight: 700, padding: "4px 10px", borderRadius: "6px", cursor: "pointer",
-              background: watcher ? "rgba(34,197,94,0.12)" : "rgba(59,130,246,0.10)",
-              color:      watcher ? "#4ade80" : "#60a5fa",
-              border:     `1px solid ${watcher ? "rgba(34,197,94,0.25)" : "rgba(59,130,246,0.22)"}`,
-            }}
-          >
-            {watcher ? "✓ Watching" : "+ Watch"}
-          </button>
-          {watcher && (
-            <button
-              onClick={() => onCheck(source, watcher)}
-              disabled={checking}
-              style={{
-                fontSize: "10px", fontWeight: 700, padding: "4px 10px", borderRadius: "6px", cursor: checking ? "not-allowed" : "pointer",
-                background: "rgba(168,85,247,0.10)", color: "#c4b5fd",
-                border: "1px solid rgba(168,85,247,0.22)", opacity: checking ? 0.5 : 1,
-              }}
-            >
-              {checking ? "⏳ जाँच्दैछ…" : "🔄 Check Now"}
-            </button>
-          )}
-          <a
-            href={source.officialUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ fontSize: "9px", color: "#38bdf8", textDecoration: "none" }}
-          >
-            🌐 {source.domain}
-          </a>
-        </div>
+        )}
       </div>
 
-      {/* Watcher status row */}
-      {watcher && (
-        <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: "1px solid rgba(255,255,255,0.05)", display: "flex", alignItems: "center", gap: "10px" }}>
-          <span style={{ fontSize: "9px", color: "#475569" }}>
-            {watcher.lastCheckedAt ? `अन्तिम जाँच: ${relativeTime(watcher.lastCheckedAt)}` : "अझै जाँचिएको छैन"}
-          </span>
-          <span style={{
-            fontSize: "9px", padding: "1px 6px", borderRadius: "4px",
-            background: watcher.status === "active" ? "rgba(34,197,94,0.10)" : watcher.status === "error" ? "rgba(239,68,68,0.10)" : "rgba(148,163,184,0.08)",
-            color:      watcher.status === "active" ? "#4ade80" : watcher.status === "error" ? "#ef4444" : "#64748b",
-            border:     "1px solid transparent",
-          }}>
-            {watcher.status === "active" ? "सक्रिय" : watcher.status === "error" ? "त्रुटि" : "रोकिएको"}
-          </span>
-          {updates.length > 0 && (
-            <button
-              onClick={() => setExpanded(e => !e)}
-              style={{ marginLeft: "auto", fontSize: "9px", color: "#60a5fa", background: "none", border: "none", cursor: "pointer" }}
-            >
-              {updates.length} items {expanded ? "▲" : "▼"}
-            </button>
-          )}
+      {/* WHAT TO DO NEXT — recommended pipeline (only for new) */}
+      {isNew && (
+        <div className="rounded-lg bg-zinc-950/60 border border-zinc-800/50 px-4 py-3 space-y-2">
+          <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-mono">
+            सिफारिस गरिएका कदमहरू
+          </p>
+          <ol className="space-y-2">
+            {PIPELINE.map(step => (
+              <li key={step.num} className="flex items-center gap-3 text-sm">
+                <span className="w-5 h-5 rounded-full bg-zinc-800 text-zinc-500 text-[10px] font-bold flex items-center justify-center shrink-0">
+                  {step.num}
+                </span>
+                {step.href ? (
+                  <a
+                    href={step.href}
+                    target={step.external ? "_blank" : undefined}
+                    rel={step.external ? "noopener noreferrer" : undefined}
+                    className="text-emerald-400 font-semibold hover:text-emerald-300 transition-colors"
+                  >
+                    {step.label} →
+                  </a>
+                ) : (
+                  <span className="text-zinc-600">{step.label}</span>
+                )}
+              </li>
+            ))}
+          </ol>
         </div>
       )}
 
-      {/* Updates list */}
-      {expanded && updates.length > 0 && (
-        <div style={{ marginTop: "8px", display: "flex", flexDirection: "column", gap: "5px" }}>
-          {updates.map(u => (
-            <div key={u.id} style={{ background: "rgba(0,0,0,0.25)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "7px", padding: "8px 10px", display: "flex", alignItems: "flex-start", gap: "8px" }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: "flex", gap: "5px", alignItems: "center", flexWrap: "wrap" }}>
-                  {fileTypeBadge(u.fileType)}
-                  {statusBadge(u.status)}
-                  <span style={{ fontSize: "9px", color: "#475569" }}>{relativeTime(u.detectedAt)}</span>
-                </div>
-                <div style={{ fontSize: "10.5px", color: "#e2e8f0", marginTop: "3px", lineHeight: 1.4 }}>
-                  {u.title.slice(0, 100)}
-                </div>
-                <a href={u.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: "9px", color: "#38bdf8", textDecoration: "none" }}>
-                  ↗ खोल्नुहोस्
-                </a>
-              </div>
-              {/* Action buttons */}
-              {u.status === "new" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "3px", flexShrink: 0 }}>
-                  <a
-                    href={`/vault/documents?upload=1&govFolder=${encodeURIComponent(u.likelyGovFolder)}&tags=${encodeURIComponent(u.tags.join(","))}`}
-                    style={{ fontSize: "9px", fontWeight: 700, color: "#4ade80", background: "rgba(74,222,128,0.10)", border: "1px solid rgba(74,222,128,0.22)", borderRadius: "5px", padding: "3px 7px", textDecoration: "none", whiteSpace: "nowrap" }}
-                  >
-                    📤 Upload
-                  </a>
+      {/* FOUNDER ACTIONS */}
+      {isNew && (
+        <div className="flex items-center gap-2 flex-wrap pt-1">
+          <a
+            href={uploadHref}
+            className="text-xs font-bold px-4 py-2 rounded-lg bg-emerald-950/60 text-emerald-400 border border-emerald-800/60 hover:bg-emerald-950/80 transition-colors"
+          >
+            Vault मा सुरु गर्नुहोस् →
+          </a>
+          <button
+            onClick={() => onAction(update, "reviewed")}
+            className="text-xs font-medium px-3 py-2 rounded-lg bg-zinc-800/40 text-zinc-400 border border-zinc-700/40 hover:bg-zinc-800/70 transition-colors"
+          >
+            ⏭ पछि गर्छु
+          </button>
+          <button
+            onClick={() => onAction(update, "ignored")}
+            className="text-xs font-medium px-3 py-2 text-zinc-700 hover:text-zinc-500 transition-colors"
+          >
+            × छोड्नुहोस्
+          </button>
+        </div>
+      )}
+
+      {/* Re-action for postponed */}
+      {isPostponed && (
+        <div className="flex items-center gap-2">
+          <a
+            href={uploadHref}
+            className="text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-950/40 text-emerald-500 border border-emerald-900/40 hover:bg-emerald-950/60 transition-colors"
+          >
+            Vault मा Upload गर्नुहोस् →
+          </a>
+          <button
+            onClick={() => onAction(update, "ignored")}
+            className="text-xs text-zinc-700 hover:text-zinc-500 transition-colors"
+          >
+            × छोड्नुहोस्
+          </button>
+        </div>
+      )}
+    </article>
+  );
+}
+
+// ─── Source Management ────────────────────────────────────────────────────────
+// Secondary panel — which sources are being monitored. Collapsed by default.
+// "Monitoring" is backend state. It lives here, not in the main view.
+
+interface SourceManagementProps {
+  sources:    typeof SOURCE_REGISTRY;
+  watcherMap: Record<string, SourceWatcher>;
+  onToggle:   (src: OfficialSource) => void;
+  onCheck:    (src: OfficialSource, watcher: SourceWatcher) => void;
+  checkingId: string | null;
+}
+
+function SourceManagement({ sources, watcherMap, onToggle, onCheck, checkingId }: SourceManagementProps) {
+  const [open,   setOpen]   = useState(false);
+  const [filter, setFilter] = useState<"watched" | "all">("watched");
+
+  const watched  = sources.filter(s => watcherMap[s.sourceId]);
+  const filtered = filter === "watched" ? watched : sources;
+
+  return (
+    <div className="rounded-xl border border-zinc-800/50 bg-zinc-950/40">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-5 py-4 text-left"
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-bold text-zinc-400">स्रोत व्यवस्थापन</span>
+          <span className="text-[10px] text-zinc-600 font-mono">
+            {watched.length} अनुगमनमा · {sources.length} उपलब्ध
+          </span>
+        </div>
+        <span className="text-zinc-600 text-xs">{open ? "▲" : "▼"}</span>
+      </button>
+
+      {open && (
+        <div className="border-t border-zinc-800/40 px-5 pb-5 space-y-4">
+
+          <div className="flex gap-2 pt-4">
+            {(["watched", "all"] as const).map(f => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`text-[10px] font-bold px-3 py-1 rounded-full border transition-colors ${
+                  filter === f
+                    ? "bg-zinc-800 text-zinc-300 border-zinc-700"
+                    : "text-zinc-600 border-zinc-800/60 hover:text-zinc-400"
+                }`}
+              >
+                {f === "watched" ? `अनुगमनमा (${watched.length})` : `सबै स्रोत (${sources.length})`}
+              </button>
+            ))}
+          </div>
+
+          <p className="text-[10px] text-zinc-700 leading-relaxed">
+            स्रोत थप्नुहोस् → प्रणालीले नयाँ दस्तावेज पत्ता लगाउँछ → तपाईंलाई सिफारिस पठाउँछ।
+          </p>
+
+          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+            {filtered.map(src => {
+              const watcher = watcherMap[src.sourceId] ?? null;
+              return (
+                <div
+                  key={src.sourceId}
+                  className={`flex items-center gap-3 p-3 rounded-lg border ${
+                    watcher
+                      ? "bg-zinc-900/60 border-zinc-700/40"
+                      : "bg-zinc-950/40 border-zinc-800/30"
+                  }`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-zinc-300 truncate">{src.nameNp}</p>
+                    <p className="text-[10px] text-zinc-600 truncate">{src.domain}</p>
+                  </div>
+                  {/* Manual re-check (background action — no prominent label) */}
+                  {watcher && (
+                    <button
+                      onClick={() => onCheck(src, watcher)}
+                      disabled={checkingId === src.sourceId}
+                      title="स्रोत पुन: जाँच गर्नुहोस्"
+                      className="text-[10px] font-bold w-7 h-7 rounded border border-violet-800/40 bg-violet-950/30 text-violet-400 hover:bg-violet-950/50 transition-colors disabled:opacity-40 flex items-center justify-center"
+                    >
+                      {checkingId === src.sourceId ? "⏳" : "↺"}
+                    </button>
+                  )}
                   <button
-                    onClick={() => onReview(u, "reviewed")}
-                    style={{ fontSize: "9px", color: "#60a5fa", background: "rgba(96,165,250,0.08)", border: "1px solid rgba(96,165,250,0.18)", borderRadius: "5px", padding: "3px 7px", cursor: "pointer" }}
+                    onClick={() => onToggle(src)}
+                    className={`text-[10px] font-bold px-2.5 py-1 rounded border transition-colors whitespace-nowrap ${
+                      watcher
+                        ? "bg-zinc-800/60 text-zinc-500 border-zinc-700/40 hover:text-red-400 hover:border-red-900/40"
+                        : "bg-emerald-950/30 text-emerald-600 border-emerald-900/40 hover:bg-emerald-950/50"
+                    }`}
                   >
-                    ✓ Review
-                  </button>
-                  <button
-                    onClick={() => onReview(u, "ignored")}
-                    style={{ fontSize: "9px", color: "#475569", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "5px", padding: "3px 7px", cursor: "pointer" }}
-                  >
-                    × Ignore
+                    {watcher ? "हटाउनुहोस्" : "+ थप्नुहोस्"}
                   </button>
                 </div>
-              )}
-            </div>
-          ))}
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
@@ -228,19 +292,18 @@ function SourceCard({ source, watcher, updates, onToggle, onCheck, onReview, che
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
+type InboxFilter = "new" | "postponed" | "done";
+
 export default function SourcesClient() {
   const { user } = useVaultAuth();
   const uid = user?.uid ?? null;
 
-  const [watchers,  setWatchers]  = useState<SourceWatcher[]>([]);
-  const [updates,   setUpdates]   = useState<SourceUpdate[]>([]);
-  const [checkingId, setCheckingId] = useState<string | null>(null);
-  const [log,       setLog]       = useState<string[]>([]);
-  const [filter,    setFilter]    = useState<"all" | "watched" | "new">("all");
+  const [watchers,     setWatchers]     = useState<SourceWatcher[]>([]);
+  const [updates,      setUpdates]      = useState<SourceUpdate[]>([]);
+  const [checkingId,   setCheckingId]   = useState<string | null>(null);
+  const [inboxFilter,  setInboxFilter]  = useState<InboxFilter>("new");
 
-  const addLog = (msg: string) => setLog(prev => [msg, ...prev].slice(0, 20));
-
-  // ─── Load from Firestore ───────────────────────────────────────────────────
+  // ─── Load ───────────────────────────────────────────────────────────────────
 
   const load = useCallback(async () => {
     if (!uid) return;
@@ -254,7 +317,7 @@ export default function SourcesClient() {
 
   useEffect(() => { load(); }, [load]);
 
-  // ─── Toggle watch ──────────────────────────────────────────────────────────
+  // ─── Toggle monitor ──────────────────────────────────────────────────────────
 
   const toggleWatch = useCallback(async (src: OfficialSource) => {
     if (!uid) return;
@@ -262,186 +325,182 @@ export default function SourcesClient() {
     if (existing) {
       await safe(deleteDoc(firestoreDoc(db, "monitored_sources", existing.id)), undefined);
       setWatchers(prev => prev.filter(w => w.id !== existing.id));
-      addLog(`${src.nameNp} — watching बन्द गरियो`);
     } else {
       const now = new Date().toISOString();
       const watcher: Omit<SourceWatcher, "id"> = {
-        ownerId:        uid,
-        sourceId:       src.sourceId,
-        url:            src.officialUrl,
-        status:         "active",
-        checkFrequency: "manual",
-        lastCheckedAt:  null,
-        lastKnownUrls:  [],
-        createdAt:      now,
+        ownerId: uid, sourceId: src.sourceId, url: src.officialUrl,
+        status: "active", checkFrequency: "manual",
+        lastCheckedAt: null, lastKnownUrls: [], createdAt: now,
       };
       const ref = await addDoc(collection(db, "monitored_sources"), watcher);
       setWatchers(prev => [...prev, { id: ref.id, ...watcher }]);
-      addLog(`${src.nameNp} — watch थपियो`);
     }
   }, [uid, watchers]);
 
-  // ─── Check source ──────────────────────────────────────────────────────────
+  // ─── Check source (background fetch) ─────────────────────────────────────────
 
   const checkSource = useCallback(async (src: OfficialSource, watcher: SourceWatcher) => {
     if (!uid || checkingId) return;
     setCheckingId(src.sourceId);
-    addLog(`${src.nameNp} जाँच्दैछ…`);
-
     try {
-      const res = await fetch("/api/check-source", {
-        method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ url: watcher.url, sourceId: src.sourceId, lastKnownUrls: watcher.lastKnownUrls }),
+      const res  = await fetch("/api/check-source", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: watcher.url, sourceId: src.sourceId, lastKnownUrls: watcher.lastKnownUrls }),
       });
       const data: CheckSourceResult = await res.json();
-
-      // Update watcher in Firestore
       const allFoundUrls = data.foundUrls.map(l => l.url);
+
       await safe(updateDoc(firestoreDoc(db, "monitored_sources", watcher.id), {
-        lastCheckedAt:  data.checkedAt,
-        lastKnownUrls:  allFoundUrls,
-        status:         data.error ? "error" : "active",
-        errorMessage:   data.error ?? null,
+        lastCheckedAt: data.checkedAt, lastKnownUrls: allFoundUrls,
+        status: data.error ? "error" : "active", errorMessage: data.error ?? null,
       }), undefined);
 
-      // Save new source_update records
       const newUpdates: SourceUpdate[] = [];
       for (const link of data.newUrls) {
         const update: Omit<SourceUpdate, "id"> = {
-          ownerId:         uid,
-          sourceId:        src.sourceId,
-          watcherId:       watcher.id,
-          url:             link.url,
-          title:           link.title,
-          fileType:        link.fileType,
-          detectedAt:      data.checkedAt,
-          status:          "new",
+          ownerId: uid, sourceId: src.sourceId, watcherId: watcher.id,
+          url: link.url, title: link.title, fileType: link.fileType,
+          detectedAt: data.checkedAt, status: "new",
           likelyGovFolder: src.relatedGovFolders[0] ?? "policy-planning",
-          likelyParts:     src.relatedParts.slice(0, 3),
-          tags:            src.tags.slice(0, 5),
-          confidence:      link.fileType === "pdf" ? 0.85 : 0.5,
+          likelyParts: src.relatedParts.slice(0, 3),
+          tags: src.tags.slice(0, 5), confidence: link.fileType === "pdf" ? 0.85 : 0.5,
         };
         const ref = await addDoc(collection(db, "source_updates"), update);
         newUpdates.push({ id: ref.id, ...update });
       }
 
-      setWatchers(prev => prev.map(w => w.id === watcher.id ? {
-        ...w,
-        lastCheckedAt:  data.checkedAt,
-        lastKnownUrls:  allFoundUrls,
-        status:         data.error ? "error" : "active",
-      } : w));
+      setWatchers(prev => prev.map(w =>
+        w.id === watcher.id
+          ? { ...w, lastCheckedAt: data.checkedAt, lastKnownUrls: allFoundUrls, status: data.error ? "error" : "active" }
+          : w,
+      ));
       setUpdates(prev => [...newUpdates, ...prev]);
-
-      if (data.error) {
-        addLog(`⚠ ${src.nameNp}: ${data.error}`);
-      } else {
-        addLog(`${src.nameNp}: ${data.foundUrls.length} items, ${data.newUrls.length} नयाँ`);
-      }
-    } catch (err) {
-      addLog(`✗ ${src.nameNp}: ${String(err).slice(0, 80)}`);
     } finally {
       setCheckingId(null);
     }
   }, [uid, checkingId]);
 
-  // ─── Update status ─────────────────────────────────────────────────────────
+  // ─── Founder action: approve / postpone / skip ───────────────────────────────
 
-  const setUpdateStatus = useCallback(async (update: SourceUpdate, status: SourceUpdate["status"]) => {
+  const handleAction = useCallback(async (update: SourceUpdate, status: SourceUpdate["status"]) => {
     await safe(updateDoc(firestoreDoc(db, "source_updates", update.id), { status }), undefined);
     setUpdates(prev => prev.map(u => u.id === update.id ? { ...u, status } : u));
   }, []);
 
-  // ─── Derived ───────────────────────────────────────────────────────────────
+  // ─── Derived ─────────────────────────────────────────────────────────────────
 
   if (!uid) return null;
+
+  const sourceMap: Record<string, OfficialSource> = {};
+  for (const s of SOURCE_REGISTRY) sourceMap[s.sourceId] = s;
 
   const watcherMap: Record<string, SourceWatcher> = {};
   for (const w of watchers) watcherMap[w.sourceId] = w;
 
-  const updatesForSource = (sourceId: string) => updates.filter(u => u.sourceId === sourceId);
+  const newCount       = updates.filter(u => u.status === "new").length;
+  const postponedCount = updates.filter(u => u.status === "reviewed").length;
+  const doneCount      = updates.filter(u => u.status === "uploaded" || u.status === "ignored").length;
 
-  const newUpdateCount = updates.filter(u => u.status === "new").length;
-
-  const filteredSources = SOURCE_REGISTRY.filter(src => {
-    if (filter === "watched") return !!watcherMap[src.sourceId];
-    if (filter === "new")     return updatesForSource(src.sourceId).some(u => u.status === "new");
-    return true;
+  const visible = updates.filter(u => {
+    if (inboxFilter === "new")       return u.status === "new";
+    if (inboxFilter === "postponed") return u.status === "reviewed";
+    return u.status === "uploaded" || u.status === "ignored";
   });
 
   return (
     <VaultShell>
-      <div style={{ maxWidth: "900px", margin: "0 auto", padding: "24px 20px" }}>
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 space-y-8">
 
-        {/* Header */}
-        <div style={{ marginBottom: "20px" }}>
-          <h1 style={{ fontSize: "20px", fontWeight: 800, color: "#e2e8f0", margin: 0 }}>
-            📡 स्रोत अनुगमन
-          </h1>
-          <p style={{ fontSize: "12px", color: "#64748b", marginTop: "4px" }}>
-            आधिकारिक सरकारी स्रोतहरूमा नयाँ PDF, प्रतिवेदन, र सूचना पत्ता लगाउनुहोस्।
-            Watch थप्नुहोस् → Check Now गर्नुहोस् → नयाँ documents Upload गर्नुहोस्।
+        {/* ── Hero ── */}
+        <div className="space-y-2">
+          <h1 className="text-xl font-black text-white">स्रोत Intelligence Centre</h1>
+          <p className="text-zinc-400 text-sm">
+            {newCount > 0 ? (
+              <>
+                <span className="text-amber-400 font-bold">{newCount} सिफारिस</span>
+                {" "}तपाईंको निर्णयको प्रतीक्षामा छन्
+              </>
+            ) : (
+              "अहिले कुनै नयाँ सिफारिस छैन — स्रोतहरू पृष्ठभूमिमा अनुगमन भइरहेका छन्"
+            )}
           </p>
-          <div style={{ display: "flex", gap: "10px", marginTop: "10px", flexWrap: "wrap" }}>
-            <span style={{ fontSize: "11px", color: "#94a3b8" }}>
-              {watchers.length} watching · {newUpdateCount > 0 ? <span style={{ color: "#fbbf24", fontWeight: 700 }}>{newUpdateCount} नयाँ updates</span> : "नयाँ updates छैन"}
+          <div className="flex items-center gap-2 text-[10px] text-zinc-700">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-700 animate-pulse" />
+            <span>
+              {watchers.length} स्रोत अनुगमनमा · प्रणालीले पत्ता लगाउँछ · तपाईं निर्णय गर्नुहुन्छ
             </span>
           </div>
         </div>
 
-        {/* Filter tabs */}
-        <div style={{ display: "flex", gap: "6px", marginBottom: "16px" }}>
-          {(["all", "watched", "new"] as const).map(f => (
+        {/* ── Inbox filter tabs ── */}
+        <div className="flex gap-2 flex-wrap">
+          {([
+            { key: "new",       label: "नयाँ सिफारिस", count: newCount },
+            { key: "postponed", label: "पछि गर्ने",    count: postponedCount },
+            { key: "done",      label: "सकिएका",        count: doneCount },
+          ] as const).map(({ key, label, count }) => (
             <button
-              key={f}
-              onClick={() => setFilter(f)}
-              style={{
-                fontSize: "10px", fontWeight: 700, padding: "5px 12px", borderRadius: "6px", cursor: "pointer",
-                background: filter === f ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.04)",
-                color:      filter === f ? "#60a5fa" : "#64748b",
-                border:     `1px solid ${filter === f ? "rgba(59,130,246,0.3)" : "rgba(255,255,255,0.08)"}`,
-              }}
+              key={key}
+              onClick={() => setInboxFilter(key)}
+              className={`text-[11px] font-bold px-4 py-1.5 rounded-full border transition-colors ${
+                inboxFilter === key
+                  ? "bg-zinc-800 text-zinc-200 border-zinc-600"
+                  : "text-zinc-600 border-zinc-800/60 hover:text-zinc-400"
+              }`}
             >
-              {f === "all" ? `सबै (${SOURCE_REGISTRY.length})` : f === "watched" ? `Watch गरिएका (${watchers.length})` : `नयाँ (${newUpdateCount})`}
+              {label}
+              {count > 0 && (
+                <span className={`ml-1.5 font-black text-[10px] ${key === "new" ? "text-amber-400" : "text-zinc-500"}`}>
+                  {count}
+                </span>
+              )}
             </button>
           ))}
         </div>
 
-        {/* Source grid */}
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          {filteredSources.map(src => (
-            <SourceCard
-              key={src.sourceId}
-              source={src}
-              watcher={watcherMap[src.sourceId] ?? null}
-              updates={updatesForSource(src.sourceId)}
-              onToggle={toggleWatch}
-              onCheck={checkSource}
-              onReview={setUpdateStatus}
-              checking={checkingId === src.sourceId}
-            />
-          ))}
-          {filteredSources.length === 0 && (
-            <div style={{ textAlign: "center", padding: "40px", color: "#475569", fontSize: "13px" }}>
-              {filter === "watched" ? "अझै कुनै स्रोत watch गरिएको छैन। माथिका स्रोतहरूमा + Watch थप्नुहोस्।"
-                : filter === "new"   ? "अहिले कुनै नयाँ update छैन।"
-                : "स्रोतहरू भेटिएनन्।"}
+        {/* ── Recommendations inbox ── */}
+        <div className="space-y-3">
+          {visible.length === 0 ? (
+            <div className="rounded-xl border border-zinc-800/50 bg-zinc-950/40 px-5 py-12 text-center space-y-3">
+              <p className="text-zinc-500 text-sm font-semibold">
+                {inboxFilter === "new"
+                  ? "नयाँ सिफारिस छैन"
+                  : inboxFilter === "postponed"
+                    ? "पछि गर्ने सूचीमा कुनै छैन"
+                    : "सकिएका सिफारिस छैनन्"}
+              </p>
+              {inboxFilter === "new" && watchers.length === 0 && (
+                <p className="text-zinc-700 text-xs">
+                  तल "स्रोत व्यवस्थापन" खोलेर स्रोत थप्नुहोस् — प्रणालीले नयाँ दस्तावेज पत्ता लगाउन थाल्छ।
+                </p>
+              )}
+              {inboxFilter === "new" && watchers.length > 0 && (
+                <p className="text-zinc-700 text-xs">
+                  {watchers.length} स्रोत अनुगमनमा छन्। नयाँ दस्तावेज प्रकाशित भएपछि यहाँ देखिनेछ।
+                </p>
+              )}
             </div>
+          ) : (
+            visible.map(update => (
+              <RecommendationCard
+                key={update.id}
+                update={update}
+                source={sourceMap[update.sourceId]}
+                onAction={handleAction}
+              />
+            ))
           )}
         </div>
 
-        {/* Activity log */}
-        {log.length > 0 && (
-          <div style={{ marginTop: "20px", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: "8px", padding: "10px 12px" }}>
-            <div style={{ fontSize: "10px", fontWeight: 700, color: "#475569", marginBottom: "6px", letterSpacing: "0.06em" }}>
-              गतिविधि लग
-            </div>
-            {log.map((l, i) => (
-              <div key={i} style={{ fontSize: "10px", color: "#64748b", padding: "1px 0" }}>{l}</div>
-            ))}
-          </div>
-        )}
+        {/* ── Source Management — secondary, collapsed by default ── */}
+        <SourceManagement
+          sources={SOURCE_REGISTRY}
+          watcherMap={watcherMap}
+          onToggle={toggleWatch}
+          onCheck={checkSource}
+          checkingId={checkingId}
+        />
+
       </div>
     </VaultShell>
   );
