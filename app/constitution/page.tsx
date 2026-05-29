@@ -1,15 +1,15 @@
 import type { Metadata } from "next";
-import ConstitutionTreeClient from "./ConstitutionTreeClient";
+import ConstitutionReaderClient from "./ConstitutionReaderClient";
 
 export const metadata: Metadata = {
-  title: "संविधान Tree — ZZC Nepal",
-  description: "नेपालको संविधान एउटा जीवित रूख — मौलिक हक, निर्देशक सिद्धान्त, संस्था, र नागरिक अधिकार। Topic खोज्नुस् — constitutional root देखाउँछ।",
+  title: "नेपालको संविधान — ZZC",
+  description: "धारा, भाग र अधिकारहरू सजिलो भाषामा पढ्नुहोस्। मौलिक हक, नागरिकता, CIAA, NHRC — meaning-based search with civic knowledge cards.",
   openGraph: {
-    title: "Nepal Constitution Tree — ZZC",
-    description: "Constitutional governance intelligence — search any topic, see the root article, related policies, budgets, and implementation status.",
+    title: "नेपालको संविधान — ZZC",
+    description: "धारा, भाग र अधिकारहरू सजिलो भाषामा पढ्नुहोस्। मौलिक हक, नागरिकता, CIAA, NHRC।",
   },
 };
 
 export default function ConstitutionPage() {
-  return <ConstitutionTreeClient />;
+  return <ConstitutionReaderClient />;
 }
