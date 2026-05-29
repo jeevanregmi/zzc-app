@@ -801,8 +801,11 @@ export default function DocumentsClient() {
 
       setIntelCountByDoc(prev => ({ ...prev, [doc.id]: savedWithIds.length }));
 
-      // Increment extractionVersion on vault document (non-blocking)
+      // Write intelCount + increment extractionVersion on vault document (non-blocking).
+      // intelCount is the authoritative source used by the CTO hook — avoids global
+      // count queries with a limit that truncates when total records exceed the cap.
       updateIntelligenceDoc(doc.id, {
+        intelCount:        savedWithIds.length,
         extractionVersion: ((doc as unknown as Record<string, unknown>).extractionVersion as number ?? 0) + 1,
       } as unknown as Partial<IntelligenceDocument>).catch(() => {});
 

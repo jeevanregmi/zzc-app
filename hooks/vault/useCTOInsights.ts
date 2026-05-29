@@ -51,9 +51,14 @@ export function useCTOInsights(uid: string | null) {
         if (typeof data.confidence === "number" && data.confidence < 0.6) lowConf++;
       });
 
-      const approvedNoExtract = approved.filter(d =>
-        (intelByDoc[d.id] ?? 0) === 0 && (frameworkByDoc[d.id] ?? 0) === 0
-      );
+      // Prefer intelCount field on the document (written by extraction pipeline —
+      // no limit risk). Fall back to intelByDoc for older docs without this field.
+      const approvedNoExtract = approved.filter(d => {
+        if ((frameworkByDoc[d.id] ?? 0) > 0) return false;  // Constitution doc
+        const fromField = (d as Record<string, unknown>).intelCount as number | undefined;
+        if (fromField !== undefined) return fromField === 0;
+        return (intelByDoc[d.id] ?? 0) === 0;
+      });
 
       // ── Constitutional parts ──────────────────────────────────────────────
       // Also track which docs have framework records — Constitution uses

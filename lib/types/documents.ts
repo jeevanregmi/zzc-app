@@ -199,6 +199,9 @@ export interface IntelligenceDocument {
   // ── Metadata ──────────────────────────────────────────────────────────────
   pageCount?:          number;
   language?:           string;
+  // Written by extract-intelligence after records are saved — source of truth for
+  // the CTO hook's no-extract check. Avoids global Firestore count query with limit.
+  intelCount?:         number;
   uploadedAt:          string;
   updatedAt:           string;
 }
