@@ -428,7 +428,7 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
 
   const routerEnv: RouterEnv = {
     GEMINI_API_KEY:        env.GEMINI_API_KEY,
-    GEMINI_MODEL:          env.GEMINI_MODEL ?? "gemini-2.0-flash",
+    GEMINI_MODEL:          env.GEMINI_MODEL,   // undefined → default sequence (2.5-flash → 2.0-flash)
     AWS_ACCESS_KEY_ID:     env.AWS_ACCESS_KEY_ID,
     AWS_SECRET_ACCESS_KEY: env.AWS_SECRET_ACCESS_KEY,
     AWS_REGION:            env.AWS_REGION,

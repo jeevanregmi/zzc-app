@@ -193,7 +193,7 @@ async function tryBedrock(
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({
         anthropic_version: "bedrock-2023-05-31",
-        max_tokens:        maxTokens,
+        max_tokens:        Math.min(maxTokens, 8192),
         system,
         messages:          [{ role: "user", content: blocks }],
       }),
@@ -258,7 +258,7 @@ async function tryAnthropic(
       headers,
       body:    JSON.stringify({
         model:      ANTHROPIC_MODEL,
-        max_tokens: maxTokens,
+        max_tokens: Math.min(maxTokens, 8192),
         system,
         messages:   [{ role: "user", content: blocks }],
       }),
