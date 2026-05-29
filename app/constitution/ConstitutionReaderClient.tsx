@@ -92,63 +92,194 @@ const PARTS: { num: number; titleNepali: string; titleEnglish: string }[] = [
   { num: 35, titleNepali: "विविध",                                 titleEnglish: "Miscellaneous" },
 ];
 
-// ── Article card ───────────────────────────────────────────────────────────────
+// ── Consolidated article data model ──────────────────────────────────────────
 
-function ArticleCard({
+interface ConsolidatedClause {
+  clauseId:          string;
+  clause:            string | null;
+  titleNepali:       string;
+  originalText:      string;
+  plainNepaliSummary: string;
+}
+
+interface ConsolidatedArticle {
+  articleNumber:  number;
+  partNumber:     number;
+  partTitle:      string;
+  titleNepali:    string;
+  titleEnglish:   string;
+  clauses:        ConsolidatedClause[];
+  rights:         string[];
+  duties:         string[];
+  institutions:   string[];
+  keywords:       string[];
+  sectors:        string[];
+  affectedGroups: string[];
+}
+
+function buildConsolidated(
+  records: ConstitutionalFrameworkRecord[],
+): ConsolidatedArticle[] {
+  const groups = new Map<number, ConstitutionalFrameworkRecord[]>();
+  for (const r of records) {
+    if (!groups.has(r.article)) groups.set(r.article, []);
+    groups.get(r.article)!.push(r);
+  }
+
+  const result: ConsolidatedArticle[] = [];
+
+  for (const [articleNumber, recs] of groups) {
+    // Primary record: prefer the one with no clause (main article), else first
+    const primary = recs.find(r => !r.clause) ?? recs[0];
+    const partMeta = PARTS.find(p => p.num === primary.partNumber);
+
+    // Sort clauses: null clause first, then by clause value
+    const sorted = [...recs].sort((a, b) => {
+      if (!a.clause && b.clause) return -1;
+      if (a.clause && !b.clause) return 1;
+      return String(a.clause ?? "").localeCompare(String(b.clause ?? ""));
+    });
+
+    // Deduplicate by plainNepaliSummary (first 60 chars, normalised)
+    const seenSummaries = new Set<string>();
+    const uniqueClauses = sorted.filter(r => {
+      const key = (r.plainNepaliSummary ?? "").trim().toLowerCase().slice(0, 60);
+      if (!key || seenSummaries.has(key)) return false;
+      seenSummaries.add(key);
+      return true;
+    });
+
+    result.push({
+      articleNumber,
+      partNumber:  primary.partNumber,
+      partTitle:   partMeta?.titleNepali ?? "",
+      titleNepali: primary.titleNepali,
+      titleEnglish: primary.titleEnglish,
+      clauses: uniqueClauses.map((r, idx) => ({
+        clauseId:          r.articleId ?? `art-${articleNumber}-${idx}`,
+        clause:            r.clause ?? null,
+        titleNepali:       r.titleNepali,
+        originalText:      r.originalText ?? "",
+        plainNepaliSummary: r.plainNepaliSummary ?? "",
+      })),
+      rights:         [...new Set(recs.flatMap(r => r.rights         ?? []))],
+      duties:         [...new Set(recs.flatMap(r => r.duties         ?? []))],
+      institutions:   [...new Set(recs.flatMap(r => r.institutions   ?? []))],
+      keywords:       [...new Set(recs.flatMap(r => r.keywords       ?? []))],
+      sectors:        [...new Set(recs.flatMap(r => r.sectors        ?? []))],
+      affectedGroups: [...new Set(recs.flatMap(r => r.affectedGroups ?? []))],
+    });
+  }
+
+  return result.sort((a, b) => a.articleNumber - b.articleNumber);
+}
+
+// ── Consolidated Article Reader component ─────────────────────────────────────
+
+type ReadMode = "revision" | "standard";
+
+function ConsolidatedArticleReader({
   article,
   relatedCards,
+  mode,
 }: {
-  article: ConstitutionalFrameworkRecord;
+  article: ConsolidatedArticle;
   relatedCards: UniversalKnowledgeObject[];
+  mode: ReadMode;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [showOriginal, setShowOriginal] = useState(false);
+  const [showCards,    setShowCards]    = useState(false);
 
+  // ── Revision (छिटो) — compact bullets only ────────────────────────────────
+  if (mode === "revision") {
+    return (
+      <article className="rounded-lg border border-zinc-800/40 bg-zinc-900/30 px-4 py-3.5 space-y-2">
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <span className="text-emerald-600 font-mono font-bold text-[11px] shrink-0">
+            धारा {article.articleNumber}
+          </span>
+          <h3 className="text-zinc-100 font-bold text-sm leading-snug">{article.titleNepali}</h3>
+        </div>
+        <ul className="space-y-1 pl-1">
+          {article.clauses.map(c => (
+            <li key={c.clauseId} className="flex gap-2 text-zinc-400 text-xs leading-relaxed">
+              <span className="text-emerald-700 shrink-0 mt-0.5">•</span>
+              <span>{c.plainNepaliSummary}</span>
+            </li>
+          ))}
+        </ul>
+      </article>
+    );
+  }
+
+  // ── Standard (पूरा) — one clean article block ─────────────────────────────
   return (
-    <article className="rounded-xl border border-zinc-800/50 bg-zinc-900/40 p-5 space-y-3">
-      <div className="space-y-1">
+    <article className="rounded-xl border border-zinc-800/50 bg-zinc-900/40 p-5 space-y-4">
+
+      {/* Header */}
+      <div className="space-y-1.5">
         <div className="flex items-center gap-2 flex-wrap text-[10px]">
           <span className="text-emerald-600 font-mono font-bold">भाग {article.partNumber}</span>
-          <span className="text-zinc-700">·</span>
-          <span className="text-zinc-500 font-mono">धारा {article.article}</span>
-          {article.clause && (
-            <span className="text-zinc-700 font-mono">({article.clause})</span>
+          {article.partTitle && (
+            <span className="text-emerald-800 font-mono">— {article.partTitle}</span>
           )}
+          <span className="text-zinc-700">·</span>
+          <span className="text-zinc-500 font-mono font-bold">धारा {article.articleNumber}</span>
         </div>
-        <h3 className="text-white font-black text-base leading-snug">{article.titleNepali}</h3>
-        <p className="text-zinc-600 text-[11px]">{article.titleEnglish}</p>
+        <h3 className="text-white font-black text-lg leading-snug">{article.titleNepali}</h3>
+        {article.titleEnglish && (
+          <p className="text-zinc-600 text-[11px]">{article.titleEnglish}</p>
+        )}
       </div>
 
-      {/* Plain explanation — always visible */}
-      {article.plainNepaliSummary && (
-        <p className="text-zinc-300 text-sm leading-relaxed">{article.plainNepaliSummary}</p>
-      )}
+      {/* "के छ यस धारामा?" — all clauses as bullets */}
+      <div className="rounded-lg bg-zinc-950/50 border border-zinc-800/40 px-4 py-3 space-y-2">
+        <p className="text-zinc-600 text-[10px] uppercase tracking-widest font-mono">
+          यस धारामा के छ?
+        </p>
+        <ul className="space-y-2">
+          {article.clauses.map(c => (
+            <li key={c.clauseId} className="flex gap-2.5 text-zinc-200 text-sm leading-relaxed">
+              <span className="text-emerald-500 shrink-0 font-bold mt-0.5">•</span>
+              <span>{c.plainNepaliSummary}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
 
-      {/* Original text — expandable */}
-      {article.originalText && (
-        <div className="space-y-2">
+      {/* Original text — expandable, preserves clauses */}
+      {article.clauses.some(c => c.originalText) && (
+        <div>
           <button
-            onClick={() => setExpanded(e => !e)}
+            onClick={() => setShowOriginal(o => !o)}
             className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors"
           >
-            {expanded ? "▲ मूल पाठ लुकाउनुहोस्" : "▼ मूल पाठ हेर्नुहोस्"}
+            {showOriginal ? "▲ मूल पाठ लुकाउनुहोस्" : "▼ मूल पाठ हेर्नुहोस्"}
           </button>
-          {expanded && (
-            <blockquote className="rounded-lg border border-zinc-800/50 bg-zinc-950/60 px-4 py-3">
-              <p className="text-zinc-400 text-xs leading-relaxed italic">{article.originalText}</p>
+          {showOriginal && (
+            <blockquote className="mt-2 rounded-lg border border-zinc-800/50 bg-zinc-950/60 px-4 py-3 space-y-2">
+              {article.clauses.map(c => c.originalText ? (
+                <p key={c.clauseId} className="text-zinc-400 text-xs leading-relaxed italic">
+                  {c.clause && (
+                    <span className="text-zinc-600 font-semibold not-italic">({c.clause}) </span>
+                  )}
+                  {c.originalText}
+                </p>
+              ) : null)}
             </blockquote>
           )}
         </div>
       )}
 
       {/* Rights / institution tags */}
-      {((article.rights?.length ?? 0) > 0 || (article.institutions?.length ?? 0) > 0) && (
+      {(article.rights.length > 0 || article.institutions.length > 0) && (
         <div className="flex flex-wrap gap-1.5">
-          {article.rights?.slice(0, 3).map(r => (
+          {article.rights.slice(0, 4).map(r => (
             <span key={r} className="text-[9px] text-emerald-600 bg-emerald-950/20 border border-emerald-900/30 rounded-full px-2 py-0.5">
               {r}
             </span>
           ))}
-          {article.institutions?.slice(0, 2).map(i => (
+          {article.institutions.slice(0, 3).map(i => (
             <span key={i} className="text-[9px] text-blue-500 bg-blue-950/20 border border-blue-900/30 rounded-full px-2 py-0.5">
               {i}
             </span>
@@ -156,22 +287,30 @@ function ArticleCard({
         </div>
       )}
 
-      {/* Quality-gated related Knowledge Cards */}
+      {/* Related civic intelligence — collapsed by default */}
       {relatedCards.length > 0 && (
-        <div className="space-y-2 pt-2 border-t border-zinc-800/40">
-          <p className="text-[10px] text-zinc-600 font-mono uppercase tracking-widest">
-            सम्बन्धित ज्ञान ({relatedCards.length})
-          </p>
-          {relatedCards.slice(0, 2).map(card => (
-            <UniversalKnowledgeCard key={card.id} obj={card} compact />
-          ))}
+        <div className="pt-2 border-t border-zinc-800/40">
+          <button
+            onClick={() => setShowCards(s => !s)}
+            className="flex items-center gap-1.5 text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors"
+          >
+            <span className="font-mono">{showCards ? "▲" : "▼"}</span>
+            <span>सम्बन्धित Civic Intelligence ({relatedCards.length})</span>
+          </button>
+          {showCards && (
+            <div className="mt-3 space-y-2">
+              {relatedCards.slice(0, 3).map(card => (
+                <UniversalKnowledgeCard key={card.id} obj={card} compact />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </article>
   );
 }
 
-// ── Grouped result section header ──────────────────────────────────────────────
+// ── Result section header ─────────────────────────────────────────────────────
 
 function ResultSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -187,13 +326,14 @@ function ResultSection({ title, children }: { title: string; children: React.Rea
 type Tab = "reader" | "tree";
 
 export default function ConstitutionReaderClient() {
-  const [articles,      setArticles]      = useState<ConstitutionalFrameworkRecord[]>([]);
-  const [civicCards,    setCivicCards]    = useState<UniversalKnowledgeObject[]>([]);
-  const [loading,       setLoading]       = useState(true);
-  const [searchQuery,   setSearchQuery]   = useState("");
-  const [selectedPart,  setSelectedPart]  = useState<number | null>(null);
-  const [activeTab,     setActiveTab]     = useState<Tab>("reader");
-  const [treeLoaded,    setTreeLoaded]    = useState(false);
+  const [articles,     setArticles]     = useState<ConstitutionalFrameworkRecord[]>([]);
+  const [civicCards,   setCivicCards]   = useState<UniversalKnowledgeObject[]>([]);
+  const [loading,      setLoading]      = useState(true);
+  const [searchQuery,  setSearchQuery]  = useState("");
+  const [selectedPart, setSelectedPart] = useState<number | null>(null);
+  const [activeTab,    setActiveTab]    = useState<Tab>("reader");
+  const [treeLoaded,   setTreeLoaded]   = useState(false);
+  const [readMode,     setReadMode]     = useState<ReadMode>("standard");
 
   useEffect(() => {
     async function load() {
@@ -231,6 +371,20 @@ export default function ConstitutionReaderClient() {
     load();
   }, []);
 
+  // ── Unique article count per part (for grid) ───────────────────────────────
+  const articleCountByPart = useMemo(() => {
+    const counts: Record<number, number> = {};
+    const seen = new Set<string>();
+    for (const a of articles) {
+      const key = `${a.partNumber}-${a.article}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        counts[a.partNumber] = (counts[a.partNumber] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }, [articles]);
+
   // ── Search (client-side, no API) ───────────────────────────────────────────
 
   const searchResults = useMemo(() => {
@@ -256,7 +410,7 @@ export default function ConstitutionReaderClient() {
       a.keywords?.some(k => k.toLowerCase().includes(n)) ||
       a.institutions?.some(i => i.toLowerCase().includes(n)) ||
       a.originalText?.toLowerCase().includes(n),
-    ).slice(0, 12);
+    );
 
     const matchedCards = civicCards.filter(c =>
       c.titleNepali.toLowerCase().includes(n) ||
@@ -268,20 +422,28 @@ export default function ConstitutionReaderClient() {
     return { matchedTopics, matchedParts, matchedArticles, matchedCards };
   }, [searchQuery, articles, civicCards]);
 
+  // Consolidate search article results (group + dedup)
+  const searchArticlesConsolidated = useMemo(
+    () => buildConsolidated(searchResults?.matchedArticles ?? []).slice(0, 10),
+    [searchResults],
+  );
+
+  // Consolidate articles for the selected part
+  const consolidatedForPart = useMemo(
+    () => buildConsolidated(selectedPart ? articles.filter(a => a.partNumber === selectedPart) : []),
+    [articles, selectedPart],
+  );
+
+  function cardsForConsolidated(ca: ConsolidatedArticle): UniversalKnowledgeObject[] {
+    return civicCards.filter(c =>
+      c.constitutionalRefs?.includes(ca.partNumber) &&
+      (ca.sectors.some(s => c.sector === s) || ca.keywords.some(k => c.tags?.includes(k))),
+    ).slice(0, 3);
+  }
+
   function cardsForPart(partNum: number): UniversalKnowledgeObject[] {
     return civicCards.filter(c => c.constitutionalRefs?.includes(partNum)).slice(0, 3);
   }
-
-  function cardsForArticle(a: ConstitutionalFrameworkRecord): UniversalKnowledgeObject[] {
-    return civicCards.filter(c =>
-      c.constitutionalRefs?.includes(a.partNumber) &&
-      (c.sector === a.sectors?.[0] || c.tags?.some(t => a.keywords?.includes(t))),
-    ).slice(0, 2);
-  }
-
-  const articlesForPart = selectedPart
-    ? articles.filter(a => a.partNumber === selectedPart)
-    : [];
 
   const selectedPartMeta = selectedPart ? PARTS.find(p => p.num === selectedPart) : null;
 
@@ -430,11 +592,16 @@ export default function ConstitutionReaderClient() {
                 </ResultSection>
               )}
 
-              {searchResults.matchedArticles.length > 0 && (
-                <ResultSection title={`धाराहरू (${searchResults.matchedArticles.length})`}>
+              {searchArticlesConsolidated.length > 0 && (
+                <ResultSection title={`धाराहरू (${searchArticlesConsolidated.length})`}>
                   <div className="space-y-3">
-                    {searchResults.matchedArticles.map(a => (
-                      <ArticleCard key={a.articleId} article={a} relatedCards={cardsForArticle(a)} />
+                    {searchArticlesConsolidated.map(a => (
+                      <ConsolidatedArticleReader
+                        key={a.articleNumber}
+                        article={a}
+                        relatedCards={cardsForConsolidated(a)}
+                        mode={readMode}
+                      />
                     ))}
                   </div>
                 </ResultSection>
@@ -450,10 +617,9 @@ export default function ConstitutionReaderClient() {
                 </ResultSection>
               )}
 
-              {/* Empty search state */}
               {searchResults.matchedTopics.length === 0 &&
                searchResults.matchedParts.length === 0 &&
-               searchResults.matchedArticles.length === 0 &&
+               searchArticlesConsolidated.length === 0 &&
                searchResults.matchedCards.length === 0 && (
                 <div className="rounded-xl border border-zinc-800/50 bg-zinc-950/40 px-5 py-10 text-center space-y-2">
                   <p className="text-zinc-500 text-sm">"{searchQuery}" भेटिएन</p>
@@ -474,11 +640,40 @@ export default function ConstitutionReaderClient() {
               >
                 ← सबै भागहरू
               </button>
-              <div>
-                <h2 className="text-xl font-black text-white">
-                  भाग {selectedPart} — {selectedPartMeta?.titleNepali}
-                </h2>
-                <p className="text-zinc-600 text-xs mt-0.5">{selectedPartMeta?.titleEnglish}</p>
+              <div className="flex items-start justify-between gap-4 flex-wrap">
+                <div>
+                  <h2 className="text-xl font-black text-white">
+                    भाग {selectedPart} — {selectedPartMeta?.titleNepali}
+                  </h2>
+                  <p className="text-zinc-600 text-xs mt-0.5">{selectedPartMeta?.titleEnglish}</p>
+                </div>
+
+                {/* Read mode toggle */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[10px] text-zinc-700">पढ्ने तरिका:</span>
+                  <div className="flex rounded-lg border border-zinc-800 overflow-hidden text-xs">
+                    <button
+                      onClick={() => setReadMode("revision")}
+                      className={`px-3 py-1.5 transition-colors ${
+                        readMode === "revision"
+                          ? "bg-zinc-800 text-white font-semibold"
+                          : "text-zinc-600 hover:text-zinc-400"
+                      }`}
+                    >
+                      ⚡ छिटो Revision
+                    </button>
+                    <button
+                      onClick={() => setReadMode("standard")}
+                      className={`px-3 py-1.5 transition-colors border-l border-zinc-800 ${
+                        readMode === "standard"
+                          ? "bg-zinc-800 text-white font-semibold"
+                          : "text-zinc-600 hover:text-zinc-400"
+                      }`}
+                    >
+                      📖 पूरा पढ्नुहोस्
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {cardsForPart(selectedPart).length > 0 && (
@@ -494,12 +689,17 @@ export default function ConstitutionReaderClient() {
                 </div>
               )}
 
-              {articlesForPart.length === 0 ? (
+              {consolidatedForPart.length === 0 ? (
                 <p className="text-zinc-600 text-sm py-8">यस भागमा अहिले कुनै धारा लोड भएको छैन।</p>
               ) : (
-                <div className="space-y-3">
-                  {articlesForPart.map(a => (
-                    <ArticleCard key={a.articleId} article={a} relatedCards={cardsForArticle(a)} />
+                <div className={readMode === "revision" ? "space-y-2" : "space-y-4"}>
+                  {consolidatedForPart.map(a => (
+                    <ConsolidatedArticleReader
+                      key={a.articleNumber}
+                      article={a}
+                      relatedCards={cardsForConsolidated(a)}
+                      mode={readMode}
+                    />
                   ))}
                 </div>
               )}
@@ -512,7 +712,7 @@ export default function ConstitutionReaderClient() {
               <p className="text-zinc-600 text-xs uppercase tracking-widest font-mono">भागहरू — Parts</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {PARTS.map(p => {
-                  const count = articles.filter(a => a.partNumber === p.num).length;
+                  const count = articleCountByPart[p.num] ?? 0;
                   return (
                     <button
                       key={p.num}

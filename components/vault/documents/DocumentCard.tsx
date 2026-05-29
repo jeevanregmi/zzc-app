@@ -371,6 +371,7 @@ interface Props {
   isExtractingAtomic?:     boolean;
   atomicIntelCount?:       number;
   atomicCostEstimate?:     string; // e.g. "~$0.30"
+  atomicStatusMsg?:        string; // inline status (replaces alert())
   onArchive?:              (doc: IntelligenceDocument) => void;
   isArchiving?:            boolean;
 }
@@ -398,7 +399,7 @@ function isConstitutionDoc(doc: IntelligenceDocument): boolean {
   );
 }
 
-export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onGenerateQueue, onResetStuck, onGenerateImage, isGeneratingImage = false, onExtractPoints, isExtractingPoints = false, pointCount = 0, onExtractPromises, isExtractingPromises = false, promiseCount = 0, onExtractIntel, isExtractingIntel = false, isMatchingIntel = false, intelCount = 0, relCount = 0, onExtractConstitution, isExtractingConstitution = false, constitutionBatch = 0, constitutionCount = 0, onExtractAtomic, isExtractingAtomic = false, atomicIntelCount = 0, atomicCostEstimate, onArchive, isArchiving = false }: Props) {
+export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onGenerateQueue, onResetStuck, onGenerateImage, isGeneratingImage = false, onExtractPoints, isExtractingPoints = false, pointCount = 0, onExtractPromises, isExtractingPromises = false, promiseCount = 0, onExtractIntel, isExtractingIntel = false, isMatchingIntel = false, intelCount = 0, relCount = 0, onExtractConstitution, isExtractingConstitution = false, constitutionBatch = 0, constitutionCount = 0, onExtractAtomic, isExtractingAtomic = false, atomicIntelCount = 0, atomicCostEstimate, atomicStatusMsg, onArchive, isArchiving = false }: Props) {
   const [showFullNotes,      setShowFullNotes]      = useState(false);
   const [confirmAtomic,      setConfirmAtomic]      = useState(false);
   const displayStatus  = isProcessing ? "processing_ai" : doc.processingStatus;
@@ -898,10 +899,23 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
 
       {isExtractingAtomic && (
         <div className="w-full rounded-xl bg-violet-950/40 border border-violet-800 px-3 py-3 space-y-1.5">
-          <p className="text-violet-300 text-xs font-bold animate-pulse">⚛ Atomic extraction चल्दैछ — page by page…</p>
-          <p className="text-violet-600/80 text-xs leading-relaxed">
-            हरेक page scan गर्दैछ — तथ्य, संख्या, संस्था, सिफारिस — page number र verbatim quote सहित।
-          </p>
+          {atomicStatusMsg ? (
+            <p className="text-violet-300 text-xs font-bold animate-pulse">{atomicStatusMsg}</p>
+          ) : (
+            <>
+              <p className="text-violet-300 text-xs font-bold animate-pulse">⚛ Atomic extraction चल्दैछ — page by page…</p>
+              <p className="text-violet-600/80 text-xs leading-relaxed">
+                हरेक page scan गर्दैछ — तथ्य, संख्या, संस्था, सिफारिस — page number र verbatim quote सहित।
+              </p>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Job status message when not actively extracting */}
+      {!isExtractingAtomic && atomicStatusMsg && atomicIntelCount === 0 && (
+        <div className="w-full rounded-xl border border-zinc-800/50 bg-zinc-900/30 px-3 py-2">
+          <p className="text-xs text-zinc-400">{atomicStatusMsg}</p>
         </div>
       )}
 

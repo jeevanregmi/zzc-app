@@ -8,25 +8,22 @@
  *   - approved documents (adminApprovalStatus === "approved")
  *   - founder-triggered (never auto-runs)
  *
- * Every extracted record contains:
- *   - pageNumber  — physical page in the PDF (1-indexed)
- *   - textEvidence — verbatim quoted sentence(s) from that page (max 400 chars)
- *   - paragraphIdx — paragraph position on the page (0-indexed, best-effort)
- *   - extractionTier = "atomic"
- *   - confidence
+ * Background mode (preferred):
+ *   - Frontend sends Authorization: Bearer {firebase-id-token}
+ *   - Returns { ok: true, status: "processing" } immediately (no 524)
+ *   - context.waitUntil() runs extraction in background
+ *   - Results written to Firestore via REST API
+ *   - Frontend polls atomic_extraction_jobs/{docId} via onSnapshot
  *
- * This is NOT summarization. If the AI cannot cite a page and verbatim text,
- * that record is rejected — not saved.
+ * Sync mode (fallback, no token):
+ *   - Blocks until extraction completes, returns records directly
  *
  * GET  /api/atomic-extract?docId=X&pageCount=N  → cost estimate
  * POST /api/atomic-extract                       → run extraction
- *
- * Requires: GEMINI_API_KEY (only Gemini supports inline PDF processing)
- * No text-chunk fallback — page numbers are meaningless without the PDF.
  */
 
 import { callGemini, GeminiCallError } from "../../lib/ai/providers/gemini";
-import { CORS, extractJson, log, clientError } from "./_shared";
+import { CORS, extractJson, log, clientError, firestoreAdd, firestoreSet } from "./_shared";
 import type { R2Bucket } from "@cloudflare/workers-types";
 
 interface Env {
@@ -34,47 +31,50 @@ interface Env {
   GEMINI_MODEL?:   string;
   VAULT_BUCKET?:   R2Bucket;
 }
-interface PagesContext { request: Request; env: Env; }
+
+interface PagesContext {
+  request:     Request;
+  env:         Env;
+  waitUntil:   (promise: Promise<unknown>) => void;
+}
 
 interface AtomicRequest {
   docId:        string;
   ownerId:      string;
-  downloadUrl:  string;  // R2 signed URL
-  mimeType:     string;  // must be application/pdf or image/*
+  downloadUrl:  string;
+  mimeType:     string;
   docTitle:     string;
   docType?:     string;
   sourceYear?:  string;
-  pageCount?:   number;  // if known — used for cost estimate
+  pageCount?:   number;
   domain?:      string;
 }
 
 interface AtomicRecord {
-  type:          string;
-  title:         string;
-  titleNepali:   string;
-  summaryNepali: string;
-  sector:        string;
-  ministry:      string;
-  department?:   string | null;
-  target?:       string | null;
-  measurable:    boolean;
-  timeline?:     string | null;
-  budgetAmount?: string | null;
-  fiscalYear?:   string | null;
-  geoScope:      string;
+  type:            string;
+  title:           string;
+  titleNepali:     string;
+  summaryNepali:   string;
+  sector:          string;
+  ministry:        string;
+  department?:     string | null;
+  target?:         string | null;
+  measurable:      boolean;
+  timeline?:       string | null;
+  budgetAmount?:   string | null;
+  fiscalYear?:     string | null;
+  geoScope:        string;
   governmentLevel: string;
   constitutionalRefs?: number[];
-  tags:          string[];
-  confidence:    number;
+  tags:            string[];
+  confidence:      number;
   affectedGroups:  string[];
   affectedSectors: string[];
-  // Tier 2 source trace — all three required for atomic records
-  pageNumber:    number;
-  textEvidence:  string;
-  paragraphIdx?: number;
+  pageNumber:      number;
+  textEvidence:    string;
+  paragraphIdx?:   number;
 }
 
-// Cost estimate: 0.15 USD per 100 pages (conservative — includes input + output tokens)
 export function estimateCost(pageCount: number): number {
   return Math.max(0.10, Math.ceil(pageCount / 100) * 0.15);
 }
@@ -177,7 +177,6 @@ function normalizeTitle(title: string): string {
 }
 
 function validateAndFilter(records: AtomicRecord[]): AtomicRecord[] {
-  // Reject records without page number or textEvidence
   const valid = records.filter(r => {
     if (!r.pageNumber || r.pageNumber < 1) return false;
     if (!r.textEvidence || r.textEvidence.trim().length < 10) return false;
@@ -185,7 +184,6 @@ function validateAndFilter(records: AtomicRecord[]): AtomicRecord[] {
     return true;
   });
 
-  // Deduplicate by title
   const seen = new Set<string>();
   return valid.filter(r => {
     const key = normalizeTitle(r.title);
@@ -193,6 +191,306 @@ function validateAndFilter(records: AtomicRecord[]): AtomicRecord[] {
     seen.add(key);
     return true;
   });
+}
+
+// ── Shared: fetch PDF from R2 or signed URL ───────────────────────────────────
+
+async function fetchPdf(body: AtomicRequest, env: Env): Promise<{ buf: ArrayBuffer; sizeBytes: number }> {
+  let r2Key = "";
+  try { r2Key = new URL(body.downloadUrl).searchParams.get("key") ?? ""; } catch { /* ignore */ }
+
+  let buf: ArrayBuffer;
+  if (r2Key && env.VAULT_BUCKET) {
+    const obj = await env.VAULT_BUCKET.get(r2Key);
+    if (!obj) throw new Error(`Document not in R2: ${r2Key}`);
+    buf = await obj.arrayBuffer();
+  } else {
+    const abort = new AbortController();
+    const tid   = setTimeout(() => abort.abort(), 30_000);
+    let res: Response;
+    try { res = await fetch(body.downloadUrl, { signal: abort.signal }); }
+    finally { clearTimeout(tid); }
+    if (!res.ok) throw new Error(`PDF fetch failed: HTTP ${res.status}`);
+    buf = await res.arrayBuffer();
+  }
+  return { buf, sizeBytes: buf.byteLength };
+}
+
+// ── Background extraction (waitUntil) ─────────────────────────────────────────
+
+async function runAtomicBackground(
+  body: AtomicRequest,
+  idToken: string,
+  env: Env,
+  prompt: string,
+  domain: string,
+): Promise<void> {
+  const now = new Date().toISOString();
+
+  // Write job record immediately so frontend can track
+  await firestoreSet(idToken, "atomic_extraction_jobs", body.docId, {
+    ownerId:   body.ownerId,
+    docId:     body.docId,
+    docTitle:  body.docTitle,
+    status:    "processing",
+    startedAt: now,
+  }).catch(e => log("atomic-extract", "job_init_error", { docId: body.docId, err: String(e).slice(0, 100) }));
+
+  try {
+    // Fetch PDF
+    const { buf, sizeBytes } = await fetchPdf(body, env);
+    const sizeMB = sizeBytes / 1024 / 1024;
+
+    if (sizeMB > 20) {
+      throw new Error(`PDF too large for atomic extraction (${sizeMB.toFixed(1)} MB, max 20 MB)`);
+    }
+
+    const base64 = toBase64(buf);
+    log("atomic-extract", "bg_pdf_fetched", { docId: body.docId, sizeMB: sizeMB.toFixed(2) });
+
+    // Call Gemini
+    const result = await callGemini({
+      apiKey:    env.GEMINI_API_KEY!,
+      model:     env.GEMINI_MODEL,
+      system:    "You are a precision atomic intelligence extractor. Return ONLY valid JSON. Every record MUST have pageNumber and textEvidence. No markdown. No code fences. Start with { end with }.",
+      parts:     [
+        { inline_data: { mime_type: "application/pdf", data: base64 } },
+        { text: prompt },
+      ],
+      maxTokens: 32768,
+    });
+
+    let responseText = result.text.trim()
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```\s*$/i, "")
+      .trim();
+
+    // Fix literal newlines inside JSON strings
+    {
+      let inStr = false, esc = false, fixed = "";
+      for (const c of responseText) {
+        if (esc)                       { fixed += c; esc = false; }
+        else if (c === "\\" && inStr)  { fixed += c; esc = true;  }
+        else if (c === '"')            { fixed += c; inStr = !inStr; }
+        else if (inStr && (c === "\n" || c === "\r")) fixed += " ";
+        else                            fixed += c;
+      }
+      responseText = fixed;
+    }
+
+    const [parsed, parseErr] = extractJson(responseText);
+    if (parseErr || !parsed) {
+      throw new Error(`AI response was not valid JSON. Preview: "${responseText.slice(0, 200)}"`);
+    }
+
+    const data = parsed as { records: AtomicRecord[]; totalPages?: number };
+    if (!Array.isArray(data.records)) throw new Error("AI returned no records array");
+
+    const validated = validateAndFilter(data.records);
+    const rejected  = data.records.length - validated.length;
+
+    if (validated.length === 0) {
+      throw new Error("No valid atomic records — all missing pageNumber or textEvidence");
+    }
+
+    log("atomic-extract", "bg_extraction_done", {
+      docId: body.docId, total: data.records.length, valid: validated.length, rejected,
+    });
+
+    // Write records to janta_intelligence via Firestore REST
+    const savePromises = validated.map(r => {
+      const record: Record<string, unknown> = {
+        timeline:             null,
+        budgetAmount:         null,
+        department:           null,
+        ...r,
+        summaryNepali:        r.summaryNepali || "",
+        measurable:           r.measurable ?? true,
+        geoScope:             r.geoScope || "national",
+        governmentLevel:      r.governmentLevel || "federal",
+        tags:                 r.tags || [],
+        affectedGroups:       r.affectedGroups || [],
+        affectedSectors:      r.affectedSectors || [],
+        textEvidence:         r.textEvidence.slice(0, 400),
+        confidence:           Math.min(1, Math.max(0, r.confidence ?? 0.7)),
+        ownerId:              body.ownerId,
+        sourceDocId:          body.docId,
+        sourceDocTitle:       body.docTitle,
+        implementationStatus: "announced",
+        verificationStatus:   "ai_extracted",
+        extractionTier:       "atomic",
+        domain,
+        publishToJanta:       true,
+        published:            true,
+        createdAt:            now,
+        updatedAt:            now,
+      };
+      return firestoreAdd(idToken, "janta_intelligence", record);
+    });
+    await Promise.all(savePromises);
+
+    // Write audit log
+    await firestoreAdd(idToken, "atomic_extraction_logs", {
+      ownerId:          body.ownerId,
+      docId:            body.docId,
+      docTitle:         body.docTitle,
+      recordsSaved:     validated.length,
+      recordsRejected:  rejected,
+      estimatedCostUSD: estimateCost(body.pageCount ?? Math.ceil(sizeBytes / 2500)),
+      pageCount:        body.pageCount ?? null,
+      fileSizeBytes:    sizeBytes,
+      domain,
+      runAt:            now,
+    }).catch(() => {});
+
+    // Mark job complete — frontend onSnapshot fires
+    await firestoreSet(idToken, "atomic_extraction_jobs", body.docId, {
+      ownerId:         body.ownerId,
+      docId:           body.docId,
+      docTitle:        body.docTitle,
+      status:          "complete",
+      recordsSaved:    validated.length,
+      recordsRejected: rejected,
+      fileSizeBytes:   sizeBytes,
+      startedAt:       now,
+      completedAt:     new Date().toISOString(),
+    });
+
+    log("atomic-extract", "bg_complete", { docId: body.docId, saved: validated.length });
+
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log("atomic-extract", "bg_error", { docId: body.docId, err: msg.slice(0, 200) });
+
+    await firestoreSet(idToken, "atomic_extraction_jobs", body.docId, {
+      ownerId:     body.ownerId,
+      docId:       body.docId,
+      status:      "error",
+      errorMsg:    msg.slice(0, 300),
+      startedAt:   now,
+      completedAt: new Date().toISOString(),
+    }).catch(() => {});
+  }
+}
+
+// ── Sync extraction (no token — returns records directly) ─────────────────────
+
+async function runAtomicSync(
+  body: AtomicRequest,
+  env: Env,
+  prompt: string,
+  domain: string,
+): Promise<Response> {
+  let sizeBytes = 0;
+  let base64: string;
+
+  try {
+    const { buf, sizeBytes: sz } = await fetchPdf(body, env);
+    sizeBytes = sz;
+    const sizeMB = sizeBytes / 1024 / 1024;
+
+    if (sizeMB > 20) {
+      return clientError(
+        `PDF too large for atomic extraction (${sizeMB.toFixed(1)} MB). Maximum is 20 MB.`,
+        413,
+        "PDF_TOO_LARGE",
+      );
+    }
+
+    base64 = toBase64(buf);
+    log("atomic-extract", "sync_pdf_fetched", { docId: body.docId, sizeMB: sizeMB.toFixed(2) });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return clientError(`PDF fetch failed: ${msg}`, 500, "PDF_FETCH_ERROR");
+  }
+
+  try {
+    const result = await callGemini({
+      apiKey:    env.GEMINI_API_KEY!,
+      model:     env.GEMINI_MODEL,
+      system:    "You are a precision atomic intelligence extractor. Return ONLY valid JSON. Every record MUST have pageNumber and textEvidence. No markdown. No code fences. Start with { end with }.",
+      parts:     [
+        { inline_data: { mime_type: "application/pdf", data: base64 } },
+        { text: prompt },
+      ],
+      maxTokens: 32768,
+    });
+
+    let responseText = result.text.trim()
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```\s*$/i, "")
+      .trim();
+
+    {
+      let inStr = false, esc = false, fixed = "";
+      for (const c of responseText) {
+        if (esc)                       { fixed += c; esc = false; }
+        else if (c === "\\" && inStr)  { fixed += c; esc = true;  }
+        else if (c === '"')            { fixed += c; inStr = !inStr; }
+        else if (inStr && (c === "\n" || c === "\r")) fixed += " ";
+        else                            fixed += c;
+      }
+      responseText = fixed;
+    }
+
+    const [parsed, parseErr] = extractJson(responseText);
+    if (parseErr || !parsed) {
+      return clientError(
+        `AI response was not valid JSON. Preview: "${responseText.slice(0, 300)}"`,
+        422,
+        "PARSE_ERROR",
+      );
+    }
+
+    const data = parsed as { records: AtomicRecord[] };
+    if (!Array.isArray(data.records)) {
+      return clientError("AI returned no records array", 422, "NO_RECORDS");
+    }
+
+    const validated = validateAndFilter(data.records);
+    const rejected  = data.records.length - validated.length;
+
+    if (validated.length === 0) {
+      return clientError(
+        "AI returned records but none had valid pageNumber + textEvidence.",
+        422,
+        "NO_VALID_ATOMIC_RECORDS",
+      );
+    }
+
+    const atomicRecords = validated.map(r => ({
+      ...r,
+      extractionTier: "atomic" as const,
+      domain,
+      textEvidence: r.textEvidence.slice(0, 400),
+      confidence:   Math.min(1, Math.max(0, r.confidence ?? 0.7)),
+    }));
+
+    return new Response(
+      JSON.stringify({
+        ok:    true,
+        status: "complete",
+        records:      atomicRecords,
+        totalFound:   atomicRecords.length,
+        rejected,
+        domain,
+        extractionTier: "atomic",
+        sizeBytes,
+      }),
+      { headers: CORS },
+    );
+
+  } catch (err) {
+    if (err instanceof GeminiCallError) {
+      return clientError(
+        `Gemini error (${err.statusCode ?? "unknown"}): ${err.message.slice(0, 200)}`,
+        err.statusCode ?? 500,
+        err.code ?? "GEMINI_ERROR",
+      );
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return clientError(`Extraction failed: ${msg}`, 500, "EXTRACTION_ERROR");
+  }
 }
 
 // ── GET: cost estimate ────────────────────────────────────────────────────────
@@ -208,10 +506,10 @@ export const onRequestGet = async (context: PagesContext): Promise<Response> => 
   );
 };
 
-// ── POST: run atomic extraction ───────────────────────────────────────────────
-
 export const onRequestOptions = async (): Promise<Response> =>
   new Response(null, { status: 204, headers: CORS });
+
+// ── POST: run atomic extraction ───────────────────────────────────────────────
 
 export const onRequestPost = async (context: PagesContext): Promise<Response> => {
   const env = context.env;
@@ -235,171 +533,42 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     return clientError("docId, ownerId, downloadUrl, docTitle required", 400, "VALIDATION_ERROR");
   }
 
-  const isPdf = (body.mimeType ?? "").includes("pdf")
-    || (body.downloadUrl ?? "").toLowerCase().includes(".pdf");
+  const isPdf =
+    (body.mimeType ?? "").includes("pdf") ||
+    (body.downloadUrl ?? "").toLowerCase().includes(".pdf");
   if (!isPdf) {
     return clientError(
-      "Atomic extraction currently requires a PDF document. Non-PDF formats do not support page-level source tracing.",
+      "Atomic extraction currently requires a PDF document.",
       400,
       "PDF_REQUIRED",
     );
   }
 
-  log("atomic-extract", "start", { docId: body.docId, docTitle: body.docTitle.slice(0, 60) });
-
-  // ── Fetch PDF from R2 ───────────────────────────────────────────────────────
-  let base64: string;
-  let sizeBytes = 0;
-  try {
-    let buf: ArrayBuffer;
-    // Try R2 direct access first (faster, avoids signed URL expiry)
-    let r2Key = "";
-    try { r2Key = new URL(body.downloadUrl).searchParams.get("key") ?? ""; } catch { /* ignore */ }
-
-    if (r2Key && env.VAULT_BUCKET) {
-      const obj = await env.VAULT_BUCKET.get(r2Key);
-      if (!obj) throw new Error(`Document not in R2: ${r2Key}`);
-      buf = await obj.arrayBuffer();
-    } else {
-      const abort = new AbortController();
-      const tid   = setTimeout(() => abort.abort(), 30_000);
-      let res: Response;
-      try { res = await fetch(body.downloadUrl, { signal: abort.signal }); }
-      finally { clearTimeout(tid); }
-      if (!res.ok) throw new Error(`PDF fetch failed: HTTP ${res.status}`);
-      buf = await res.arrayBuffer();
-    }
-
-    sizeBytes = buf.byteLength;
-    const sizeMB = sizeBytes / 1024 / 1024;
-
-    if (sizeMB > 20) {
-      return clientError(
-        `PDF too large for atomic extraction (${sizeMB.toFixed(1)} MB). Maximum is 20 MB.`,
-        413,
-        "PDF_TOO_LARGE",
-      );
-    }
-
-    base64 = toBase64(buf);
-    log("atomic-extract", "pdf_fetched", { docId: body.docId, sizeMB: sizeMB.toFixed(2) });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    log("atomic-extract", "pdf_fetch_error", { docId: body.docId, err: msg.slice(0, 200) });
-    return clientError(`PDF fetch failed: ${msg}`, 500, "PDF_FETCH_ERROR");
-  }
-
-  // ── Send to Gemini with atomic extraction prompt ───────────────────────────
-  const prompt = buildAtomicPrompt(body);
   const domain = body.domain ?? "janta";
+  const prompt = buildAtomicPrompt(body);
 
-  try {
-    const result = await callGemini({
-      apiKey:    env.GEMINI_API_KEY!,
-      model:     env.GEMINI_MODEL,
-      system:    "You are a precision atomic intelligence extractor. Return ONLY valid JSON. Every record MUST have pageNumber and textEvidence. No markdown. No code fences. Start with { end with }.",
-      parts:     [
-        { inline_data: { mime_type: "application/pdf", data: base64 } },
-        { text: prompt },
-      ],
-      maxTokens: 32768,
-    });
+  // Extract Firebase ID token from Authorization header
+  const authHeader = context.request.headers.get("Authorization") ?? "";
+  const idToken    = authHeader.startsWith("Bearer ") ? authHeader.slice(7).trim() : "";
 
-    let responseText = result.text.trim();
-    // Strip markdown code fences if model adds them
-    responseText = responseText
-      .replace(/^```(?:json)?\s*/i, "")
-      .replace(/\s*```\s*$/i, "")
-      .trim();
+  log("atomic-extract", "start", {
+    docId:    body.docId,
+    title:    body.docTitle.slice(0, 60),
+    mode:     idToken ? "background" : "sync",
+  });
 
-    // Fix literal newlines inside string values
-    {
-      let inStr = false, esc = false, fixed = "";
-      for (const c of responseText) {
-        if (esc)                       { fixed += c; esc = false; }
-        else if (c === "\\" && inStr)  { fixed += c; esc = true;  }
-        else if (c === '"')            { fixed += c; inStr = !inStr; }
-        else if (inStr && (c === "\n" || c === "\r")) fixed += " ";
-        else                            fixed += c;
-      }
-      responseText = fixed;
-    }
-
-    const [parsed, parseErr] = extractJson(responseText);
-    if (parseErr || !parsed) {
-      const preview = responseText.slice(0, 300);
-      log("atomic-extract", "parse_error", { docId: body.docId, len: responseText.length, preview });
-      return clientError(
-        `AI response was not valid JSON. Preview: "${preview}"`,
-        422,
-        "PARSE_ERROR",
-      );
-    }
-
-    const data = parsed as { records: AtomicRecord[]; totalPages?: number; recordCount?: number };
-    if (!Array.isArray(data.records)) {
-      return clientError("AI returned no records array", 422, "NO_RECORDS");
-    }
-
-    // Validate: every record must have pageNumber + textEvidence
-    const validated = validateAndFilter(data.records);
-    const rejected  = data.records.length - validated.length;
-
-    if (validated.length === 0) {
-      return clientError(
-        "AI returned records but none had valid pageNumber + textEvidence. Cannot save as atomic intelligence.",
-        422,
-        "NO_VALID_ATOMIC_RECORDS",
-      );
-    }
-
-    log("atomic-extract", "complete", {
-      docId:    body.docId,
-      total:    data.records.length,
-      valid:    validated.length,
-      rejected,
-    });
-
-    // Tag each record with atomic tier and domain before returning
-    const atomicRecords = validated.map(r => ({
-      ...r,
-      extractionTier: "atomic" as const,
-      domain,
-      // Clamp textEvidence to 400 chars
-      textEvidence: r.textEvidence.slice(0, 400),
-      // Normalize confidence
-      confidence: Math.min(1, Math.max(0, r.confidence ?? 0.7)),
-    }));
+  if (idToken) {
+    // ── Background mode ──────────────────────────────────────────────────────
+    // Return immediately (no 524), process in waitUntil.
+    // Frontend polls atomic_extraction_jobs/{docId} via onSnapshot.
+    context.waitUntil(runAtomicBackground(body, idToken, env, prompt, domain));
 
     return new Response(
-      JSON.stringify({
-        ok:           true,
-        records:      atomicRecords,
-        totalFound:   atomicRecords.length,
-        rejected,
-        domain,
-        extractionTier: "atomic",
-        sizeBytes,
-        docSummary:   `${atomicRecords.length} atomic intelligence records extracted with page-level source traces from "${body.docTitle}"`,
-      }),
+      JSON.stringify({ ok: true, status: "processing", docId: body.docId }),
       { headers: CORS },
     );
-
-  } catch (err) {
-    if (err instanceof GeminiCallError) {
-      log("atomic-extract", "gemini_error", {
-        docId:  body.docId,
-        code:   err.code,
-        status: err.statusCode,
-      });
-      return clientError(
-        `Gemini error (${err.statusCode ?? "unknown"}): ${err.message.slice(0, 200)}`,
-        err.statusCode ?? 500,
-        err.code ?? "GEMINI_ERROR",
-      );
-    }
-    const msg = err instanceof Error ? err.message : String(err);
-    log("atomic-extract", "unknown_error", { docId: body.docId, err: msg.slice(0, 200) });
-    return clientError(`Extraction failed: ${msg}`, 500, "EXTRACTION_ERROR");
   }
+
+  // ── Sync mode (no token) — old behaviour, returns records directly ─────────
+  return runAtomicSync(body, env, prompt, domain);
 };

@@ -12,7 +12,7 @@
 export const CORS: Record<string, string> = {
   "Access-Control-Allow-Origin":  "*",
   "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
   "Content-Type":                 "application/json",
 };
 
@@ -137,6 +137,85 @@ function fixJsonNewlines(s: string): string {
     else                              out += c;
   }
   return out;
+}
+
+// ─── Firestore REST API (for background worker writes) ────────────────────────
+
+const FIRESTORE_REST =
+  "https://firestore.googleapis.com/v1/projects/zeneration-z-chautari/databases/(default)/documents";
+
+type FsScalar =
+  | { stringValue: string }
+  | { integerValue: string }
+  | { doubleValue: number }
+  | { booleanValue: boolean }
+  | { nullValue: null };
+
+type FsValue =
+  | FsScalar
+  | { arrayValue: { values: FsValue[] } }
+  | { mapValue: { fields: Record<string, FsValue> } };
+
+function toFsValue(v: unknown): FsValue {
+  if (v === null || v === undefined) return { nullValue: null };
+  if (typeof v === "boolean") return { booleanValue: v };
+  if (typeof v === "number") {
+    return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+  }
+  if (typeof v === "string") return { stringValue: v };
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(toFsValue) } };
+  if (typeof v === "object") {
+    const nested: Record<string, FsValue> = {};
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      nested[k] = toFsValue(val);
+    }
+    return { mapValue: { fields: nested } };
+  }
+  return { stringValue: String(v) };
+}
+
+/** POST — create document with auto-generated ID */
+export async function firestoreAdd(
+  idToken: string,
+  collectionPath: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  const fields: Record<string, FsValue> = {};
+  for (const [k, v] of Object.entries(data)) fields[k] = toFsValue(v);
+  const res = await fetch(`${FIRESTORE_REST}/${collectionPath}`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ fields }),
+  });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`Firestore add failed (${collectionPath}): ${res.status} ${txt.slice(0, 150)}`);
+  }
+}
+
+/** PATCH — create or fully overwrite document with a specific ID */
+export async function firestoreSet(
+  idToken: string,
+  collectionPath: string,
+  docId: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  const fields: Record<string, FsValue> = {};
+  for (const [k, v] of Object.entries(data)) fields[k] = toFsValue(v);
+  const res = await fetch(
+    `${FIRESTORE_REST}/${collectionPath}/${encodeURIComponent(docId)}`,
+    {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields }),
+    },
+  );
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(
+      `Firestore set failed (${collectionPath}/${docId}): ${res.status} ${txt.slice(0, 150)}`,
+    );
+  }
 }
 
 export function extractJson<T = unknown>(text: string): [T, null] | [null, string] {

@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useVaultAuth } from "../../../hooks/vault/useVaultAuth";
 import { useIntelligenceDocs } from "../../../hooks/vault/useIntelligenceDocs";
 import { useDocumentUpload } from "../../../hooks/vault/useDocumentUpload";
 import { deleteIntelligenceDoc, updateIntelligenceDoc, createQueueItem } from "../../../lib/vault/firestore";
 import { aiCostAdapter } from "../../../lib/business/firestore";
-import { collection, addDoc, getDocs, query, where, deleteDoc, Timestamp, deleteField, limit } from "firebase/firestore";
+import { collection, addDoc, getDocs, query, where, deleteDoc, Timestamp, deleteField, limit, onSnapshot, doc as firestoreDoc } from "firebase/firestore";
 import { db } from "../../firebase";
 import type { AIService } from "../../../lib/business/types";
 import Link from "next/link";
@@ -254,6 +254,8 @@ export default function DocumentsClient() {
   const [relCountByDoc, setRelCountByDoc] = useState<Record<string, number>>({});
   const [extractingAtomicId, setExtractingAtomicId] = useState<string | null>(null);
   const [atomicCountByDoc, setAtomicCountByDoc]     = useState<Record<string, number>>({});
+  const [atomicJobMsg,     setAtomicJobMsg]         = useState<Record<string, string>>({});
+  const atomicUnsubs = useRef<Record<string, () => void>>({});
 
   // Load persisted intel + relationship counts from Firestore on mount
   useEffect(() => {
@@ -907,24 +909,101 @@ export default function DocumentsClient() {
     setReExtractGuardDoc(targetDoc);
   };
 
+  // ── Atomic job polling — subscribes to atomic_extraction_jobs/{docId} ────────
+  function startJobPolling(docId: string) {
+    atomicUnsubs.current[docId]?.();
+
+    let settled = false;
+
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      atomicUnsubs.current[docId]?.();
+      delete atomicUnsubs.current[docId];
+      setExtractingAtomicId(null);
+      setAtomicJobMsg(prev => ({
+        ...prev,
+        [docId]: "⏱ ५ मिनेट भयो — extract अझै चलिरहेको हुनसक्छ। एकछिन पछि reload गर्नुहोस्।",
+      }));
+    }, 5 * 60 * 1000);
+
+    const unsub = onSnapshot(
+      firestoreDoc(db, "atomic_extraction_jobs", docId),
+      snap => {
+        if (!snap.exists()) return;
+        const data = snap.data() as {
+          status?: string;
+          recordsSaved?: number;
+          recordsRejected?: number;
+          errorMsg?: string;
+        };
+
+        if (data.status === "complete") {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          unsub();
+          delete atomicUnsubs.current[docId];
+          setExtractingAtomicId(null);
+          const count = data.recordsSaved ?? 0;
+          setAtomicCountByDoc(prev => ({ ...prev, [docId]: count }));
+          setAtomicJobMsg(prev => ({
+            ...prev,
+            [docId]: `✅ ${count} atomic records saved (${data.recordsRejected ?? 0} rejected)`,
+          }));
+          updateIntelligenceDoc(docId, {
+            extractionTier: "atomic",
+          } as unknown as Partial<IntelligenceDocument>).catch(() => {});
+        } else if (data.status === "error") {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          unsub();
+          delete atomicUnsubs.current[docId];
+          setExtractingAtomicId(null);
+          setAtomicJobMsg(prev => ({
+            ...prev,
+            [docId]: `❌ ${data.errorMsg ?? "Atomic extract failed"}`,
+          }));
+        }
+      },
+      err => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        setExtractingAtomicId(null);
+        console.warn("[atomic] job poll error:", err.message);
+      },
+    );
+
+    atomicUnsubs.current[docId] = () => { clearTimeout(timeout); unsub(); };
+  }
+
   // ── Atomic Deep Extract — Tier 2, page/paragraph source-traced ──────────────
-  // Only runs on official approved PDFs. Founder-triggered, cost-guarded.
-  // Saves atomic records alongside existing structured records (does not replace them).
   const handleExtractAtomic = async (doc: IntelligenceDocument) => {
     if (!user?.uid) return;
     const looksLikePdf = doc.mimeType?.includes("pdf")
       || doc.fileName?.toLowerCase().endsWith(".pdf")
       || doc.downloadUrl?.toLowerCase().includes(".pdf");
     if (!looksLikePdf) {
-      alert("Atomic extraction requires a PDF document.");
+      setAtomicJobMsg(prev => ({ ...prev, [doc.id]: "❌ PDF document मात्र atomic extract हुन्छ।" }));
       return;
     }
+
     setExtractingAtomicId(doc.id);
+    setAtomicJobMsg(prev => ({ ...prev, [doc.id]: "⏳ शुरु गर्दैछ…" }));
+
     try {
+      // Get Firebase ID token for background mode
+      const idToken = await user.getIdToken();
+
       const res = await fetch("/api/atomic-extract", {
         method:  "POST",
-        headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({
+        headers: {
+          "Content-Type":  "application/json",
+          "Authorization": `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
           docId:       doc.id,
           ownerId:     user.uid,
           downloadUrl: doc.downloadUrl,
@@ -937,30 +1016,46 @@ export default function DocumentsClient() {
         }),
       });
 
+      // Cloudflare 524 returns HTML — detect and show friendly message
       if (!res.ok && res.headers.get("content-type")?.includes("text/html")) {
-        const text = await res.text();
-        throw new Error(`HTTP ${res.status} — server returned HTML (function may not be deployed). First 200 chars: ${text.slice(0, 200)}`);
+        setAtomicJobMsg(prev => ({
+          ...prev,
+          [doc.id]: "⚠ Server timeout — PDF धेरै ठूलो हुनसक्छ वा function deploy भएको छैन। पुन: प्रयास गर्नुहोस्।",
+        }));
+        setExtractingAtomicId(null);
+        return;
       }
 
       const data = await res.json() as {
-        ok:              boolean;
-        records?:        Record<string, unknown>[];
-        totalFound?:     number;
-        rejected?:       number;
-        error?:          string;
-        details?:        string;
-        extractionTier?: string;
+        ok:       boolean;
+        status?:  string;
+        docId?:   string;
+        records?: Record<string, unknown>[];
+        rejected?: number;
+        error?:   string;
+        details?: string;
       };
 
-      if (!data.ok || !data.records) {
+      if (!data.ok) {
         const msg = [data.error ?? "Atomic extraction failed", data.details].filter(Boolean).join(" — ");
         throw new Error(msg);
       }
 
-      // Save atomic records to janta_intelligence
-      // We do NOT delete existing structured records — atomic records are additive.
+      if (data.status === "processing") {
+        // Background mode — poll for completion
+        setAtomicJobMsg(prev => ({
+          ...prev,
+          [doc.id]: "⚛ Background मा extract शुरु भयो — automatically update हुनेछ…",
+        }));
+        startJobPolling(doc.id);
+        return; // keep extractingAtomicId = doc.id during polling
+      }
+
+      // Sync fallback — records returned directly
+      if (!data.records?.length) throw new Error("No records returned");
+
       const now = new Date().toISOString();
-      const savePromises = data.records.map(r =>
+      await Promise.all(data.records.map(r =>
         addDoc(collection(db, "janta_intelligence"), {
           summaryNepali:   "",
           measurable:      true,
@@ -984,18 +1079,14 @@ export default function DocumentsClient() {
           createdAt:            now,
           updatedAt:            now,
         })
-      );
-      await Promise.all(savePromises);
+      ));
 
       const atomicCount = data.records.length;
       setAtomicCountByDoc(prev => ({ ...prev, [doc.id]: atomicCount }));
-
-      // Write extractionTier = "atomic" to the source document
       updateIntelligenceDoc(doc.id, {
         extractionTier: "atomic",
       } as unknown as Partial<IntelligenceDocument>).catch(() => {});
 
-      // Write immutable audit log to Firestore
       addDoc(collection(db, "atomic_extraction_logs"), {
         ownerId:          user.uid,
         docId:            doc.id,
@@ -1013,11 +1104,19 @@ export default function DocumentsClient() {
         runAt:            now,
       }).catch(() => {});
 
-      alert(`✅ ${atomicCount} atomic intelligence records saved.\n${data.rejected ?? 0} records rejected (missing page number or text evidence).`);
+      setAtomicJobMsg(prev => ({
+        ...prev,
+        [doc.id]: `✅ ${atomicCount} atomic records saved (${data.rejected ?? 0} rejected)`,
+      }));
+
     } catch (err) {
-      alert(`Atomic extraction failed: ${err instanceof Error ? err.message : String(err)}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      setAtomicJobMsg(prev => ({ ...prev, [doc.id]: `❌ ${msg.slice(0, 150)}` }));
     } finally {
-      setExtractingAtomicId(null);
+      // Only clear the spinner if NOT in background-polling mode
+      if (!atomicUnsubs.current[doc.id]) {
+        setExtractingAtomicId(null);
+      }
     }
   };
 
@@ -1764,6 +1863,7 @@ export default function DocumentsClient() {
                         isExtractingAtomic={extractingAtomicId === doc.id}
                         atomicIntelCount={atomicCountByDoc[doc.id] ?? 0}
                         atomicCostEstimate={atomicCostEstimate(doc)}
+                        atomicStatusMsg={atomicJobMsg[doc.id]}
                       />
                     ))}
                   </div>
@@ -1808,6 +1908,7 @@ export default function DocumentsClient() {
                 isExtractingAtomic={extractingAtomicId === doc.id}
                 atomicIntelCount={atomicCountByDoc[doc.id] ?? 0}
                 atomicCostEstimate={atomicCostEstimate(doc)}
+                atomicStatusMsg={atomicJobMsg[doc.id]}
                 onArchive={handleArchive}
                 isArchiving={archivingId === doc.id}
               />

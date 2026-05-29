@@ -37,7 +37,15 @@ interface ThumbnailResult {
 }
 
 const PILLAR_OPTIONS = [
-  "epf-ssf", "cit-tax", "calculator-demo", "ai-recommend", "nepal-market", "gen-z-finance",
+  "constitution",
+  "civic-rights",
+  "schemes",
+  "employment",
+  "epf-ssf",
+  "cit-tax",
+  "finance",
+  "anti-corruption",
+  "calculator-demo",
 ];
 
 const STYLE_OPTIONS: { value: ThumbnailStyle; label: string; desc: string }[] = [

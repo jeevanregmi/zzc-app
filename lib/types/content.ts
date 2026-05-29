@@ -1,6 +1,15 @@
 export type ContentStatus = "idea" | "scripting" | "production" | "editing" | "ready" | "published" | "archived";
 export type ContentFormat = "long-form" | "short" | "reel" | "post" | "carousel" | "thumbnail";
-export type ContentPillar = "epf-ssf" | "cit-tax" | "calculator-demo" | "ai-recommend" | "nepal-market" | "gen-z-finance" | "scheme-explainer";
+export type ContentPillar =
+  | "constitution"
+  | "civic-rights"
+  | "schemes"
+  | "employment"
+  | "epf-ssf"
+  | "cit-tax"
+  | "finance"
+  | "anti-corruption"
+  | "calculator-demo";
 
 export interface VideoIdea {
   id:          string;
