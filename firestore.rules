@@ -587,6 +587,18 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // ── ATOM POOL: founder investigation tasks per atom ──────────────────────
+    // One record per founder instruction ("compare this with current year", etc.).
+    // Created from /vault/knowledge investigation panel.
+    // Status: pending → running → completed | failed (processed by future copilot).
+    // Delete allowed — founder can remove a misfiled instruction.
+    match /knowledge_investigations/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+
     // ── ATOM POOL: classification suggestions (founder review queue) ─────────
     // One record per atom (deterministic ID: "${collection}_${atomId}_cls").
     // Created by the rule-based classifier during vault scan.

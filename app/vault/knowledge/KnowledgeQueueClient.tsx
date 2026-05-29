@@ -18,22 +18,24 @@ import {
   type BhaktiClassifications,
   type PublicProduct,
 } from "../../../lib/types/knowledge-objects";
+import { InvestigationPanel, type KnowledgeInvestigation } from "./InvestigationPanel";
 
 // ── Extended stored type ───────────────────────────────────────────────────────
 // Fields saved at scan time so the card never needs to re-fetch the source atom.
 
 interface StoredSuggestion extends ClassificationSuggestion {
   // Display / preview
-  summaryPreview:     string;
-  evidencePreview:    string;   // up to 500 chars of verbatim evidenceText
-  objectType:         string;
-  domain:             string;
+  summaryPreview:      string;
+  evidencePreview:     string;   // up to 500 chars of verbatim evidenceText
+  objectType:          string;
+  domain:              string;
   // Provenance — required for founder approval
-  sourceDocTitle:     string;
-  pageNumber:         number;
-  verificationStatus: string;
-  confidence:         number;
-  qualityScore:       number;
+  sourceDocTitle:      string;
+  sourceDocumentId:    string;   // vault_intelligence_docs ID — for deep link
+  pageNumber:          number;
+  verificationStatus:  string;
+  confidence:          number;
+  qualityScore:        number;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -196,29 +198,41 @@ export default function KnowledgeQueueClient() {
   const uid = user?.uid ?? null;
   const { isDebug } = useFounderMode();
 
-  const [suggestions, setSuggestions]   = useState<StoredSuggestion[]>([]);
-  const [loading, setLoading]           = useState(true);
-  const [scanning, setScanning]         = useState(false);
-  const [scanProgress, setScanProgress] = useState<string | null>(null);
-  const [domainFilter, setDomainFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("pending");
-  const [editingId, setEditingId]       = useState<string | null>(null);
-  const [editProducts, setEditProducts] = useState<PublicProduct[]>([]);
-  const [editSectors, setEditSectors]   = useState<string[]>([]);
+  const [suggestions, setSuggestions]           = useState<StoredSuggestion[]>([]);
+  const [loading, setLoading]                   = useState(true);
+  const [scanning, setScanning]                 = useState(false);
+  const [scanProgress, setScanProgress]         = useState<string | null>(null);
+  const [domainFilter, setDomainFilter]         = useState<string>("all");
+  const [statusFilter, setStatusFilter]         = useState<string>("pending");
+  const [editingId, setEditingId]               = useState<string | null>(null);
+  const [editProducts, setEditProducts]         = useState<PublicProduct[]>([]);
+  const [editSectors, setEditSectors]           = useState<string[]>([]);
+  // Investigation layer
+  const [investigations, setInvestigations]     = useState<Map<string, KnowledgeInvestigation[]>>(new Map());
+  const [openInvestId, setOpenInvestId]         = useState<string | null>(null);
 
   // ── Load ───────────────────────────────────────────────────────────────────
 
   const loadSuggestions = useCallback(async () => {
     if (!uid) return;
     setLoading(true);
-    const snap = await safe(
-      getDocs(query(
-        collection(db, "classification_suggestions"),
-        where("ownerId", "==", uid),
-        limit(200),
-      )),
-      null,
-    );
+
+    // Load investigations in parallel
+    const [snap, invSnap] = await Promise.all([
+      safe(getDocs(query(collection(db, "classification_suggestions"), where("ownerId", "==", uid), limit(200))), null),
+      safe(getDocs(query(collection(db, "knowledge_investigations"),   where("ownerId", "==", uid), limit(500))), null),
+    ]);
+
+    if (invSnap) {
+      const invMap = new Map<string, KnowledgeInvestigation[]>();
+      invSnap.docs.forEach(d => {
+        const inv = d.data() as KnowledgeInvestigation;
+        invMap.set(inv.atomId, [inv, ...(invMap.get(inv.atomId) ?? [])]);
+      });
+      setInvestigations(invMap);
+    }
+
+    // (original snap path continues below — replace the original getDocs call)
     if (snap) setSuggestions(snap.docs.map(d => d.data() as StoredSuggestion));
     setLoading(false);
   }, [uid]);
@@ -261,12 +275,13 @@ export default function KnowledgeQueueClient() {
           summaryPreview:     uko.summaryNepali.slice(0, 200),
           evidencePreview:    uko.evidenceText.slice(0, 500),
           objectType:         uko.objectType,
-          domain:             uko.domain,
-          sourceDocTitle:     uko.sourceDocTitle,
-          pageNumber:         uko.pageNumber,
-          verificationStatus: uko.verificationStatus,
-          confidence:         uko.confidence,
-          qualityScore:       uko.qualityScore,
+          domain:              uko.domain,
+          sourceDocTitle:      uko.sourceDocTitle,
+          sourceDocumentId:    uko.sourceDocumentId,
+          pageNumber:          uko.pageNumber,
+          verificationStatus:  uko.verificationStatus,
+          confidence:          uko.confidence,
+          qualityScore:        uko.qualityScore,
         };
 
         await safe(
@@ -345,6 +360,16 @@ export default function KnowledgeQueueClient() {
       x.id === s.id ? { ...x, status: "edited", editedClassifications, reviewedAt: now } : x,
     ));
     setEditingId(null);
+  }
+
+  // ── Investigation submitted callback ───────────────────────────────────────
+
+  function handleInvestigationSubmitted(inv: KnowledgeInvestigation) {
+    setInvestigations(prev => {
+      const m = new Map(prev);
+      m.set(inv.atomId, [inv, ...(m.get(inv.atomId) ?? [])]);
+      return m;
+    });
   }
 
   // ── Computed ───────────────────────────────────────────────────────────────
@@ -478,6 +503,12 @@ export default function KnowledgeQueueClient() {
               onLater={() => handleLater(s)}
               onToggleProduct={p => setEditProducts(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p])}
               onToggleSector={sec => setEditSectors(prev => prev.includes(sec) ? prev.filter(x => x !== sec) : [...prev, sec])}
+              // Investigation layer
+              ownerId={uid ?? ""}
+              atomInvestigations={investigations.get(s.atomId) ?? []}
+              isInvestigationOpen={openInvestId === s.id}
+              onToggleInvestigation={() => setOpenInvestId(prev => prev === s.id ? null : s.id)}
+              onInvestigationSubmitted={handleInvestigationSubmitted}
             />
           ))}
         </div>
@@ -489,25 +520,33 @@ export default function KnowledgeQueueClient() {
 // ── Suggestion Card ────────────────────────────────────────────────────────────
 
 interface CardProps {
-  s:              StoredSuggestion;
-  isEditing:      boolean;
-  editProducts:   PublicProduct[];
-  editSectors:    string[];
-  isDebug:        boolean;
-  onApprove:      () => void;
-  onStartEdit:    () => void;
-  onSaveEdit:     () => void;
-  onCancelEdit:   () => void;
-  onReject:       () => void;
-  onLater:        () => void;
-  onToggleProduct:(p: PublicProduct) => void;
-  onToggleSector: (s: string) => void;
+  s:                       StoredSuggestion;
+  isEditing:               boolean;
+  editProducts:            PublicProduct[];
+  editSectors:             string[];
+  isDebug:                 boolean;
+  onApprove:               () => void;
+  onStartEdit:             () => void;
+  onSaveEdit:              () => void;
+  onCancelEdit:            () => void;
+  onReject:                () => void;
+  onLater:                 () => void;
+  onToggleProduct:         (p: PublicProduct) => void;
+  onToggleSector:          (s: string) => void;
+  // Investigation layer
+  ownerId:                 string;
+  atomInvestigations:      KnowledgeInvestigation[];
+  isInvestigationOpen:     boolean;
+  onToggleInvestigation:   () => void;
+  onInvestigationSubmitted:(inv: KnowledgeInvestigation) => void;
 }
 
 function SuggestionCard({
   s, isEditing, editProducts, editSectors, isDebug,
   onApprove, onStartEdit, onSaveEdit, onCancelEdit,
   onReject, onLater, onToggleProduct, onToggleSector,
+  ownerId, atomInvestigations, isInvestigationOpen,
+  onToggleInvestigation, onInvestigationSubmitted,
 }: CardProps) {
   const cls = s.editedClassifications ?? s.suggestedClassifications;
   const products: PublicProduct[] = cls.publicProducts ?? [];
@@ -783,11 +822,53 @@ function SuggestionCard({
 
       {/* ── Resolved ── */}
       {isResolved && (
-        <div className="px-5 pb-4">
+        <div className="px-5 pb-3 flex items-center gap-3">
           <span className={`text-xs px-2 py-1 rounded-full border ${STATUS_TW[s.status]}`}>
             {STATUS_LABEL[s.status]}
             {s.reviewedAt ? ` — ${s.reviewedAt.slice(0, 10)}` : ""}
           </span>
+        </div>
+      )}
+
+      {/* ── Instruction / Investigation toggle button ── */}
+      <div className="px-5 pb-5">
+        <button
+          onClick={onToggleInvestigation}
+          className={`w-full py-2 text-xs font-medium rounded-lg border transition-colors flex items-center justify-center gap-2 ${
+            isInvestigationOpen
+              ? "bg-zinc-800 border-zinc-600 text-zinc-200"
+              : "bg-zinc-900/60 border-zinc-700/60 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600"
+          }`}
+        >
+          <span>📝</span>
+          <span>
+            {isInvestigationOpen ? "Instruction बन्द गर्नुहोस्" : "Founder Instruction दिनुहोस्"}
+          </span>
+          {atomInvestigations.length > 0 && (
+            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-blue-900/60 text-blue-300 text-[10px] border border-blue-800/40">
+              {atomInvestigations.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* ── Investigation panel ── */}
+      {isInvestigationOpen && (
+        <div className="mx-5 mb-5 rounded-xl bg-zinc-950 border border-zinc-800 p-4">
+          <p className="text-xs font-medium text-zinc-400 mb-3">
+            यो atom बारे system लाई के भन्नु छ?
+          </p>
+          <InvestigationPanel
+            ownerId={ownerId}
+            atomId={s.atomId}
+            atomPreview={s.atomPreview}
+            sourceCollection={s.sourceCollection}
+            sourceDocumentId={s.sourceDocumentId}
+            objectType={s.objectType}
+            fiscalYear={fiscalYear}
+            investigations={atomInvestigations}
+            onSubmitted={onInvestigationSubmitted}
+          />
         </div>
       )}
 
