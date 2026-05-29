@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   collection, getDocs, getDoc, query, where, limit,
-  onSnapshot, doc as fsDoc,
+  doc as fsDoc,
 } from "firebase/firestore";
 import { db } from "../../firebase";
 import { useVaultAuth } from "../../../hooks/vault/useVaultAuth";
@@ -14,6 +14,7 @@ import {
   ECONOMIC_DOC_TYPES, formatNPR,
 } from "../../../lib/types/economy";
 import { ComparisonEngine } from "./ComparisonEngine";
+import { ExtractionProgress } from "../../../components/vault/ExtractionProgress";
 
 // ── Local types ───────────────────────────────────────────────────────────────
 
@@ -75,10 +76,9 @@ export default function EconomyVaultClient() {
   const [atoms, setAtoms] = useState<EconomicAtom[]>([]);
   const [loadingData, setLoadingData] = useState(true);
 
-  const [modal, setModal]       = useState<ExtractModal | null>(null);
+  const [modal, setModal]         = useState<ExtractModal | null>(null);
   const [extracting, setExtracting] = useState<string | null>(null);
-  const [jobMsgs, setJobMsgs]   = useState<Record<string, string>>({});
-  const jobUnsubs = useRef<Record<string, () => void>>({});
+  const [jobMsgs, setJobMsgs]     = useState<Record<string, string>>({});
 
   const [filterYear, setFilterYear]     = useState("all");
   const [filterSector, setFilterSector] = useState("all");
@@ -125,10 +125,6 @@ export default function EconomyVaultClient() {
         setAtoms(atomsSnap.docs.map(d => ({ id: d.id, ...(d.data() as Omit<EconomicAtom, "id">) })));
       }
     }).finally(() => setLoadingData(false));
-
-    return () => {
-      Object.values(jobUnsubs.current).forEach(u => u());
-    };
   }, [uid]);
 
   // ── Deep-link: directly fetch the doc when ?docId is in URL ─────────────────
@@ -168,38 +164,6 @@ export default function EconomyVaultClient() {
       });
   }, [autoDocId, uid]);
 
-  // ── Job polling ─────────────────────────────────────────────────────────────
-
-  function startJobPolling(docId: string) {
-    const timeout = setTimeout(() => {
-      jobUnsubs.current[docId]?.();
-      setJobMsgs(p => ({ ...p, [docId]: "⚠️ Timeout — job may still be running in background" }));
-      setExtracting(null);
-    }, 5 * 60 * 1000);
-
-    const unsub = onSnapshot(
-      fsDoc(db, "economy_extraction_jobs", docId),
-      snap => {
-        if (!snap.exists()) return;
-        const data = snap.data();
-        if (data.status === "complete") {
-          clearTimeout(timeout);
-          jobUnsubs.current[docId]?.();
-          const saved = data.recordsSaved ?? 0;
-          setJobMsgs(p => ({ ...p, [docId]: `✅ ${saved} economic atoms निकालियो!` }));
-          setExtracting(null);
-          loadAtoms();
-        } else if (data.status === "error") {
-          clearTimeout(timeout);
-          jobUnsubs.current[docId]?.();
-          setJobMsgs(p => ({ ...p, [docId]: `❌ ${data.errorMsg ?? "Extraction failed"}` }));
-          setExtracting(null);
-        }
-      },
-    );
-    jobUnsubs.current[docId] = unsub;
-  }
-
   // ── Extract handler ─────────────────────────────────────────────────────────
 
   async function handleExtract() {
@@ -212,13 +176,10 @@ export default function EconomyVaultClient() {
       setModal(null);
       return;
     }
-    if (!fiscalYear || !nepaliYearNum || nepaliYearNum < 2000) {
-      return; // modal validates before submit
-    }
+    if (!fiscalYear || !nepaliYearNum || nepaliYearNum < 2000) return;
 
     setModal(null);
     setExtracting(doc.id);
-    setJobMsgs(p => ({ ...p, [doc.id]: "🔄 Sending to background extraction..." }));
 
     try {
       const idToken = await user.getIdToken();
@@ -238,13 +199,11 @@ export default function EconomyVaultClient() {
         }),
       });
       const data = await res.json() as { status?: string; error?: string };
-      if (data.status === "processing") {
-        setJobMsgs(p => ({ ...p, [doc.id]: "🔄 Economy atoms निकाल्दैछ — background मा छ।" }));
-        startJobPolling(doc.id);
-      } else if (!res.ok) {
-        setJobMsgs(p => ({ ...p, [doc.id]: data.error ?? "Extraction failed" }));
+      if (!res.ok || data.status !== "processing") {
+        setJobMsgs(p => ({ ...p, [doc.id]: data.error ?? "Extraction failed to start" }));
         setExtracting(null);
       }
+      // If ok: ExtractionProgress panel will handle all status from here
     } catch (e) {
       setJobMsgs(p => ({ ...p, [doc.id]: `Connection error: ${String(e).slice(0, 80)}` }));
       setExtracting(null);
@@ -383,52 +342,78 @@ export default function EconomyVaultClient() {
         ) : (
           <div className="space-y-2">
             {docs.map(doc => {
-              const count   = atomCountByDoc[doc.id] ?? 0;
-              const isExtr  = extracting === doc.id;
-              const msg     = jobMsgs[doc.id];
+              const count  = atomCountByDoc[doc.id] ?? 0;
+              const isExtr = extracting === doc.id;
+              const msg    = jobMsgs[doc.id];
               return (
                 <div key={doc.id}
-                  className="bg-zinc-900 border border-zinc-800 rounded-xl p-3 flex flex-col md:flex-row md:items-center gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-zinc-200 truncate">{doc.title}</p>
-                    <div className="flex items-center gap-2 mt-1 flex-wrap">
-                      {doc.govFolder && (
-                        <span className="text-[10px] text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded">
-                          {doc.govFolder}
+                  className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+
+                  {/* Doc header row */}
+                  <div className="p-3 flex flex-col md:flex-row md:items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-zinc-200 truncate">{doc.title}</p>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        {doc.govFolder && (
+                          <span className="text-[10px] text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded">
+                            {doc.govFolder}
+                          </span>
+                        )}
+                        {doc.pageCount && (
+                          <span className="text-[10px] text-zinc-600">{doc.pageCount} pages</span>
+                        )}
+                        <span className={`text-[10px] font-medium ${count > 0 ? "text-cyan-400" : "text-zinc-600"}`}>
+                          {count} atoms
                         </span>
+                      </div>
+                      {/* Non-live message (start failure only) */}
+                      {!isExtr && msg && (
+                        <p className={`text-xs mt-1 ${
+                          msg.startsWith("✅") ? "text-green-400"
+                          : msg.startsWith("❌") ? "text-red-400"
+                          : "text-zinc-500"
+                        }`}>
+                          {msg}
+                        </p>
                       )}
-                      {doc.pageCount && (
-                        <span className="text-[10px] text-zinc-600">{doc.pageCount} pages</span>
-                      )}
-                      <span className={`text-[10px] font-medium ${count > 0 ? "text-cyan-400" : "text-zinc-600"}`}>
-                        {count} atoms
-                      </span>
                     </div>
-                    {msg && (
-                      <p className={`text-xs mt-1 ${msg.startsWith("✅") ? "text-green-400" : msg.startsWith("❌") ? "text-red-400" : "text-cyan-400 animate-pulse"}`}>
-                        {msg}
-                      </p>
+                    {!isExtr && (
+                      <button
+                        disabled={!doc.downloadUrl}
+                        onClick={() => setModal({ doc, fiscalYear: "", nepaliYear: "", docType: "budget_speech" })}
+                        className={
+                          "shrink-0 text-xs px-3 py-1.5 rounded-lg font-bold transition-colors " +
+                          (!doc.downloadUrl
+                            ? "bg-zinc-800 text-zinc-600 cursor-not-allowed"
+                            : "bg-cyan-700 hover:bg-cyan-600 text-white")
+                        }
+                      >
+                        💰 Economy Extract
+                      </button>
                     )}
                   </div>
-                  <button
-                    disabled={isExtr || !doc.downloadUrl}
-                    onClick={() => setModal({
-                      doc,
-                      fiscalYear: "",
-                      nepaliYear: "",
-                      docType: "budget_speech",
-                    })}
-                    className={
-                      "shrink-0 text-xs px-3 py-1.5 rounded-lg font-bold transition-colors " +
-                      (isExtr
-                        ? "bg-cyan-950 text-cyan-400 border border-cyan-800 cursor-wait animate-pulse"
-                        : !doc.downloadUrl
-                          ? "bg-zinc-800 text-zinc-600 cursor-not-allowed"
-                          : "bg-cyan-700 hover:bg-cyan-600 text-white")
-                    }
-                  >
-                    {isExtr ? "🔄 Extracting..." : "💰 Economy Extract"}
-                  </button>
+
+                  {/* Live progress panel — replaces "Extracting..." */}
+                  {isExtr && (
+                    <div className="px-3 pb-3">
+                      <ExtractionProgress
+                        docId={doc.id}
+                        collectionName="economy_extraction_jobs"
+                        onComplete={saved => {
+                          setExtracting(null);
+                          loadAtoms();
+                        }}
+                        onError={errMsg => {
+                          setExtracting(null);
+                          setJobMsgs(p => ({ ...p, [doc.id]: `❌ ${errMsg.slice(0, 120)}` }));
+                        }}
+                        onRetry={() => {
+                          setExtracting(null);
+                          setModal({ doc, fiscalYear: "", nepaliYear: "", docType: "budget_speech" });
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
               );
             })}

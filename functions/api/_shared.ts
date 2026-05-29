@@ -193,6 +193,37 @@ export async function firestoreAdd(
   }
 }
 
+/**
+ * PATCH with updateMask — partial update, only touches the specified fields.
+ * Safe to call mid-job without wiping the rest of the document.
+ */
+export async function firestorePatch(
+  idToken: string,
+  collectionPath: string,
+  docId: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  const fields: Record<string, FsValue> = {};
+  for (const [k, v] of Object.entries(data)) fields[k] = toFsValue(v);
+  const mask = Object.keys(data)
+    .map(k => `updateMask.fieldPaths=${encodeURIComponent(k)}`)
+    .join("&");
+  const res = await fetch(
+    `${FIRESTORE_REST}/${collectionPath}/${encodeURIComponent(docId)}?${mask}`,
+    {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields }),
+    },
+  );
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(
+      `Firestore patch failed (${collectionPath}/${docId}): ${res.status} ${txt.slice(0, 150)}`,
+    );
+  }
+}
+
 /** PATCH — create or fully overwrite document with a specific ID */
 export async function firestoreSet(
   idToken: string,

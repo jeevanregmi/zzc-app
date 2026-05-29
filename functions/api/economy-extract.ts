@@ -18,7 +18,8 @@
  */
 
 import { callGemini, GeminiCallError } from "../../lib/ai/providers/gemini";
-import { CORS, extractJson, log, clientError, firestoreAdd, firestoreSet } from "./_shared";
+import { CORS, extractJson, log, clientError, firestoreAdd, firestoreSet, firestorePatch } from "./_shared";
+import { estimateCostUSD } from "../../lib/types/extraction-job";
 import type { R2Bucket } from "@cloudflare/workers-types";
 
 interface Env {
@@ -223,6 +224,22 @@ async function fetchPdf(body: EconomyRequest, env: Env): Promise<{ buf: ArrayBuf
 
 // ── Background extraction (waitUntil) ─────────────────────────────────────────
 
+// ── Progress helper ───────────────────────────────────────────────────────────
+// Silent — never throws. Progress loss is better than extraction failure.
+
+function progress(
+  idToken: string,
+  docId: string,
+  fields: Record<string, unknown>,
+): void {
+  const now = new Date().toISOString();
+  firestorePatch(idToken, "economy_extraction_jobs", docId, {
+    ...fields,
+    updatedAt:       now,
+    lastHeartbeatAt: now,
+  }).catch(() => {});
+}
+
 async function runEconomyBackground(
   body: EconomyRequest,
   idToken: string,
@@ -231,18 +248,33 @@ async function runEconomyBackground(
 ): Promise<void> {
   const now = new Date().toISOString();
 
+  // ── Init job doc ────────────────────────────────────────────────────────────
   await firestoreSet(idToken, "economy_extraction_jobs", body.docId, {
-    ownerId:    body.ownerId,
-    docId:      body.docId,
-    docTitle:   body.docTitle,
-    fiscalYear: body.fiscalYear,
-    nepaliYear: body.nepaliYear,
-    docType:    body.docType,
-    status:     "processing",
-    startedAt:  now,
+    pipeline:          "economy",
+    ownerId:           body.ownerId,
+    docId:             body.docId,
+    docTitle:          body.docTitle,
+    fiscalYear:        body.fiscalYear,
+    nepaliYear:        body.nepaliYear,
+    docType:           body.docType,
+    status:            "queued",
+    progressPercent:   0,
+    currentStepNepali: "सुरु हुँदैछ…",
+    recordsExtracted:  0,
+    recordsRejected:   0,
+    startedAt:         now,
+    updatedAt:         now,
+    lastHeartbeatAt:   now,
   }).catch(e => log("economy-extract", "job_init_error", { docId: body.docId, err: String(e).slice(0, 100) }));
 
   try {
+    // ── Step 1: fetch PDF ───────────────────────────────────────────────────
+    progress(idToken, body.docId, {
+      status:            "fetching_document",
+      progressPercent:   10,
+      currentStepNepali: "PDF server बाट download गर्दैछ…",
+    });
+
     const { buf, sizeBytes } = await fetchPdf(body, env);
     const sizeMB = sizeBytes / 1024 / 1024;
 
@@ -250,8 +282,26 @@ async function runEconomyBackground(
       throw new Error(`PDF too large (${sizeMB.toFixed(1)} MB, max 20 MB)`);
     }
 
-    const base64 = toBase64(buf);
     log("economy-extract", "bg_pdf_fetched", { docId: body.docId, sizeMB: sizeMB.toFixed(2) });
+
+    // ── Step 2: encode PDF ──────────────────────────────────────────────────
+    progress(idToken, body.docId, {
+      status:            "reading_pdf",
+      progressPercent:   25,
+      currentStepNepali: `PDF पढ्दैछ — ${sizeMB.toFixed(1)} MB${body.pageCount ? `, ${body.pageCount} pages` : ""}`,
+      fileSizeMB:        Math.round(sizeMB * 10) / 10,
+      pageCount:         body.pageCount ?? null,
+    });
+
+    const base64 = toBase64(buf);
+
+    // ── Step 3: AI extraction ───────────────────────────────────────────────
+    progress(idToken, body.docId, {
+      status:            "ai_processing",
+      progressPercent:   40,
+      currentStepNepali: `Gemini ले economic atoms निकाल्दैछ — ${body.docTitle.slice(0, 50)}…`,
+      providerUsed:      "gemini-flash",
+    });
 
     const result = await callGemini({
       apiKey:    env.GEMINI_API_KEY!,
@@ -264,6 +314,11 @@ async function runEconomyBackground(
       maxTokens: 32768,
     });
 
+    const inputTokens  = result.inputTokens  ?? 0;
+    const outputTokens = result.outputTokens ?? 0;
+    const costUSD      = estimateCostUSD(inputTokens, outputTokens);
+
+    // ── Step 4: parse & validate ────────────────────────────────────────────
     let responseText = result.text.trim()
       .replace(/^```(?:json)?\s*/i, "")
       .replace(/\s*```\s*$/i, "")
@@ -298,9 +353,24 @@ async function runEconomyBackground(
 
     log("economy-extract", "bg_extraction_done", {
       docId: body.docId, total: data.records.length, valid: validated.length, rejected,
+      inputTokens, outputTokens, costUSD: costUSD.toFixed(4),
     });
 
-    // Write atoms to economy_atoms
+    // Update with AI results before saving
+    progress(idToken, body.docId, {
+      status:            "saving_atoms",
+      progressPercent:   80,
+      currentStepNepali: `${validated.length} atoms Firestore मा save गर्दैछ…`,
+      recordsExtracted:  validated.length,
+      recordsRejected:   rejected,
+      inputTokens,
+      outputTokens,
+      estimatedCostUSD:  Math.round(costUSD * 10000) / 10000,
+      providerUsed:      "gemini-flash",
+      pageCount:         data.totalPages ?? body.pageCount ?? null,
+    });
+
+    // ── Step 5: save atoms ──────────────────────────────────────────────────
     const savePromises = validated.map(r => {
       const atom: Record<string, unknown> = {
         province:            null,
@@ -334,47 +404,53 @@ async function runEconomyBackground(
 
     // Audit log
     await firestoreAdd(idToken, "economy_extraction_logs", {
-      ownerId:         body.ownerId,
-      docId:           body.docId,
-      docTitle:        body.docTitle,
-      fiscalYear:      body.fiscalYear,
-      nepaliYear:      body.nepaliYear,
-      docType:         body.docType,
-      recordsSaved:    validated.length,
-      recordsRejected: rejected,
-      fileSizeBytes:   sizeBytes,
-      pageCount:       body.pageCount ?? null,
-      runAt:           now,
+      ownerId:          body.ownerId,
+      docId:            body.docId,
+      docTitle:         body.docTitle,
+      fiscalYear:       body.fiscalYear,
+      nepaliYear:       body.nepaliYear,
+      docType:          body.docType,
+      recordsSaved:     validated.length,
+      recordsRejected:  rejected,
+      fileSizeBytes:    sizeBytes,
+      pageCount:        body.pageCount ?? null,
+      inputTokens,
+      outputTokens,
+      estimatedCostUSD: Math.round(costUSD * 10000) / 10000,
+      providerUsed:     "gemini-flash",
+      runAt:            now,
     }).catch(() => {});
 
-    // Mark complete — frontend onSnapshot fires
-    await firestoreSet(idToken, "economy_extraction_jobs", body.docId, {
-      ownerId:         body.ownerId,
-      docId:           body.docId,
-      docTitle:        body.docTitle,
-      fiscalYear:      body.fiscalYear,
-      nepaliYear:      body.nepaliYear,
-      docType:         body.docType,
-      status:          "complete",
-      recordsSaved:    validated.length,
-      recordsRejected: rejected,
-      startedAt:       now,
-      completedAt:     new Date().toISOString(),
+    // ── Complete ────────────────────────────────────────────────────────────
+    await firestorePatch(idToken, "economy_extraction_jobs", body.docId, {
+      status:            "completed",
+      progressPercent:   100,
+      currentStepNepali: `✅ ${validated.length} atoms निकालियो — ${body.fiscalYear}`,
+      recordsExtracted:  validated.length,
+      recordsRejected:   rejected,
+      recordsSaved:      validated.length,
+      inputTokens,
+      outputTokens,
+      estimatedCostUSD:  Math.round(costUSD * 10000) / 10000,
+      completedAt:       new Date().toISOString(),
+      updatedAt:         new Date().toISOString(),
+      lastHeartbeatAt:   new Date().toISOString(),
     });
 
-    log("economy-extract", "bg_complete", { docId: body.docId, saved: validated.length });
+    log("economy-extract", "bg_complete", { docId: body.docId, saved: validated.length, costUSD: costUSD.toFixed(4) });
 
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log("economy-extract", "bg_error", { docId: body.docId, err: msg.slice(0, 200) });
 
-    await firestoreSet(idToken, "economy_extraction_jobs", body.docId, {
-      ownerId:     body.ownerId,
-      docId:       body.docId,
-      status:      "error",
-      errorMsg:    msg.slice(0, 300),
-      startedAt:   now,
-      completedAt: new Date().toISOString(),
+    firestorePatch(idToken, "economy_extraction_jobs", body.docId, {
+      status:            "failed",
+      progressPercent:   0,
+      currentStepNepali: "❌ गल्ती भयो",
+      errorMessage:      msg.slice(0, 400),
+      completedAt:       new Date().toISOString(),
+      updatedAt:         new Date().toISOString(),
+      lastHeartbeatAt:   new Date().toISOString(),
     }).catch(() => {});
   }
 }
