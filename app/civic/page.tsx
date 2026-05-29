@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { CivicFeedClient } from "./CivicFeedClient";
 
 export const metadata: Metadata = {
   title: "Civic Chautari — नागरिक ज्ञान",
@@ -133,6 +134,9 @@ export default function CivicPage() {
           })}
         </div>
       </div>
+
+      {/* ── Live Knowledge Feed ── */}
+      <CivicFeedClient />
 
       {/* Civic utilities — secondary */}
       <div className="space-y-3">
