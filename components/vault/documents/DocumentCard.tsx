@@ -934,6 +934,16 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
         </div>
       )}
 
+      {/* Economy Intelligence Extract — deep-link to /vault/economy */}
+      {!isConstitutionDoc(doc) && (
+        <Link
+          href={`/vault/economy?docId=${doc.id}`}
+          className="w-full flex items-center justify-center gap-2 text-xs font-bold py-2.5 rounded-xl bg-yellow-950/40 hover:bg-yellow-950/70 text-yellow-300 border border-yellow-800/60 transition-colors"
+        >
+          💰 Economy Extract गर्नुहोस् — Nepal Economic Intelligence
+        </Link>
+      )}
+
       {/* Admin Teacher Panel — shown for approved docs */}
       <DocActionTeachPanel doc={doc} />
 

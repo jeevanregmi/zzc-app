@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   collection, getDocs, query, where, limit,
   onSnapshot, doc as fsDoc,
@@ -84,6 +85,10 @@ export default function EconomyVaultClient() {
   const [filterType, setFilterType]     = useState("all");
   const [expandedAtom, setExpandedAtom] = useState<string | null>(null);
 
+  const searchParams  = useSearchParams();
+  const autoDocId     = searchParams.get("docId");
+  const autoOpened    = useRef(false);
+
   // ── Load data ───────────────────────────────────────────────────────────────
 
   const loadAtoms = useCallback(() => {
@@ -123,6 +128,17 @@ export default function EconomyVaultClient() {
       Object.values(jobUnsubs.current).forEach(u => u());
     };
   }, [uid]);
+
+  // ── Auto-open modal from ?docId URL param (deep-link from /vault/documents) ─
+
+  useEffect(() => {
+    if (!autoDocId || loadingData || docs.length === 0 || autoOpened.current) return;
+    const found = docs.find(d => d.id === autoDocId);
+    if (found) {
+      autoOpened.current = true;
+      setModal({ doc: found, fiscalYear: "", nepaliYear: "", docType: "budget_speech" });
+    }
+  }, [autoDocId, docs, loadingData]);
 
   // ── Job polling ─────────────────────────────────────────────────────────────
 
@@ -247,6 +263,19 @@ export default function EconomyVaultClient() {
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-8">
 
+      {/* Deep-link banner — shown when arriving from /vault/documents */}
+      {autoDocId && (
+        <div className="bg-yellow-950/40 border border-yellow-800/50 rounded-xl px-4 py-3 flex items-center gap-3">
+          <span className="text-lg">💰</span>
+          <div className="flex-1 min-w-0">
+            <p className="text-yellow-300 text-sm font-semibold">Economy Extract — Document चुनिएको छ</p>
+            <p className="text-yellow-600 text-xs mt-0.5">
+              Documents page बाट आउनुभयो। तलको document list बाट &quot;Economy Extract गर्नुहोस्&quot; थिच्नुहोस्।
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div>
         <div className="flex items-center gap-3 mb-1">
@@ -332,15 +361,15 @@ export default function EconomyVaultClient() {
                       docType: "budget_speech",
                     })}
                     className={
-                      "shrink-0 text-xs px-3 py-1.5 rounded-lg font-medium transition-colors " +
+                      "shrink-0 text-xs px-3 py-1.5 rounded-lg font-bold transition-colors " +
                       (isExtr
                         ? "bg-cyan-950 text-cyan-400 border border-cyan-800 cursor-wait animate-pulse"
                         : !doc.downloadUrl
                           ? "bg-zinc-800 text-zinc-600 cursor-not-allowed"
-                          : "bg-zinc-800 text-zinc-300 border border-zinc-700 hover:bg-zinc-700 hover:text-white")
+                          : "bg-cyan-700 hover:bg-cyan-600 text-white")
                     }
                   >
-                    {isExtr ? "Extracting..." : "Economy Extract गर्नुहोस्"}
+                    {isExtr ? "🔄 Extracting..." : "💰 Economy Extract"}
                   </button>
                 </div>
               );
