@@ -1006,7 +1006,7 @@ export default function DocumentsClient() {
           ((doc as unknown as Record<string,unknown>).pageCount as number | undefined
             ?? Math.ceil(doc.fileSize / 2500)) / 100
         ) * 0.15),
-        pageCount:        (doc as unknown as Record<string,unknown>).pageCount as number | undefined,
+        pageCount:        ((doc as unknown as Record<string,unknown>).pageCount as number | undefined) ?? null,
         fileSizeBytes:    doc.fileSize,
         govFolder:        doc.govFolder ?? null,
         domain:           doc.category === "finance" ? "finance" : "janta",
