@@ -30,6 +30,7 @@ import {
 import { DocumentLifecycleCard } from "../../../components/vault/documents/DocumentLifecycleCard";
 import { WorkflowGuide, DOC_INTEL_STEPS, docIntelStep } from "../../../components/vault/WorkflowGuide";
 import { AtomicQueue } from "../../../components/vault/AtomicQueue";
+import { AtomicHistory } from "../../../components/vault/AtomicHistory";
 import type { QueueContentType, QueuePlatform } from "../../../lib/types/queue";
 
 // ── Lifecycle View ────────────────────────────────────────────────────────────
@@ -994,6 +995,24 @@ export default function DocumentsClient() {
         extractionTier: "atomic",
       } as unknown as Partial<IntelligenceDocument>).catch(() => {});
 
+      // Write immutable audit log to Firestore
+      addDoc(collection(db, "atomic_extraction_logs"), {
+        ownerId:          user.uid,
+        docId:            doc.id,
+        docTitle:         doc.title,
+        recordsSaved:     atomicCount,
+        recordsRejected:  data.rejected ?? 0,
+        estimatedCostUSD: Math.max(0.10, Math.ceil(
+          ((doc as unknown as Record<string,unknown>).pageCount as number | undefined
+            ?? Math.ceil(doc.fileSize / 2500)) / 100
+        ) * 0.15),
+        pageCount:        (doc as unknown as Record<string,unknown>).pageCount as number | undefined,
+        fileSizeBytes:    doc.fileSize,
+        govFolder:        doc.govFolder ?? null,
+        domain:           doc.category === "finance" ? "finance" : "janta",
+        runAt:            now,
+      }).catch(() => {});
+
       alert(`✅ ${atomicCount} atomic intelligence records saved.\n${data.rejected ?? 0} records rejected (missing page number or text evidence).`);
     } catch (err) {
       alert(`Atomic extraction failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -1608,6 +1627,9 @@ export default function DocumentsClient() {
             extractingId={extractingAtomicId}
           />
         )}
+
+        {/* Atomic Extraction History — Firestore audit trail */}
+        {user?.uid && <AtomicHistory ownerId={user.uid} />}
 
         {/* Document grid */}
         {loading ? (
