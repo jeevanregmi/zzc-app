@@ -4,27 +4,25 @@ import HomeClient from "./HomeClient";
 const BASE_URL = "https://zzc.jeevanregmi.com.np";
 
 export const metadata: Metadata = {
-  title: "नेपालको Gen Z बचत तथा लगानी",
+  title: "ZZC — नेपालको नागरिक र भक्ति ज्ञान चौतारी",
   description:
-    "नेपालका EPF, CIT र SSF योजनाहरू एकै ठाउँमा — तुलना गर्नुस्, क्यालकुलेटर चलाउनुस् र आफ्नो योग्यता थाहा पाउनुस्।",
+    "Nepal's AI-native Civic & Spiritual Intelligence Chautari. Verified documents, sacred texts, and AI-assisted intelligence — explained simply for Nepal's new generation.",
   keywords: [
-    "EPF Nepal",
-    "CIT Nepal",
-    "SSF Nepal",
-    "नेपाल बचत योजना",
-    "लगानी",
-    "सेवानिवृत्ति",
-    "पेन्सन",
-    "युवा बचत नेपाल",
-    "कर्मचारी सञ्चय कोष",
-    "नागरिक लगानी कोष",
-    "सामाजिक सुरक्षा कोष",
+    "Nepal civic intelligence",
+    "नेपाल संविधान",
+    "Nepal Constitution",
+    "Nepal government documents",
+    "Bhakti Chautari",
+    "Sanskrit shloka Nepal",
+    "नागरिक ज्ञान",
+    "ZZC",
     "Zeneration Z Chautari",
+    "Nepal AI",
   ],
   openGraph: {
-    title: "ZZC — नेपालको Gen Z बचत तथा लगानी",
+    title: "ZZC — नेपालको नागरिक र भक्ति ज्ञान चौतारी",
     description:
-      "नेपालका EPF, CIT र SSF योजनाहरू एकै ठाउँमा — तुलना, क्यालकुलेटर र योग्यता जाँच।",
+      "Nepal's civic & spiritual intelligence chautari. Source-backed. Founder-verified.",
     url: BASE_URL,
   },
 };
@@ -35,15 +33,7 @@ const jsonLd = {
   name: "ZZC — Zeneration Z Chautari",
   url: BASE_URL,
   description:
-    "Nepal's Gen Z fintech education platform for EPF, CIT, and SSF investment schemes.",
-  potentialAction: {
-    "@type": "SearchAction",
-    target: {
-      "@type": "EntryPoint",
-      urlTemplate: `${BASE_URL}/?search={search_term_string}`,
-    },
-    "query-input": "required name=search_term_string",
-  },
+    "Nepal's AI-native Civic & Spiritual Intelligence Chautari — constitutional intelligence, government reports, sacred texts, explained simply.",
   publisher: {
     "@type": "Organization",
     name: "Zeneration Z Chautari",
