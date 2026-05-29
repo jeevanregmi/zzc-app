@@ -12,6 +12,7 @@ import {
   SECTOR_META, ATOM_TYPE_LABEL, COMPARISON_META, DOC_TYPE_LABEL,
   ECONOMIC_DOC_TYPES, formatNPR,
 } from "../../../lib/types/economy";
+import { ComparisonEngine } from "./ComparisonEngine";
 
 // ── Local types ───────────────────────────────────────────────────────────────
 
@@ -518,6 +519,13 @@ export default function EconomyVaultClient() {
           </div>
         )}
       </section>
+
+      {/* Phase 2: Comparison Engine */}
+      <ComparisonEngine
+        atoms={atoms}
+        fiscalYears={fiscalYears}
+        onAtomsUpdated={loadAtoms}
+      />
 
       {/* Extraction Modal */}
       {modal && (
