@@ -21,6 +21,7 @@ const PRIMARY_NAV = [
   { href: "/vault/management",        icon: "🏛", label: "Management OS"  },
   { href: "/vault/temple",            icon: "🛕", label: "मन्दिर"          },
   { href: "/vault/documents",         icon: "◻", label: "Documents"     },
+  { href: "/vault/economy",           icon: "📊", label: "बजेट Chautari" },
   { href: "/vault/admin",             icon: "⬡", label: "Admin Vault"   },
   { href: "/vault/content/queue",     icon: "◆", label: "Content Queue" },
   { href: "/vault/business",          icon: "◈", label: "Business"      },
