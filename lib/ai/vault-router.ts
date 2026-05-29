@@ -348,3 +348,22 @@ export function providerLabel(provider: VaultProvider): string {
     case "anthropic-sonnet":return "Anthropic Haiku 4.5";
   }
 }
+
+/**
+ * Text-only multi-provider routing — Gemini → Bedrock → Anthropic.
+ * Use for intelligence extraction prompts where the content is plain text.
+ * Identical fallback logic to routeDocumentAnalysis but wraps the prompt
+ * in a textBody document payload (no inline binary, no PDF path).
+ */
+export async function routeTextPrompt(
+  env:       RouterEnv,
+  system:    string,
+  prompt:    string,
+  maxTokens: number,
+): Promise<RouterResult> {
+  return routeDocumentAnalysis(env, system, {
+    mimeType: "text/plain",
+    fileName: "_prompt",
+    textBody: prompt,
+  }, maxTokens);
+}

@@ -8,6 +8,12 @@
  * Each extracted record is a permanent, traceable, cross-linkable node
  * with full audit trail (sourceQuote, rawParagraph, extractionReasoning).
  *
+ * Multi-channel provider strategy (fail-over, not parallel):
+ *   PDF path:   Gemini inline PDF (only provider that supports it)
+ *               → on any failure, falls through to text chunking if body.text available
+ *   Text path:  routeTextPrompt → Gemini 2.0-flash → Bedrock → Anthropic
+ *               Gemini 2.0-flash preferred over 2.5-flash: more stable JSON output.
+ *
  * Multi-chunk strategy: up to 4 × 14,000 chars = 56,000 chars coverage.
  * Up to 60 records per chunk → 100–500+ records per document.
  *
@@ -15,11 +21,22 @@
  * Output: { ok, records[], totalFound, chunkCount, docSummary }
  */
 
-import { callGemini, GeminiCallError } from "../../lib/ai/providers/gemini";
+import { callGemini, GeminiCallError }            from "../../lib/ai/providers/gemini";
+import { routeTextPrompt }                         from "../../lib/ai/vault-router";
+import type { RouterEnv }                          from "../../lib/ai/vault-router";
 import { CORS, extractJson, log, clientError, providerError, internalError } from "./_shared";
-import type { R2Bucket } from "@cloudflare/workers-types";
+import type { R2Bucket }                           from "@cloudflare/workers-types";
 
-interface Env { GEMINI_API_KEY: string; VAULT_BUCKET?: R2Bucket; }
+interface Env {
+  GEMINI_API_KEY?:        string;
+  GEMINI_MODEL?:          string;
+  AWS_ACCESS_KEY_ID?:     string;
+  AWS_SECRET_ACCESS_KEY?: string;
+  AWS_REGION?:            string;
+  BEDROCK_MODEL_ID?:      string;
+  ANTHROPIC_API_KEY?:     string;
+  VAULT_BUCKET?:          R2Bucket;
+}
 interface PagesContext { request: Request; env: Env; }
 
 interface ExtractRequest {
@@ -199,16 +216,19 @@ function toBase64(buffer: ArrayBuffer): string {
   return btoa(binary);
 }
 
+type PdfAttemptResult =
+  | { ok: true;  response: Response }
+  | { ok: false; msg: string };
+
 async function extractFromPdf(
   context: PagesContext,
-  body: ExtractRequest,
-  domain: string,
-): Promise<Response> {
+  body:    ExtractRequest,
+  domain:  string,
+): Promise<PdfAttemptResult> {
   log("extract-intelligence", "pdf_direct", { docId: body.docId });
 
   let base64: string;
   try {
-    // R2 direct binding for vault files; HTTP fetch for external URLs
     let r2Key = "";
     try { r2Key = new URL(body.downloadUrl!).searchParams.get("key") ?? ""; } catch { /* ignored */ }
     let buf: ArrayBuffer;
@@ -226,20 +246,14 @@ async function extractFromPdf(
       buf = await res.arrayBuffer();
     }
     const sizeMB = buf.byteLength / 1024 / 1024;
-    // Gemini inline_data accepts up to ~20 MB base64 ≈ 15 MB raw binary.
-    // Files larger than this get rejected with a 400 — return a clear error.
     if (sizeMB > 15) {
       log("extract-intelligence", "pdf_too_large", { docId: body.docId, sizeMB: sizeMB.toFixed(1) });
-      return clientError(
-        `PDF too large for direct extraction (${sizeMB.toFixed(1)} MB). Gemini inline limit is 15 MB. Re-upload a compressed version of the document.`,
-        413,
-        "FILE_TOO_LARGE",
-      );
+      return { ok: false, msg: `PDF too large for direct extraction (${sizeMB.toFixed(1)} MB). Gemini inline limit is 15 MB.` };
     }
     base64 = toBase64(buf);
   } catch (err) {
     log("extract-intelligence", "pdf_fetch_error", { docId: body.docId, err: String(err).slice(0, 200) });
-    return internalError(err);
+    return { ok: false, msg: err instanceof Error ? err.message : String(err) };
   }
 
   const prompt = `Extract the 30 most specific, trackable records from: "${body.docTitle}".
@@ -266,7 +280,7 @@ Return ONLY valid JSON — start with { end with } — no markdown, no code fenc
 
   try {
     const result = await callGemini({
-      apiKey:    context.env.GEMINI_API_KEY,
+      apiKey:    context.env.GEMINI_API_KEY!,
       system:    "You are Nepal's civic intelligence extraction engine. Return ONLY valid JSON. Start with { end with }. No markdown. No code fences. No extra fields beyond the schema. NEVER include summaryNepali.",
       parts:     [
         { inline_data: { mime_type: "application/pdf", data: base64 } },
@@ -275,8 +289,6 @@ Return ONLY valid JSON — start with { end with } — no markdown, no code fenc
       maxTokens: 16384,
     });
 
-    // Strip markdown fences Gemini 2.5-flash adds despite instructions,
-    // then fix raw newlines inside string values (also invalid in JSON).
     let responseText = result.text.trim();
     responseText = responseText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
     // Fix literal newlines inside string values
@@ -293,44 +305,41 @@ Return ONLY valid JSON — start with { end with } — no markdown, no code fenc
 
     const [parsed, parseErr] = extractJson(responseText);
     if (parseErr || !parsed) {
-      const preview = responseText.slice(0, 300);
+      const preview = responseText.slice(0, 200);
       log("extract-intelligence", "pdf_parse_error", { docId: body.docId, textLen: responseText.length, preview });
-      return clientError(
-        `AI response not JSON (${responseText.length} chars, model: ${result.model}). Preview: "${preview}"`,
-        422,
-        "NO_RECORDS_EXTRACTED",
-      );
+      return { ok: false, msg: `AI response not JSON (${responseText.length} chars, model: ${result.model}). Preview: "${preview}"` };
     }
 
     const data = parsed as { records: ExtractedRecord[]; sectionSummary?: string };
     if (!Array.isArray(data.records) || data.records.length === 0) {
-      return clientError("AI could not extract structured records. Document may lack specific trackable commitments.", 422, "NO_RECORDS_EXTRACTED");
+      return { ok: false, msg: "AI could not extract structured records from PDF." };
     }
 
-    const records = data.records.map((r, i) => ({ ...r, chunkId: "pdf_direct", domain }));
+    const records = data.records.map(r => ({ ...r, chunkId: "pdf_direct", domain }));
     records.sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
 
     log("extract-intelligence", "pdf_complete", { docId: body.docId, count: records.length });
 
-    return new Response(
-      JSON.stringify({
-        ok:         true,
-        records,
-        totalFound: records.length,
-        rawCount:   records.length,
-        chunkCount: 1,
-        domain,
-        docSummary: data.sectionSummary ?? `${records.length} intelligence records extracted from ${body.docTitle}`,
-      }),
-      { headers: CORS },
-    );
+    return {
+      ok: true,
+      response: new Response(
+        JSON.stringify({
+          ok:         true,
+          records,
+          totalFound: records.length,
+          rawCount:   records.length,
+          chunkCount: 1,
+          domain,
+          docSummary: data.sectionSummary ?? `${records.length} intelligence records extracted from ${body.docTitle}`,
+        }),
+        { headers: CORS },
+      ),
+    };
   } catch (err) {
     if (err instanceof GeminiCallError) {
-      log("extract-intelligence", "gemini_error", { docId: body.docId, code: err.code, status: err.statusCode, msg: err.message.slice(0, 200) });
-      if (err.code === "quota_exceeded") return providerError("Gemini quota exhausted. Top up or wait for reset.", "QUOTA_EXHAUSTED");
-      if (err.code === "bad_request")    return clientError(`Gemini rejected the PDF (HTTP 400). The file may be too large or corrupt. Error: ${err.message.slice(0, 150)}`, 422, "GEMINI_BAD_REQUEST");
+      log("extract-intelligence", "gemini_pdf_error", { docId: body.docId, code: err.code, status: err.statusCode });
     }
-    return internalError(err);
+    return { ok: false, msg: err instanceof Error ? err.message.slice(0, 200) : String(err) };
   }
 }
 
@@ -338,8 +347,19 @@ export const onRequestOptions = async (): Promise<Response> =>
   new Response(null, { status: 204, headers: CORS });
 
 export const onRequestPost = async (context: PagesContext): Promise<Response> => {
-  if (!context.env.GEMINI_API_KEY) {
-    return clientError("GEMINI_API_KEY not configured", 503, "NO_PROVIDERS");
+  const env = context.env;
+
+  const hasProvider =
+    env.GEMINI_API_KEY?.trim() ||
+    (env.AWS_ACCESS_KEY_ID?.trim() && env.AWS_SECRET_ACCESS_KEY?.trim() && env.AWS_REGION?.trim()) ||
+    env.ANTHROPIC_API_KEY?.trim();
+
+  if (!hasProvider) {
+    return clientError(
+      "No AI providers configured. Add GEMINI_API_KEY, AWS credentials, or ANTHROPIC_API_KEY in Cloudflare Pages env vars.",
+      503,
+      "NO_PROVIDERS",
+    );
   }
 
   let body: ExtractRequest;
@@ -357,20 +377,48 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
   }
 
   const domain = body.domain ?? "janta";
+  const isPdf  = body.mimeType === "application/pdf";
 
-  // ── PDF direct extraction path ─────────────────────────────────────────────
-  // Always prefer direct PDF extraction over text chunking when the original
-  // PDF is available — Gemini sees the full structured document, not an AI summary.
-  const isPdf = body.mimeType === "application/pdf";
-
+  // ── PDF direct extraction (Gemini inline — best quality when available) ────────
+  // Gemini is the only provider that can process inline PDFs. On any failure
+  // (parse error, quota, bad_request), fall through to text chunking if body.text
+  // is available. This gives: Gemini PDF → Gemini text → Bedrock → Anthropic.
   if (isPdf && body.downloadUrl) {
-    return await extractFromPdf(context, body, domain);
+    if (env.GEMINI_API_KEY?.trim()) {
+      const pdfResult = await extractFromPdf(context, body, domain);
+      if (pdfResult.ok) return pdfResult.response;
+
+      if (body.text) {
+        log("extract-intelligence", "pdf_fallback_text", {
+          docId:    body.docId,
+          pdfError: pdfResult.msg.slice(0, 100),
+        });
+        // fall through to text chunking below
+      } else {
+        return clientError(
+          `Intelligence निकाल्न सकिएन: ${pdfResult.msg}`,
+          422,
+          "NO_RECORDS_EXTRACTED",
+        );
+      }
+    } else if (!body.text) {
+      // No Gemini key and no extracted text — cannot proceed
+      return clientError(
+        "PDF intelligence extraction requires GEMINI_API_KEY. No extracted text available as fallback.",
+        422,
+        "NO_RECORDS_EXTRACTED",
+      );
+    }
+    // else: no Gemini key but body.text available → fall through to text chunking
   }
 
-  const text        = body.text ?? "";
-  const chunks      = chunkText(text);
+  // ── Text chunking — multi-provider: Gemini 2.0-flash → Bedrock → Anthropic ─────
+  // gemini-2.0-flash is preferred over 2.5-flash here: more stable structured JSON
+  // output for long extraction prompts. Override with GEMINI_MODEL env var if needed.
+  const text   = body.text ?? "";
+  const chunks = chunkText(text);
   const allRecords: Array<ExtractedRecord & { chunkId: string }> = [];
-  const summaries:  string[] = [];
+  const summaries: string[] = [];
 
   log("extract-intelligence", "start", {
     docId:      body.docId,
@@ -378,38 +426,59 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     chunks:     chunks.length,
   });
 
+  const routerEnv: RouterEnv = {
+    GEMINI_API_KEY:        env.GEMINI_API_KEY,
+    GEMINI_MODEL:          env.GEMINI_MODEL ?? "gemini-2.0-flash",
+    AWS_ACCESS_KEY_ID:     env.AWS_ACCESS_KEY_ID,
+    AWS_SECRET_ACCESS_KEY: env.AWS_SECRET_ACCESS_KEY,
+    AWS_REGION:            env.AWS_REGION,
+    BEDROCK_MODEL_ID:      env.BEDROCK_MODEL_ID,
+    ANTHROPIC_API_KEY:     env.ANTHROPIC_API_KEY,
+  };
+
+  const system = "You are a deep civic intelligence AI for Nepal's national governance memory system. Extract ALL structured, traceable civic records from government documents — every budget line, project, institution, target, reform, and program. Return only valid JSON. Be exhaustive and include traceability for every record.";
+
   for (let i = 0; i < chunks.length; i++) {
-    try {
-      const result = await callGemini({
-        apiKey:    context.env.GEMINI_API_KEY,
-        system:    "You are a deep civic intelligence AI for Nepal's national governance memory system. Extract ALL structured, traceable civic records from government documents — every budget line, project, institution, target, reform, and program. Return only valid JSON. Be exhaustive and include traceability for every record.",
-        parts:     [{ text: buildPrompt(body, chunks[i], i + 1, chunks.length) }],
-        maxTokens: 32768,
-        jsonMode:  true,
+    const routeResult = await routeTextPrompt(
+      routerEnv,
+      system,
+      buildPrompt(body, chunks[i], i + 1, chunks.length),
+      32768,
+    );
+
+    if (!routeResult.ok) {
+      log("extract-intelligence", "chunk_route_fail", {
+        chunk:  i + 1,
+        reason: routeResult.reason,
+        err:    routeResult.lastError.slice(0, 200),
       });
-
-      const [parsed, parseErr] = extractJson(result.text);
-      if (parseErr || !parsed) {
-        log("extract-intelligence", "chunk_parse_error", { chunk: i + 1, preview: result.text.slice(0, 200) });
-        continue;
-      }
-
-      const data = parsed as { records: ExtractedRecord[]; sectionSummary?: string };
-      if (Array.isArray(data.records)) {
-        for (const r of data.records) {
-          allRecords.push({ ...r, chunkId: `chunk_${i + 1}` });
-        }
-      }
-      if (data.sectionSummary) summaries.push(data.sectionSummary);
-
-      log("extract-intelligence", "chunk_ok", {
-        chunk:   i + 1,
-        records: data.records?.length ?? 0,
-        model:   result.model,
-      });
-    } catch (err) {
-      log("extract-intelligence", "chunk_error", { chunk: i + 1, err: String(err) });
+      continue;
     }
+
+    const [parsed, parseErr] = extractJson(routeResult.text);
+    if (parseErr || !parsed) {
+      log("extract-intelligence", "chunk_parse_error", {
+        chunk:    i + 1,
+        provider: routeResult.provider,
+        preview:  routeResult.text.slice(0, 200),
+      });
+      continue;
+    }
+
+    const data = parsed as { records: ExtractedRecord[]; sectionSummary?: string };
+    if (Array.isArray(data.records)) {
+      for (const r of data.records) {
+        allRecords.push({ ...r, chunkId: `chunk_${i + 1}` });
+      }
+    }
+    if (data.sectionSummary) summaries.push(data.sectionSummary);
+
+    log("extract-intelligence", "chunk_ok", {
+      chunk:    i + 1,
+      records:  data.records?.length ?? 0,
+      provider: routeResult.provider,
+      model:    routeResult.model,
+    });
   }
 
   if (allRecords.length === 0) {
@@ -420,8 +489,6 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
   }
 
   const deduped = deduplicateRecords(allRecords);
-
-  // Highest confidence records first — most specific/trackable at top
   deduped.sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0));
 
   log("extract-intelligence", "complete", {
