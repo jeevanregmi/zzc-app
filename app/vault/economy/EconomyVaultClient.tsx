@@ -4,8 +4,10 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   collection, getDocs, getDoc, query, where, limit,
-  doc as fsDoc,
+  onSnapshot, doc as fsDoc,
 } from "firebase/firestore";
+import type { ExtractionJob } from "../../../lib/types/extraction-job";
+import { isJobStuck } from "../../../lib/types/extraction-job";
 import { db } from "../../firebase";
 import { useVaultAuth } from "../../../hooks/vault/useVaultAuth";
 import {
@@ -76,9 +78,10 @@ export default function EconomyVaultClient() {
   const [atoms, setAtoms] = useState<EconomicAtom[]>([]);
   const [loadingData, setLoadingData] = useState(true);
 
-  const [modal, setModal]         = useState<ExtractModal | null>(null);
+  const [modal, setModal]           = useState<ExtractModal | null>(null);
   const [extracting, setExtracting] = useState<string | null>(null);
-  const [jobMsgs, setJobMsgs]     = useState<Record<string, string>>({});
+  const [jobMsgs, setJobMsgs]       = useState<Record<string, string>>({});
+  const [jobStates, setJobStates]   = useState<Record<string, ExtractionJob>>({});
 
   const [filterYear, setFilterYear]     = useState("all");
   const [filterSector, setFilterSector] = useState("all");
@@ -127,6 +130,27 @@ export default function EconomyVaultClient() {
     }).finally(() => setLoadingData(false));
   }, [uid]);
 
+  // ── Subscribe to ALL economy extraction jobs for this user ───────────────────
+  // This is what makes the job cockpit persistent across page refreshes.
+  // ExtractionProgress is shown for any doc that has an active/failed job,
+  // not just the one currently being extracted in this browser session.
+
+  useEffect(() => {
+    if (!uid) return;
+    const unsub = onSnapshot(
+      query(collection(db, "economy_extraction_jobs"), where("ownerId", "==", uid), limit(50)),
+      snap => {
+        const map: Record<string, ExtractionJob> = {};
+        snap.docs.forEach(d => {
+          map[d.id] = { id: d.id, ...(d.data() as Omit<ExtractionJob, "id">) };
+        });
+        setJobStates(map);
+      },
+      err => console.warn("[economy] jobs snapshot:", err?.code ?? err),
+    );
+    return unsub;
+  }, [uid]);
+
   // ── Deep-link: directly fetch the doc when ?docId is in URL ─────────────────
   // Does NOT depend on the general docs list. Fires as soon as uid + autoDocId are ready.
 
@@ -170,6 +194,13 @@ export default function EconomyVaultClient() {
     if (!modal || !user) return;
     const { doc, fiscalYear, nepaliYear, docType } = modal;
     const nepaliYearNum = parseInt(nepaliYear, 10);
+
+    // Duplicate prevention — if a non-terminal job exists, don't start another
+    const existing = jobStates[doc.id];
+    if (existing && existing.status !== "completed" && existing.status !== "failed") {
+      setModal(null);
+      return; // ExtractionProgress panel is already showing for this doc
+    }
 
     if (!doc.downloadUrl) {
       setJobMsgs(p => ({ ...p, [doc.id]: "Document download URL नभेटिएको" }));
@@ -342,14 +373,21 @@ export default function EconomyVaultClient() {
         ) : (
           <div className="space-y-2">
             {docs.map(doc => {
-              const count  = atomCountByDoc[doc.id] ?? 0;
-              const isExtr = extracting === doc.id;
-              const msg    = jobMsgs[doc.id];
-              return (
-                <div key={doc.id}
-                  className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+              const count      = atomCountByDoc[doc.id] ?? 0;
+              const isExtr     = extracting === doc.id;
+              const job        = jobStates[doc.id];
+              const jobActive  = job && job.status !== "completed" && job.status !== "failed";
+              const jobDone    = job?.status === "completed";
+              const jobFailed  = job?.status === "failed";
+              const stuck      = job ? isJobStuck(job) : false;
+              const showPanel  = isExtr || jobActive || jobFailed || stuck;
+              const canExtract = !showPanel && !!doc.downloadUrl;
+              const msg        = jobMsgs[doc.id];
 
-                  {/* Doc header row */}
+              return (
+                <div key={doc.id} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+
+                  {/* Doc header */}
                   <div className="p-3 flex flex-col md:flex-row md:items-center gap-3">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-zinc-200 truncate">{doc.title}</p>
@@ -365,41 +403,46 @@ export default function EconomyVaultClient() {
                         <span className={`text-[10px] font-medium ${count > 0 ? "text-cyan-400" : "text-zinc-600"}`}>
                           {count} atoms
                         </span>
+                        {jobDone && !showPanel && (
+                          <span className="text-[10px] font-medium text-green-400">
+                            ✅ {job!.recordsExtracted ?? 0} atoms निकालियो
+                          </span>
+                        )}
+                        {jobActive && !isExtr && (
+                          <span className="text-[10px] font-medium text-cyan-400 animate-pulse">
+                            ● चलिरहेको छ
+                          </span>
+                        )}
                       </div>
-                      {/* Non-live message (start failure only) */}
-                      {!isExtr && msg && (
-                        <p className={`text-xs mt-1 ${
-                          msg.startsWith("✅") ? "text-green-400"
-                          : msg.startsWith("❌") ? "text-red-400"
-                          : "text-zinc-500"
-                        }`}>
+                      {/* Start-failure message only */}
+                      {!showPanel && msg && (
+                        <p className={`text-xs mt-1 ${msg.startsWith("❌") ? "text-red-400" : "text-zinc-500"}`}>
                           {msg}
                         </p>
                       )}
                     </div>
-                    {!isExtr && (
+
+                    {/* Action button */}
+                    {canExtract && (
                       <button
-                        disabled={!doc.downloadUrl}
                         onClick={() => setModal({ doc, fiscalYear: "", nepaliYear: "", docType: "budget_speech" })}
-                        className={
-                          "shrink-0 text-xs px-3 py-1.5 rounded-lg font-bold transition-colors " +
-                          (!doc.downloadUrl
-                            ? "bg-zinc-800 text-zinc-600 cursor-not-allowed"
-                            : "bg-cyan-700 hover:bg-cyan-600 text-white")
-                        }
+                        className="shrink-0 text-xs px-3 py-1.5 rounded-lg font-bold bg-cyan-700 hover:bg-cyan-600 text-white transition-colors"
                       >
-                        💰 Economy Extract
+                        {jobDone ? "🔄 Re-extract" : "💰 Economy Extract"}
                       </button>
+                    )}
+                    {!doc.downloadUrl && !showPanel && (
+                      <span className="text-[10px] text-zinc-600 shrink-0">URL नभेटिएको</span>
                     )}
                   </div>
 
-                  {/* Live progress panel — replaces "Extracting..." */}
-                  {isExtr && (
-                    <div className="px-3 pb-3">
+                  {/* ── Job cockpit — shows for ANY active/failed/stuck job, survives page refresh ── */}
+                  {showPanel && (
+                    <div className="px-3 pb-3 border-t border-zinc-800/60 pt-2">
                       <ExtractionProgress
                         docId={doc.id}
                         collectionName="economy_extraction_jobs"
-                        onComplete={saved => {
+                        onComplete={() => {
                           setExtracting(null);
                           loadAtoms();
                         }}
