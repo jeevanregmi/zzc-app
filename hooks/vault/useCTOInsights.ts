@@ -22,7 +22,7 @@ export function useCTOInsights(uid: string | null) {
 
       const [docsSnap, intelSnap, frameworkSnap, relSnap, signalSnap] = await Promise.all([
         safe(getDocs(query(collection(db, "vault_intelligence_docs"), where("ownerId", "==", uid), limit(200))), EMPTY),
-        safe(getDocs(query(collection(db, "janta_intelligence"),    where("ownerId", "==", uid), limit(500))), EMPTY),
+        safe(getDocs(query(collection(db, "janta_intelligence"),    where("ownerId", "==", uid), limit(2000))), EMPTY),
         safe(getDocs(query(collection(db, "constitutional_framework"), where("ownerId", "==", uid), limit(500))), EMPTY),
         safe(getDocs(query(collection(db, "janta_relationships"),   where("ownerId", "==", uid), limit(200))), EMPTY),
         safe(getDocs(query(collection(db, "civic_signals"),         where("ownerId", "==", uid), limit(50))),  EMPTY),
