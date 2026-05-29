@@ -31,6 +31,9 @@ export interface UniversalKnowledgeObject {
   constitutionalRefs?: number[];
   affectedGroups?: string[];
   tags?:          string[];
+  // Trust + quality
+  verificationStatus?: string;
+  qualityScore?:       number;
   // Future bhakti fields — zero breaking changes when these populate
   shlokaText?:    string;
   characterName?: string;
@@ -215,14 +218,24 @@ export function UniversalKnowledgeCard({ obj, compact = false }: Props) {
         </blockquote>
       )}
 
-      {/* ── Footer: source + constitutional refs ── */}
+      {/* ── Footer: source + verification + constitutional refs ── */}
       <div className="flex items-center justify-between gap-2 mt-auto pt-1 border-t border-zinc-800/40">
-        {/* Source */}
+        {/* Source + verification */}
         <div className="flex items-center gap-1.5 min-w-0">
           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${t.sourceDot}`} />
           <span className={`text-[11px] truncate ${t.sourceText}`}>
             {obj.sourceTitle ?? "Official Source"}
           </span>
+          {obj.verificationStatus === "human_verified" && (
+            <span className="text-[9px] font-bold text-emerald-500 bg-emerald-950/30 border border-emerald-900/40 rounded px-1.5 py-0.5 shrink-0">
+              ✓ Human Verified
+            </span>
+          )}
+          {obj.verificationStatus === "founder_reviewed" && (
+            <span className="text-[9px] font-bold text-blue-500 bg-blue-950/30 border border-blue-900/40 rounded px-1.5 py-0.5 shrink-0">
+              👤 Founder Reviewed
+            </span>
+          )}
         </div>
 
         {/* Constitutional refs */}

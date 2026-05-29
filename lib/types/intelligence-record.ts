@@ -71,7 +71,8 @@ export type ImplementationStatus =
 
 export type VerificationStatus =
   | "ai_extracted"     // just extracted, not yet human-reviewed
-  | "human_verified"   // admin has verified against source
+  | "founder_reviewed" // founder has read and approved the record against the source
+  | "human_verified"   // admin has verified against source with page-level check
   | "cross_verified"   // verified by multiple independent documents
   | "disputed"         // conflicting information found
   | "retracted";       // found to be incorrect, kept for audit trail

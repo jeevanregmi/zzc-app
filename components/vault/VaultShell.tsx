@@ -44,6 +44,7 @@ const ADVANCED_GROUPS = [
     label: "Intelligence",
     items: [
       { href: "/vault/sources",               icon: "📡", label: "Source Radar"  },
+      { href: "/vault/quality",              icon: "🏅", label: "Quality Gate"  },
       { href: "/vault/content/intelligence",  icon: "◉", label: "Signal Feed"   },
       { href: "/vault/routing",               icon: "◈", label: "Routing"       },
       { href: "/vault/ssf",                   icon: "◎", label: "SSF Copilot"   },

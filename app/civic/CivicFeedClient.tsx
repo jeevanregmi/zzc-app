@@ -8,6 +8,7 @@ import {
   type UniversalKnowledgeObject,
 } from "../../components/UniversalKnowledgeCard";
 import type { IntelligenceRecord } from "../../lib/types/intelligence-record";
+import { isPublicSafe } from "../../lib/vault/qualityScore";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -15,26 +16,27 @@ const TIER_ORDER: Record<string, number> = { atomic: 0, structured: 1, operation
 
 function toUKO(r: IntelligenceRecord): UniversalKnowledgeObject {
   return {
-    id:               r.id,
-    domain:           "civic",
-    objectType:       r.type,
-    titleNepali:      r.titleNepali,
-    title:            r.title,
-    summaryNepali:    r.summaryNepali,
-    textEvidence:     r.textEvidence,
-    pageNumber:       r.pageNumber,
-    sourceQuote:      r.traceability?.sourceQuote,
-    sourceTitle:      r.sourceDocTitle,
-    sourceDocId:      r.sourceDocId,
-    extractionTier:   r.extractionTier as UniversalKnowledgeObject["extractionTier"],
-    sector:           r.sector,
-    ministry:         r.ministry,
-    budgetAmount:     r.budgetAmount,
-    target:           r.target,
-    fiscalYear:       r.fiscalYear,
+    id:                 r.id,
+    domain:             "civic",
+    objectType:         r.type,
+    titleNepali:        r.titleNepali,
+    title:              r.title,
+    summaryNepali:      r.summaryNepali,
+    textEvidence:       r.textEvidence,
+    pageNumber:         r.pageNumber,
+    sourceQuote:        r.traceability?.sourceQuote,
+    sourceTitle:        r.sourceDocTitle,
+    sourceDocId:        r.sourceDocId,
+    extractionTier:     r.extractionTier as UniversalKnowledgeObject["extractionTier"],
+    sector:             r.sector,
+    ministry:           r.ministry,
+    budgetAmount:       r.budgetAmount,
+    target:             r.target,
+    fiscalYear:         r.fiscalYear,
     constitutionalRefs: r.constitutionalRefs,
-    affectedGroups:   r.affectedGroups,
-    tags:             r.tags,
+    affectedGroups:     r.affectedGroups,
+    tags:               r.tags,
+    verificationStatus: r.verificationStatus,
   };
 }
 
@@ -60,9 +62,10 @@ const safe = <T,>(p: Promise<T>, fb: T): Promise<T> =>
 // ── Component ──────────────────────────────────────────────────────────────
 
 export function CivicFeedClient() {
-  const [records, setRecords]     = useState<UniversalKnowledgeObject[]>([]);
-  const [loading, setLoading]     = useState(true);
-  const [sector,  setSector]      = useState<string>("all");
+  const [records,     setRecords]     = useState<UniversalKnowledgeObject[]>([]);
+  const [totalLoaded, setTotalLoaded] = useState(0);
+  const [loading,     setLoading]     = useState(true);
+  const [sector,      setSector]      = useState<string>("all");
 
   useEffect(() => {
     async function load() {
@@ -77,14 +80,23 @@ export function CivicFeedClient() {
 
       if (!snap) { setLoading(false); return; }
 
-      const rows: UniversalKnowledgeObject[] = snap.docs
-        .map(d => toUKO({ id: d.id, ...d.data() } as IntelligenceRecord))
+      const raw = snap.docs.map(d => ({ id: d.id, ...d.data() } as IntelligenceRecord));
+
+      // ── Quality gate: only source-traceable, evidence-backed records ──────────
+      // Atomic + textEvidence + pageNumber + summaryNepali + score ≥ 61.
+      // Structured/operational records without page-level evidence are hidden
+      // until they are upgraded to atomic tier.
+      const safe_records = raw.filter(r => isPublicSafe(r));
+
+      const rows: UniversalKnowledgeObject[] = safe_records
+        .map(r => toUKO(r))
         .sort((a, b) => {
           const ta = TIER_ORDER[a.extractionTier ?? "operational"] ?? 2;
           const tb = TIER_ORDER[b.extractionTier ?? "operational"] ?? 2;
           return ta - tb;
         });
 
+      setTotalLoaded(raw.length);
       setRecords(rows);
       setLoading(false);
     }
@@ -130,14 +142,17 @@ export function CivicFeedClient() {
   return (
     <div className="space-y-4">
 
-      {/* Header + count */}
+      {/* Header + trust marker */}
       <div className="flex items-center justify-between">
         <p className="text-zinc-600 text-xs uppercase tracking-widest font-mono">
           नागरिक ज्ञान — Knowledge Objects
         </p>
-        <span className="text-zinc-700 text-xs font-mono">
-          {visible.length}/{records.length} records
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+          <span className="text-zinc-700 text-[10px] font-mono">
+            {visible.length} verified · {totalLoaded - records.length} filtered
+          </span>
+        </div>
       </div>
 
       {/* Sector filter tabs */}
