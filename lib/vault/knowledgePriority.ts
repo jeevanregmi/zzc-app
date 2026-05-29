@@ -23,10 +23,11 @@ import type { KnowledgeTier } from "../types/documents";
 // ── Classification result ─────────────────────────────────────────────────────
 
 export interface KnowledgePriorityResult {
-  tier:              KnowledgeTier;
-  score:             number;    // 0-100 — higher = extract first
-  atomicRecommended: boolean;
-  reason:            string;    // one-line explanation for founder
+  tier:               KnowledgeTier;
+  score:              number;    // 0-100 — queue priority order
+  knowledgeGainScore: number;    // 0-100 — estimated civic/spiritual intelligence value
+  atomicRecommended:  boolean;
+  reason:             string;    // one-line explanation for founder
 }
 
 // ── Tier metadata (UI labels, colors) ────────────────────────────────────────
@@ -89,240 +90,162 @@ export function classifyDocument(doc: {
   ].join(" ").toLowerCase();
 
   // ── FOUNDATION ───────────────────────────────────────────────────────────────
-  // Constitution, foundational civic laws, sacred texts
 
   if (doc.govFolder === "constitution" || matchAny(corpus, [
-    /constitution of nepal/,
-    /nepal ko sambidhan/,
-    /संविधान/,
-    /नेपालको संविधान/,
-    /samvidhan/,
-    /constitutional amendment/,
-    /sambidhan sansodhan/,
+    /constitution of nepal/, /nepal ko sambidhan/, /संविधान/,
+    /नेपालको संविधान/, /samvidhan/, /constitutional amendment/, /sambidhan sansodhan/,
   ])) {
-    return { tier: "foundation", score: 100, atomicRecommended: true,
+    return { tier: "foundation", score: 100, knowledgeGainScore: 100, atomicRecommended: true,
       reason: "Constitutional document — permanent civic infrastructure" };
   }
 
-  // Foundational Acts
   if (matchAny(corpus, [
-    /local government operation act/,
-    /civil service act/,
-    /education act/,
-    /procurement act/,
-    /governance act/,
-    /fundamental law/,
-    /सुशासन ऐन/,
-    /स्थानीय सरकार संचालन ऐन/,
-    /निजामती सेवा ऐन/,
+    /local government operation act/, /civil service act/, /education act/,
+    /procurement act/, /governance act/, /fundamental law/,
+    /सुशासन ऐन/, /स्थानीय सरकार संचालन ऐन/, /निजामती सेवा ऐन/,
   ])) {
-    return { tier: "foundation", score: 95, atomicRecommended: true,
+    return { tier: "foundation", score: 95, knowledgeGainScore: 95, atomicRecommended: true,
       reason: "Foundational governance law — permanent infrastructure" };
   }
 
-  // Spiritual foundation texts
   if (matchAny(corpus, [
-    /bhagavad gita/,
-    /bhagwad gita/,
-    /गीता/,
-    /श्रीमद्भगवद/,
-    /srimad bhagavatam/,
-    /upanishad/,
-    /उपनिषद/,
-    /shankaracharya/,
-    /शंकराचार्य/,
-    /advaita vedanta/,
-    /rudrashtakam/,
-    /nirvana shatakam/,
-    /brahmasutra/,
-    /adi shankar/,
+    /bhagavad gita/, /bhagwad gita/, /गीता/, /श्रीमद्भगवद/, /srimad bhagavatam/,
+    /upanishad/, /उपनिषद/, /shankaracharya/, /शंकराचार्य/, /advaita vedanta/,
+    /rudrashtakam/, /nirvana shatakam/, /brahmasutra/, /adi shankar/,
   ])) {
-    return { tier: "foundation", score: 98, atomicRecommended: true,
+    return { tier: "foundation", score: 98, knowledgeGainScore: 98, atomicRecommended: true,
       reason: "Foundational spiritual text — permanent bhakti intelligence" };
   }
 
   // ── NATIONAL ─────────────────────────────────────────────────────────────────
-  // CIAA, NHRC, Auditor General, NRB, National Budget, PSC, Parliament key bills
+  // Knowledge gain reflects: accountability value + recommendation generation + constitutional linkage
 
   if (matchAny(corpus, [
-    /ciaa/,
-    /commission for the investigation of abuse of authority/,
-    /अख्तियार दुरुपयोग/,
-    /अख्तियार/,
-    /corruption investigation/,
-    /भ्रष्टाचार अनुसन्धान/,
+    /ciaa/, /commission for the investigation of abuse of authority/,
+    /अख्तियार दुरुपयोग/, /अख्तियार/, /corruption investigation/, /भ्रष्टाचार अनुसन्धान/,
   ])) {
-    return { tier: "national", score: 92, atomicRecommended: true,
+    return { tier: "national", score: 92, knowledgeGainScore: 88, atomicRecommended: true,
       reason: "CIAA — anti-corruption national intelligence" };
   }
 
   if (matchAny(corpus, [
-    /nhrc/,
-    /national human rights commission/,
-    /राष्ट्रिय मानव अधिकार आयोग/,
-    /मानव अधिकार आयोग/,
-    /human rights commission/,
+    /nhrc/, /national human rights commission/,
+    /राष्ट्रिय मानव अधिकार आयोग/, /मानव अधिकार आयोग/, /human rights commission/,
   ])) {
-    return { tier: "national", score: 90, atomicRecommended: true,
+    return { tier: "national", score: 90, knowledgeGainScore: 85, atomicRecommended: true,
       reason: "NHRC — human rights national intelligence" };
   }
 
   if (matchAny(corpus, [
-    /auditor general/,
-    /oag/,
-    /महालेखापरीक्षक/,
-    /mahalekha parikshak/,
-    /public audit/,
-    /सार्वजनिक लेखापरीक्षण/,
+    /auditor general/, /oag/, /महालेखापरीक्षक/, /mahalekha parikshak/,
+    /public audit/, /सार्वजनिक लेखापरीक्षण/,
   ])) {
-    return { tier: "national", score: 88, atomicRecommended: true,
+    return { tier: "national", score: 88, knowledgeGainScore: 83, atomicRecommended: true,
       reason: "Auditor General — public finance accountability" };
   }
 
   if (matchAny(corpus, [
-    /nrb/,
-    /nepal rastra bank/,
-    /नेपाल राष्ट्र बैंक/,
-    /monetary policy/,
-    /मौद्रिक नीति/,
-    /central bank/,
-    /financial stability report/,
+    /nrb/, /nepal rastra bank/, /नेपाल राष्ट्र बैंक/,
+    /monetary policy/, /मौद्रिक नीति/, /central bank/, /financial stability report/,
   ])) {
-    return { tier: "national", score: 87, atomicRecommended: true,
+    return { tier: "national", score: 87, knowledgeGainScore: 82, atomicRecommended: true,
       reason: "NRB — monetary and financial national intelligence" };
   }
 
   if (doc.govFolder === "budget-economy" || matchAny(corpus, [
-    /annual budget/,
-    /budget speech/,
-    /fiscal year budget/,
-    /वार्षिक बजेट/,
-    /आर्थिक विधेयक/,
-    /budget and programme/,
-    /appropriation act/,
+    /annual budget/, /budget speech/, /fiscal year budget/,
+    /वार्षिक बजेट/, /आर्थिक विधेयक/, /budget and programme/, /appropriation act/,
   ])) {
-    return { tier: "national", score: 85, atomicRecommended: true,
+    return { tier: "national", score: 85, knowledgeGainScore: 80, atomicRecommended: true,
       reason: "National Budget — fiscal intelligence asset" };
   }
 
-  if (matchAny(corpus, [
-    /public service commission/,
-    /lok sewa aayog/,
-    /लोक सेवा आयोग/,
-    /psc annual/,
-  ])) {
-    return { tier: "national", score: 82, atomicRecommended: false,
-      reason: "Public Service Commission — national civil service intelligence" };
-  }
-
   if (doc.govFolder === "judiciary" || matchAny(corpus, [
-    /supreme court/,
-    /सर्वोच्च अदालत/,
-    /constitutional bench/,
-    /sambidhan itsas/,
-    /न्याय परिषद/,
+    /supreme court/, /सर्वोच्च अदालत/, /constitutional bench/, /sambidhan itsas/, /न्याय परिषद/,
   ])) {
-    return { tier: "national", score: 84, atomicRecommended: false,
+    return { tier: "national", score: 84, knowledgeGainScore: 78, atomicRecommended: false,
       reason: "Supreme Court — judicial national intelligence" };
   }
 
-  if (doc.govFolder === "parliament" || matchAny(corpus, [
-    /parliament/,
-    /संसद/,
-    /pratinidhisabha/,
-    /rastriya sabha/,
-    /legislative/,
+  if (matchAny(corpus, [
+    /public service commission/, /lok sewa aayog/, /लोक सेवा आयोग/, /psc annual/,
   ])) {
-    return { tier: "national", score: 78, atomicRecommended: false,
+    return { tier: "national", score: 82, knowledgeGainScore: 72, atomicRecommended: false,
+      reason: "Public Service Commission — national civil service intelligence" };
+  }
+
+  if (doc.govFolder === "parliament" || matchAny(corpus, [
+    /parliament/, /संसद/, /pratinidhisabha/, /rastriya sabha/, /legislative/,
+  ])) {
+    return { tier: "national", score: 78, knowledgeGainScore: 70, atomicRecommended: false,
       reason: "Parliament — legislative intelligence" };
   }
 
   // ── STRATEGIC ────────────────────────────────────────────────────────────────
-  // Sectoral reports, commission reports, policies, research
 
   if (doc.govFolder === "policy-planning" || matchAny(corpus, [
-    /national plan/,
-    /periodic plan/,
-    /panchwarshiya/,
-    /national policy/,
-    /strategy/,
-    /strategic plan/,
-    /राष्ट्रिय नीति/,
-    /दीर्घकालीन योजना/,
+    /national plan/, /periodic plan/, /panchwarshiya/, /national policy/,
+    /strategy/, /strategic plan/, /राष्ट्रिय नीति/, /दीर्घकालीन योजना/,
   ])) {
-    return { tier: "strategic", score: 68, atomicRecommended: false,
+    return { tier: "strategic", score: 68, knowledgeGainScore: 60, atomicRecommended: false,
       reason: "National policy or planning document" };
   }
 
   if (matchAny(corpus, [
-    /annual report/,
-    /वार्षिक प्रतिवेदन/,
-    /commission report/,
-    /आयोगको प्रतिवेदन/,
-    /sector report/,
-    /epf/,
-    /ssf/,
-    /employees provident fund/,
+    /annual report/, /वार्षिक प्रतिवेदन/, /commission report/,
+    /आयोगको प्रतिवेदन/, /sector report/, /epf/, /ssf/, /employees provident fund/,
   ])) {
-    return { tier: "strategic", score: 62, atomicRecommended: false,
+    return { tier: "strategic", score: 62, knowledgeGainScore: 55, atomicRecommended: false,
       reason: "Annual report or commission study" };
   }
 
   if (doc.sourceType === "official") {
-    return { tier: "strategic", score: 58, atomicRecommended: false,
+    return { tier: "strategic", score: 58, knowledgeGainScore: 50, atomicRecommended: false,
       reason: "Official government document" };
   }
 
   // ── OPERATIONAL ──────────────────────────────────────────────────────────────
 
   if (doc.govFolder === "local-governance" || matchAny(corpus, [
-    /municipality/,
-    /ward/,
-    /palika/,
-    /नगरपालिका/,
-    /गाउँपालिका/,
-    /wardno/,
+    /municipality/, /ward/, /palika/, /नगरपालिका/, /गाउँपालिका/, /wardno/,
   ])) {
-    return { tier: "operational", score: 45, atomicRecommended: false,
+    return { tier: "operational", score: 45, knowledgeGainScore: 20, atomicRecommended: false,
       reason: "Local governance document" };
   }
 
   if (doc.govFolder === "citizen-intelligence" || matchAny(corpus, [
-    /complaint/,
-    /survey/,
-    /feedback/,
-    /field report/,
-    /नागरिक गुनासो/,
+    /complaint/, /survey/, /feedback/, /field report/, /नागरिक गुनासो/,
   ])) {
-    return { tier: "operational", score: 42, atomicRecommended: false,
+    return { tier: "operational", score: 42, knowledgeGainScore: 25, atomicRecommended: false,
       reason: "Citizen intelligence / field report" };
   }
 
   if (doc.category === "research" || doc.sourceType === "research") {
-    return { tier: "operational", score: 50, atomicRecommended: false,
+    return { tier: "operational", score: 50, knowledgeGainScore: 40, atomicRecommended: false,
       reason: "Research document" };
   }
 
   // ── ARCHIVE (default) ────────────────────────────────────────────────────────
 
-  return { tier: "archive", score: 20, atomicRecommended: false,
+  return { tier: "archive", score: 20, knowledgeGainScore: 8, atomicRecommended: false,
     reason: "General document — classify manually if higher priority" };
 }
 
 // ── Queue builder ─────────────────────────────────────────────────────────────
 
 export interface AtomicQueueItem {
-  docId:             string;
-  title:             string;
-  tier:              KnowledgeTier;
-  score:             number;
-  reason:            string;
-  estimatedCostUSD:  number;
-  mimeType:          string;
-  downloadUrl:       string;
-  pageCount?:        number;
-  fileSizeBytes:     number;
-  extractionTier?:   string;
+  docId:              string;
+  title:              string;
+  tier:               KnowledgeTier;
+  score:              number;
+  knowledgeGainScore: number;
+  reason:             string;
+  estimatedCostUSD:   number;
+  mimeType:           string;
+  downloadUrl:        string;
+  pageCount?:         number;
+  fileSizeBytes:      number;
+  extractionTier?:    string;
 }
 
 export interface AtomicQueueSummary {
@@ -369,23 +292,24 @@ export function buildAtomicQueue(docs: Array<{
     // Skip already-atomic
     if (doc.extractionTier === "atomic") continue;
 
-    const { tier, score, atomicRecommended, reason } = classifyDocument(doc);
+    const { tier, score, knowledgeGainScore, atomicRecommended, reason } = classifyDocument(doc);
 
     // Include foundation + national always; others only if atomicRecommended
     if (tier !== "foundation" && tier !== "national" && !atomicRecommended) continue;
 
     items.push({
-      docId:            doc.id,
-      title:            doc.title,
+      docId:              doc.id,
+      title:              doc.title,
       tier,
       score,
+      knowledgeGainScore,
       reason,
-      estimatedCostUSD: estimateAtomicCostUSD(doc.pageCount, doc.fileSize),
-      mimeType:         doc.mimeType,
-      downloadUrl:      doc.downloadUrl,
-      pageCount:        doc.pageCount,
-      fileSizeBytes:    doc.fileSize,
-      extractionTier:   doc.extractionTier,
+      estimatedCostUSD:   estimateAtomicCostUSD(doc.pageCount, doc.fileSize),
+      mimeType:           doc.mimeType,
+      downloadUrl:        doc.downloadUrl,
+      pageCount:          doc.pageCount,
+      fileSizeBytes:      doc.fileSize,
+      extractionTier:     doc.extractionTier,
     });
   }
 

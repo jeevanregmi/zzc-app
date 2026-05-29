@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   buildAtomicQueue,
   KNOWLEDGE_TIER_META,
@@ -8,6 +8,31 @@ import {
   type AtomicQueueItem,
 } from "../../lib/vault/knowledgePriority";
 import type { IntelligenceDocument } from "../../lib/types/documents";
+
+const BUDGET_KEY    = "zzc_atomic_budget_monthly";
+const SPENT_KEY     = "zzc_atomic_budget_spent";
+const SPENT_MO_KEY  = "zzc_atomic_budget_month"; // "2026-05" — resets on new month
+
+const currentMonth = () => new Date().toISOString().slice(0, 7); // "YYYY-MM"
+
+function loadBudget(): { monthly: number; spent: number } {
+  if (typeof window === "undefined") return { monthly: 5, spent: 0 };
+  const monthly = parseFloat(localStorage.getItem(BUDGET_KEY) ?? "5") || 5;
+  const savedMonth = localStorage.getItem(SPENT_MO_KEY);
+  if (savedMonth !== currentMonth()) {
+    localStorage.setItem(SPENT_KEY,    "0");
+    localStorage.setItem(SPENT_MO_KEY, currentMonth());
+    return { monthly, spent: 0 };
+  }
+  const spent = parseFloat(localStorage.getItem(SPENT_KEY) ?? "0") || 0;
+  return { monthly, spent };
+}
+
+function saveBudget(monthly: number, spent: number) {
+  localStorage.setItem(BUDGET_KEY,    monthly.toString());
+  localStorage.setItem(SPENT_KEY,     spent.toString());
+  localStorage.setItem(SPENT_MO_KEY,  currentMonth());
+}
 
 interface Props {
   docs:           IntelligenceDocument[];
@@ -22,6 +47,19 @@ export function AtomicQueue({ docs, onRunAtomic, extractingId }: Props) {
   const [queueProgress,  setQueueProgress]  = useState(0);
   const [queueTotal,     setQueueTotal]     = useState(0);
   const [doneIds,        setDoneIds]        = useState<Set<string>>(new Set());
+
+  // Budget Manager
+  const [budgetMonthly,  setBudgetMonthly]  = useState(5);
+  const [budgetSpent,    setBudgetSpent]    = useState(0);
+  const [editingBudget,  setEditingBudget]  = useState(false);
+  const [budgetInput,    setBudgetInput]    = useState("5");
+
+  useEffect(() => {
+    const { monthly, spent } = loadBudget();
+    setBudgetMonthly(monthly);
+    setBudgetSpent(spent);
+    setBudgetInput(monthly.toString());
+  }, []);
 
   const queue = useMemo(() => buildAtomicQueue(
     docs.map(d => ({
@@ -46,7 +84,10 @@ export function AtomicQueue({ docs, onRunAtomic, extractingId }: Props) {
 
   if (queue.items.length === 0) return null;
 
-  const pending = queue.items.filter(i => !doneIds.has(i.docId));
+  const pending       = queue.items.filter(i => !doneIds.has(i.docId));
+  const pendingCost   = pending.reduce((s, i) => s + i.estimatedCostUSD, 0);
+  const budgetLeft    = Math.max(0, budgetMonthly - budgetSpent);
+  const willExceed    = pendingCost > budgetLeft;
 
   async function runQueue() {
     setQueueRunning(true);
@@ -54,29 +95,24 @@ export function AtomicQueue({ docs, onRunAtomic, extractingId }: Props) {
     setQueueProgress(0);
 
     for (const item of pending) {
-      // Find the full doc object
       const doc = docs.find(d => d.id === item.docId);
       if (!doc) continue;
 
       onRunAtomic(doc);
 
-      // Wait for this item to finish (poll via extractingId)
-      // Since we can't await the parent handler directly, we use a polling approach.
-      // The parent sets extractingId while running — we wait until it clears.
       await new Promise<void>(resolve => {
-        const check = () => {
-          // Give the parent 200ms to set extractingId, then poll
-          setTimeout(() => {
-            const checkDone = setInterval(() => {
-              // extractingId is null when done — but we can't read it here
-              // Instead, wait a fixed time estimate per doc
-              clearInterval(checkDone);
-              resolve();
-            }, 30_000); // 30s per doc — atomic extraction takes 15-60s
-          }, 500);
-        };
-        check();
+        setTimeout(() => {
+          const checkDone = setInterval(() => {
+            clearInterval(checkDone);
+            resolve();
+          }, 30_000);
+        }, 500);
       });
+
+      // Track spend
+      const newSpent = budgetSpent + item.estimatedCostUSD;
+      setBudgetSpent(newSpent);
+      saveBudget(budgetMonthly, newSpent);
 
       setDoneIds(prev => new Set([...prev, item.docId]));
       setQueueProgress(p => p + 1);
@@ -84,6 +120,15 @@ export function AtomicQueue({ docs, onRunAtomic, extractingId }: Props) {
 
     setQueueRunning(false);
     setConfirmed(false);
+  }
+
+  function saveBudgetEdit() {
+    const val = parseFloat(budgetInput);
+    if (!isNaN(val) && val > 0) {
+      setBudgetMonthly(val);
+      saveBudget(val, budgetSpent);
+    }
+    setEditingBudget(false);
   }
 
   return (
@@ -116,12 +161,52 @@ export function AtomicQueue({ docs, onRunAtomic, extractingId }: Props) {
       {open && (
         <div className="border-t border-amber-800/30 divide-y divide-amber-900/20">
 
+          {/* Budget Manager */}
+          <div className="px-5 py-3 bg-zinc-950/40 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 text-xs">
+              <span className="text-zinc-500 font-bold">Monthly Budget</span>
+              {editingBudget ? (
+                <div className="flex items-center gap-1">
+                  <span className="text-zinc-500">$</span>
+                  <input
+                    type="number"
+                    value={budgetInput}
+                    onChange={e => setBudgetInput(e.target.value)}
+                    className="w-14 bg-zinc-800 border border-zinc-700 rounded px-1.5 py-0.5 text-white text-xs font-mono"
+                    autoFocus
+                    onKeyDown={e => { if (e.key === "Enter") saveBudgetEdit(); if (e.key === "Escape") setEditingBudget(false); }}
+                  />
+                  <button onClick={saveBudgetEdit} className="text-amber-400 hover:text-amber-300 font-bold px-1">✓</button>
+                  <button onClick={() => setEditingBudget(false)} className="text-zinc-600 hover:text-zinc-400 px-1">✕</button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => setEditingBudget(true)}
+                  className="text-amber-300 font-mono hover:text-amber-200 transition-colors"
+                >
+                  ${budgetMonthly.toFixed(2)}
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-4 text-xs font-mono">
+              <span className="text-zinc-600">
+                खर्च: <span className="text-zinc-400">${budgetSpent.toFixed(2)}</span>
+              </span>
+              <span className={`font-bold ${budgetLeft < pendingCost ? "text-red-400" : "text-green-400"}`}>
+                बाँकी: ${budgetLeft.toFixed(2)}
+              </span>
+            </div>
+          </div>
+
           {/* Queue items */}
           <div className="px-4 py-3 space-y-2">
             {queue.items.map((item, idx) => {
-              const meta  = KNOWLEDGE_TIER_META[item.tier];
-              const done  = doneIds.has(item.docId);
+              const meta   = KNOWLEDGE_TIER_META[item.tier];
+              const done   = doneIds.has(item.docId);
               const active = extractingId === item.docId;
+              const valueRatio = item.estimatedCostUSD > 0
+                ? Math.round(item.knowledgeGainScore / item.estimatedCostUSD)
+                : item.knowledgeGainScore;
 
               return (
                 <div
@@ -140,12 +225,20 @@ export function AtomicQueue({ docs, onRunAtomic, extractingId }: Props) {
                   {/* Tier dot */}
                   <span className={`w-2 h-2 rounded-full shrink-0 ${meta.dot}`} />
 
-                  {/* Title + reason */}
+                  {/* Title + reason + gain */}
                   <div className="flex-1 min-w-0">
                     <p className={`text-xs font-semibold truncate ${done ? "text-green-400" : active ? "text-violet-300" : "text-white"}`}>
                       {item.title}
                     </p>
-                    <p className="text-[10px] text-zinc-600 mt-0.5 truncate">{item.reason}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <p className="text-[10px] text-zinc-600 truncate flex-1">{item.reason}</p>
+                      <span className="text-[10px] text-amber-600/80 shrink-0 font-mono">
+                        gain {item.knowledgeGainScore}/100
+                      </span>
+                      <span className="text-[10px] text-zinc-700 shrink-0 font-mono" title="knowledge gain per dollar">
+                        ×{valueRatio}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Tier badge */}
@@ -206,9 +299,12 @@ export function AtomicQueue({ docs, onRunAtomic, extractingId }: Props) {
                 <div>
                   <p className="text-zinc-400 text-xs">
                     <span className="text-white font-bold">{pending.length} document</span> — अनुमानित खर्च{" "}
-                    <span className="text-amber-400 font-bold">
-                      {formatCost(pending.reduce((s, i) => s + i.estimatedCostUSD, 0))}
+                    <span className={`font-bold ${willExceed ? "text-red-400" : "text-amber-400"}`}>
+                      {formatCost(pendingCost)}
                     </span>
+                    {willExceed && (
+                      <span className="text-red-400 font-bold"> — Budget exceed हुन्छ!</span>
+                    )}
                   </p>
                   <p className="text-zinc-600 text-[10px] mt-0.5">
                     Foundation र National documents — ZZC को real intelligence foundation।
@@ -231,9 +327,11 @@ export function AtomicQueue({ docs, onRunAtomic, extractingId }: Props) {
                   <div className="space-y-1 text-[11px] text-amber-400/80 leading-relaxed">
                     <p>• {pending.length} official documents sequentially process हुनेछन्</p>
                     <p>• हरेक document को page + paragraph + verbatim evidence store हुनेछ</p>
-                    <p>• अनुमानित खर्च: <span className="text-amber-300 font-bold">
-                      {formatCost(pending.reduce((s, i) => s + i.estimatedCostUSD, 0))}
-                    </span></p>
+                    <p>• अनुमानित खर्च: <span className={`font-bold ${willExceed ? "text-red-400" : "text-amber-300"}`}>
+                      {formatCost(pendingCost)}
+                    </span>
+                    {willExceed && <span className="text-red-400"> — monthly budget (${budgetMonthly}) exceed</span>}
+                    </p>
                     <p className="text-zinc-500">Browser बन्द नगर्नुहोस् — process complete हुन्जेल।</p>
                   </div>
                 </div>
