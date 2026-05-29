@@ -23,6 +23,7 @@ const PRIMARY_NAV = [
   { href: "/vault/documents",         icon: "◻", label: "Documents"     },
   { href: "/vault/economy",           icon: "📊", label: "बजेट Chautari" },
   { href: "/vault/promises",          icon: "🗳", label: "वाचा Tracker"  },
+  { href: "/vault/knowledge",         icon: "🧠", label: "ज्ञान Queue"    },
   { href: "/vault/admin",             icon: "⬡", label: "Admin Vault"   },
   { href: "/vault/content/queue",     icon: "◆", label: "Content Queue" },
   { href: "/vault/business",          icon: "◈", label: "Business"      },
