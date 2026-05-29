@@ -51,13 +51,22 @@ export function useCTOInsights(uid: string | null) {
         if (typeof data.confidence === "number" && data.confidence < 0.6) lowConf++;
       });
 
-      const approvedNoExtract = approved.filter(d => (intelByDoc[d.id] ?? 0) === 0);
+      const approvedNoExtract = approved.filter(d =>
+        (intelByDoc[d.id] ?? 0) === 0 && (frameworkByDoc[d.id] ?? 0) === 0
+      );
 
       // ── Constitutional parts ──────────────────────────────────────────────
+      // Also track which docs have framework records — Constitution uses
+      // constitutional_framework (not janta_intelligence), so those docs must
+      // be excluded from the "approved but not extracted" count.
+      const frameworkByDoc: Record<string, number> = {};
       const partCounts = new Map<number, number>();
       let brokenFrameworkRecords = 0;
       (frameworkSnap.docs ?? []).forEach(d => {
-        const pn = (d.data() as Record<string, unknown>).partNumber as number | undefined;
+        const data = d.data() as Record<string, unknown>;
+        const srcId = data.sourceDocId as string | undefined;
+        if (srcId) frameworkByDoc[srcId] = (frameworkByDoc[srcId] ?? 0) + 1;
+        const pn = data.partNumber as number | undefined;
         if (typeof pn === "number" && pn > 0) {
           partCounts.set(pn, (partCounts.get(pn) ?? 0) + 1);
         } else {
