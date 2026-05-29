@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import {
-  collection, getDocs, query, where, limit,
+  collection, getDocs, getDoc, query, where, limit,
   onSnapshot, doc as fsDoc,
 } from "firebase/firestore";
 import { db } from "../../firebase";
@@ -85,9 +85,11 @@ export default function EconomyVaultClient() {
   const [filterType, setFilterType]     = useState("all");
   const [expandedAtom, setExpandedAtom] = useState<string | null>(null);
 
-  const searchParams  = useSearchParams();
-  const autoDocId     = searchParams.get("docId");
-  const autoOpened    = useRef(false);
+  const searchParams   = useSearchParams();
+  const autoDocId      = searchParams.get("docId");
+  const autoOpened     = useRef(false);
+  const [deepDoc, setDeepDoc] = useState<VaultDoc | null>(null);
+  const [deepDocError, setDeepDocError] = useState<string | null>(null);
 
   // ── Load data ───────────────────────────────────────────────────────────────
 
@@ -108,7 +110,7 @@ export default function EconomyVaultClient() {
 
     Promise.all([
       safe(
-        getDocs(query(collection(db, "vault_documents"), where("ownerId", "==", uid), limit(100))),
+        getDocs(query(collection(db, "vault_intelligence_docs"), where("ownerId", "==", uid), limit(100))),
         null,
       ),
       safe(
@@ -129,16 +131,42 @@ export default function EconomyVaultClient() {
     };
   }, [uid]);
 
-  // ── Auto-open modal from ?docId URL param (deep-link from /vault/documents) ─
+  // ── Deep-link: directly fetch the doc when ?docId is in URL ─────────────────
+  // Does NOT depend on the general docs list. Fires as soon as uid + autoDocId are ready.
 
   useEffect(() => {
-    if (!autoDocId || loadingData || docs.length === 0 || autoOpened.current) return;
-    const found = docs.find(d => d.id === autoDocId);
-    if (found) {
-      autoOpened.current = true;
-      setModal({ doc: found, fiscalYear: "", nepaliYear: "", docType: "budget_speech" });
-    }
-  }, [autoDocId, docs, loadingData]);
+    if (!autoDocId || !uid || autoOpened.current) return;
+    autoOpened.current = true;
+
+    getDoc(fsDoc(db, "vault_intelligence_docs", autoDocId))
+      .then(snap => {
+        if (!snap.exists()) {
+          setDeepDocError(`Document भेटिएन — ID: ${autoDocId}`);
+          return;
+        }
+        const data = snap.data() as Record<string, unknown>;
+        // Verify ownership
+        if (data.ownerId !== uid) {
+          setDeepDocError("Permission denied — यो document तपाईंको होइन।");
+          return;
+        }
+        const vd: VaultDoc = {
+          id:                  snap.id,
+          title:               (data.title as string) ?? snap.id,
+          govFolder:           data.govFolder as string | undefined,
+          mimeType:            data.mimeType as string | undefined,
+          downloadUrl:         data.downloadUrl as string | undefined,
+          pageCount:           data.pageCount as number | undefined,
+          processingStatus:    data.processingStatus as string | undefined,
+          adminApprovalStatus: data.adminApprovalStatus as string | undefined,
+        };
+        setDeepDoc(vd);
+        setModal({ doc: vd, fiscalYear: "", nepaliYear: "", docType: "budget_speech" });
+      })
+      .catch(e => {
+        setDeepDocError(`Firestore fetch failed: ${String(e?.code ?? e).slice(0, 80)}`);
+      });
+  }, [autoDocId, uid]);
 
   // ── Job polling ─────────────────────────────────────────────────────────────
 
@@ -263,15 +291,45 @@ export default function EconomyVaultClient() {
   return (
     <div className="p-4 md:p-6 max-w-5xl mx-auto space-y-8">
 
-      {/* Deep-link banner — shown when arriving from /vault/documents */}
-      {autoDocId && (
+      {/* Deep-link banner — shown when arriving via ?docId from /vault/documents */}
+      {autoDocId && !deepDocError && (
         <div className="bg-yellow-950/40 border border-yellow-800/50 rounded-xl px-4 py-3 flex items-center gap-3">
           <span className="text-lg">💰</span>
           <div className="flex-1 min-w-0">
-            <p className="text-yellow-300 text-sm font-semibold">Economy Extract — Document चुनिएको छ</p>
-            <p className="text-yellow-600 text-xs mt-0.5">
-              Documents page बाट आउनुभयो। तलको document list बाट &quot;Economy Extract गर्नुहोस्&quot; थिच्नुहोस्।
+            <p className="text-yellow-300 text-sm font-semibold">
+              {deepDoc
+                ? `यो document Economy Extract को लागि तयार छ`
+                : "Document load हुँदैछ…"}
             </p>
+            {deepDoc && (
+              <p className="text-yellow-200 text-xs font-medium mt-0.5 truncate">{deepDoc.title}</p>
+            )}
+            <p className="text-yellow-700 text-xs mt-0.5">
+              {deepDoc
+                ? "Modal खुल्यो — Fiscal Year र Document Type राखेर Extract सुरु गर्नुहोस्।"
+                : "Firestore बाट document fetch गर्दैछ…"}
+            </p>
+          </div>
+          {deepDoc && (
+            <button
+              onClick={() => setModal({ doc: deepDoc, fiscalYear: "", nepaliYear: "", docType: "budget_speech" })}
+              className="shrink-0 text-xs font-bold px-3 py-1.5 rounded-lg bg-yellow-700 hover:bg-yellow-600 text-white transition-colors"
+            >
+              Modal खोल्नुहोस्
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Deep-link error — doc could not be fetched */}
+      {autoDocId && deepDocError && (
+        <div className="bg-red-950/40 border border-red-800/50 rounded-xl px-4 py-3 space-y-1.5">
+          <p className="text-red-300 text-sm font-semibold">Document भेटिएन</p>
+          <p className="text-red-400 text-xs">{deepDocError}</p>
+          <div className="text-[10px] text-zinc-600 font-mono space-y-0.5 pt-1">
+            <p>docId: {autoDocId}</p>
+            <p>collection: vault_intelligence_docs</p>
+            <p>uid: {uid ?? "null (not authenticated)"}</p>
           </div>
         </div>
       )}
