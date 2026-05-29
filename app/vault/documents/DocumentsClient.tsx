@@ -241,6 +241,38 @@ export default function DocumentsClient() {
       window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
+  // ?doc=<id>&action=extract|analyze — cockpit deep-link: scroll to card + highlight it
+  const [highlightDocId, setHighlightDocId] = useState<string | null>(null);
+  const [highlightAction, setHighlightAction] = useState<"extract" | "analyze" | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const docId  = params.get("doc");
+    const action = params.get("action") as "extract" | "analyze" | null;
+    if (docId) {
+      setHighlightDocId(docId);
+      if (action) setHighlightAction(action);
+      setViewMode("recent");
+      window.history.replaceState({}, "", window.location.pathname);
+    } else if (action) {
+      setHighlightAction(action);
+      setViewMode("recent");
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
+  // Scroll to and briefly ring the highlighted doc card once docs are loaded
+  useEffect(() => {
+    if (!highlightDocId || loading) return;
+    const el = document.getElementById(`doc-${highlightDocId}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    // Ring fades after 4 s
+    const t = setTimeout(() => setHighlightDocId(null), 4000);
+    return () => clearTimeout(t);
+  }, [highlightDocId, loading]);
+
   const [viewing,       setViewing]      = useState<IntelligenceDocument | null>(null);
   const [processingId,  setProcessingId] = useState<string | null>(null);
   const [generatingImageId, setGeneratingImageId] = useState<string | null>(null);
@@ -1724,6 +1756,7 @@ export default function DocumentsClient() {
             docs={docs}
             onRunAtomic={handleExtractAtomic}
             extractingId={extractingAtomicId}
+            atomicCountByDoc={atomicCountByDoc}
           />
         )}
 
@@ -1830,8 +1863,14 @@ export default function DocumentsClient() {
                   {/* Docs in this folder */}
                   <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {groupDocs.map(doc => (
-                      <DocumentCard
+                      <div
                         key={doc.id}
+                        id={`doc-${doc.id}`}
+                        className={highlightDocId === doc.id
+                          ? "rounded-xl ring-2 ring-cyan-400 ring-offset-2 ring-offset-zinc-950 transition-all duration-300"
+                          : ""}
+                      >
+                      <DocumentCard
                         doc={doc}
                         isProcessing={processingId === doc.id}
                         queueCount={queueCountByDoc[doc.id] ?? 0}
@@ -1865,6 +1904,7 @@ export default function DocumentsClient() {
                         atomicCostEstimate={atomicCostEstimate(doc)}
                         atomicStatusMsg={atomicJobMsg[doc.id]}
                       />
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -1875,10 +1915,93 @@ export default function DocumentsClient() {
           /* ── Lifecycle view — document update schedule ── */
           <LifecycleView docs={docs} />
         ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="space-y-4">
+
+            {/* ── Cockpit action banner: extract or analyze ── */}
+            {highlightAction === "extract" && (() => {
+              const pendingExtract = docs.filter(d =>
+                d.adminApprovalStatus === "approved" && (intelCountByDoc[d.id] ?? 0) === 0,
+              );
+              if (pendingExtract.length === 0) return null;
+              return (
+                <div className="rounded-xl border border-cyan-800/60 bg-cyan-950/20 px-4 py-3 flex items-start gap-3">
+                  <span className="text-lg shrink-0 mt-0.5">💡</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-cyan-300 text-sm font-bold">
+                      {pendingExtract.length} document{pendingExtract.length > 1 ? "" : ""} — Intelligence निकाल्न बाँकी छ
+                    </p>
+                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                      {pendingExtract.map(d => (
+                        <button
+                          key={d.id}
+                          onClick={() => {
+                            setHighlightDocId(d.id);
+                            const el = document.getElementById(`doc-${d.id}`);
+                            el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                          }}
+                          className="text-[11px] px-2 py-0.5 rounded-full bg-cyan-900/40 border border-cyan-700/60 text-cyan-300 hover:bg-cyan-800/50 transition-colors truncate max-w-[200px]"
+                        >
+                          {d.title ?? d.id}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-cyan-600 text-[10px] mt-1.5">Document card मा "Intelligence Extract" button थिच्नुहोस्।</p>
+                  </div>
+                  <button
+                    onClick={() => setHighlightAction(null)}
+                    className="text-zinc-600 hover:text-zinc-400 text-sm shrink-0 mt-0.5 transition-colors"
+                  >×</button>
+                </div>
+              );
+            })()}
+
+            {highlightAction === "analyze" && (() => {
+              const pendingAnalyze = docs.filter(d =>
+                d.processingStatus === "ready" && !d.aiSummary,
+              );
+              if (pendingAnalyze.length === 0) return null;
+              return (
+                <div className="rounded-xl border border-amber-800/60 bg-amber-950/20 px-4 py-3 flex items-start gap-3">
+                  <span className="text-lg shrink-0 mt-0.5">🤖</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-amber-300 text-sm font-bold">
+                      {pendingAnalyze.length} document — AI Analyze गर्न बाँकी
+                    </p>
+                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                      {pendingAnalyze.map(d => (
+                        <button
+                          key={d.id}
+                          onClick={() => {
+                            setHighlightDocId(d.id);
+                            const el = document.getElementById(`doc-${d.id}`);
+                            el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                          }}
+                          className="text-[11px] px-2 py-0.5 rounded-full bg-amber-900/40 border border-amber-700/60 text-amber-300 hover:bg-amber-800/50 transition-colors truncate max-w-[200px]"
+                        >
+                          {d.title ?? d.id}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-amber-600 text-[10px] mt-1.5">Document card मा "AI Analyze" button थिच्नुहोस्।</p>
+                  </div>
+                  <button
+                    onClick={() => setHighlightAction(null)}
+                    className="text-zinc-600 hover:text-zinc-400 text-sm shrink-0 mt-0.5 transition-colors"
+                  >×</button>
+                </div>
+              );
+            })()}
+
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filtered.map(doc => (
-              <DocumentCard
+              <div
                 key={doc.id}
+                id={`doc-${doc.id}`}
+                className={highlightDocId === doc.id
+                  ? "rounded-xl ring-2 ring-cyan-400 ring-offset-2 ring-offset-zinc-950 transition-all duration-300"
+                  : ""}
+              >
+              <DocumentCard
                 doc={doc}
                 isProcessing={processingId === doc.id}
                 queueCount={queueCountByDoc[doc.id] ?? 0}
@@ -1912,7 +2035,9 @@ export default function DocumentsClient() {
                 onArchive={handleArchive}
                 isArchiving={archivingId === doc.id}
               />
+              </div>
             ))}
+            </div>
           </div>
         )}
 

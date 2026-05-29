@@ -381,6 +381,19 @@ export function generateInsightsFromContext(
 
   const base = generateInsights(snap);
 
+  // Override actionHref for approved_no_extract and never_analyzed to link directly to the first doc
+  for (const ins of base) {
+    if (ins.type === "approved_no_extract" && ctx.pipeline.approvedNoExtractIds.length > 0) {
+      const ids = ctx.pipeline.approvedNoExtractIds;
+      // Always link to first doc so the page scrolls to it; banner handles the rest
+      ins.actionHref = `/vault/documents?doc=${ids[0]}&action=extract`;
+    }
+    if (ins.type === "never_analyzed" && ctx.pipeline.neverAnalyzedIds.length > 0) {
+      const ids = ctx.pipeline.neverAnalyzedIds;
+      ins.actionHref = `/vault/documents?doc=${ids[0]}&action=analyze`;
+    }
+  }
+
   // Inject source monitoring insight if there are new updates
   if (ctx.sourceMonitoring.newUpdates > 0 && base.length < MAX_INSIGHTS) {
     const sourceInsight: CTOInsight = {

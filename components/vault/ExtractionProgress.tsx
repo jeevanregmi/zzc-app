@@ -25,6 +25,7 @@ interface Props {
   onComplete?:    (recordsSaved: number) => void;
   onError?:       (msg: string) => void;
   onRetry?:       () => void;
+  onNotFound?:    () => void;  // called when job doc doesn't exist — parent should clear stale state
 }
 
 function secondsAgo(iso: string): number {
@@ -38,10 +39,11 @@ function formatSecondsAgo(secs: number): string {
   return `${Math.floor(secs / 60)} मिनेट अघि`;
 }
 
-export function ExtractionProgress({ docId, collectionName, onComplete, onError, onRetry }: Props) {
-  const [job, setJob]   = useState<ExtractionJob | null>(null);
-  const [tick, setTick] = useState(0);
-  const notifiedRef     = useRef(false);
+export function ExtractionProgress({ docId, collectionName, onComplete, onError, onRetry, onNotFound }: Props) {
+  const [job, setJob]         = useState<ExtractionJob | null>(null);
+  const [notFound, setNotFound] = useState(false);
+  const [tick, setTick]       = useState(0);
+  const notifiedRef           = useRef(false);
 
   // Tick every 5s so "last updated X seconds ago" stays fresh
   useEffect(() => {
@@ -55,7 +57,12 @@ export function ExtractionProgress({ docId, collectionName, onComplete, onError,
     const unsub = onSnapshot(
       fsDoc(db, collectionName, docId),
       snap => {
-        if (!snap.exists()) return;
+        if (!snap.exists()) {
+          setJob(null);
+          setNotFound(true);
+          return;
+        }
+        setNotFound(false);
         const data = snap.data() as Record<string, unknown>;
         setJob({ id: snap.id, ...(data as Omit<ExtractionJob, "id">) });
       },
@@ -63,6 +70,12 @@ export function ExtractionProgress({ docId, collectionName, onComplete, onError,
     );
     return unsub;
   }, [docId, collectionName]);
+
+  // Tell parent to clear stale job state when doc is confirmed gone
+  useEffect(() => {
+    if (notFound) onNotFound?.();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notFound]);
 
   // Fire callbacks exactly once
   useEffect(() => {
@@ -77,6 +90,8 @@ export function ExtractionProgress({ docId, collectionName, onComplete, onError,
   }, [job, onComplete, onError]);
 
   if (!job) {
+    // Doc confirmed not found — parent is being notified via onNotFound; render nothing
+    if (notFound) return null;
     return (
       <div className="rounded-xl bg-zinc-900/60 border border-zinc-800 px-4 py-3">
         <p className="text-cyan-400 text-xs animate-pulse">Job doc load हुँदैछ…</p>

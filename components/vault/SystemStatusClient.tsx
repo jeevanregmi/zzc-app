@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useState }    from "react";
-import Link                        from "next/link";
-import { useVaultAuth }            from "../../hooks/vault/useVaultAuth";
-import { useSourceSignals }        from "../../hooks/vault/useSourceSignals";
-import { useMonitoredSources }     from "../../hooks/vault/useMonitoredSources";
-import { useQueueItems }           from "../../hooks/vault/useQueueItems";
-import { useIntelligenceDocs }     from "../../hooks/vault/useIntelligenceDocs";
+import { useEffect, useState, useMemo } from "react";
+import Link                              from "next/link";
+import { collection, query, where, limit, getDocs } from "firebase/firestore";
+import { db }                            from "../../app/firebase";
+import { useVaultAuth }                  from "../../hooks/vault/useVaultAuth";
+import { useSourceSignals }              from "../../hooks/vault/useSourceSignals";
+import { useMonitoredSources }           from "../../hooks/vault/useMonitoredSources";
+import { useQueueItems }                 from "../../hooks/vault/useQueueItems";
+import { useIntelligenceDocs }           from "../../hooks/vault/useIntelligenceDocs";
+import { computeFullPipelineState, type PipelineHealth } from "../../lib/vault/fullPipelineState";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ProviderStatus = "configured" | "unconfigured" | "ok" | "error" | "credit_low" | "loading";
@@ -154,8 +157,11 @@ export default function SystemStatusClient() {
   const { items: queue, loading: qLoad, error: qErr } = useQueueItems(uid);
   const { docs,         loading: docLoad               } = useIntelligenceDocs(uid);
 
-  const [health, setHealth]       = useState<HealthData | null>(null);
-  const [healthErr, setHealthErr] = useState<string | null>(null);
+  const [health, setHealth]         = useState<HealthData | null>(null);
+  const [healthErr, setHealthErr]   = useState<string | null>(null);
+  const [intelCountByDoc, setIntelCountByDoc] = useState<Record<string, number>>({});
+  const [pipelineLoading, setPipelineLoading] = useState(true);
+  const [techExpanded, setTechExpanded]       = useState(false);
 
   useEffect(() => {
     fetch("/api/health")
@@ -163,6 +169,54 @@ export default function SystemStatusClient() {
       .then(setHealth)
       .catch(err => setHealthErr(`Health check failed: ${String(err)}`));
   }, []);
+
+  // Load intel counts for pipeline health summary
+  useEffect(() => {
+    if (!uid) { setPipelineLoading(false); return; }
+    getDocs(query(collection(db, "janta_intelligence"), where("ownerId", "==", uid), limit(2000)))
+      .then(snap => {
+        const map: Record<string, number> = {};
+        snap.docs.forEach(d => {
+          const srcId = d.data().sourceDocId as string | undefined;
+          if (srcId) map[srcId] = (map[srcId] ?? 0) + 1;
+        });
+        setIntelCountByDoc(map);
+      })
+      .catch(() => {})
+      .finally(() => setPipelineLoading(false));
+  }, [uid]);
+
+  const pipelineStates = useMemo(() => {
+    if (pipelineLoading || docLoad) return null;
+    return docs.map(doc => computeFullPipelineState({
+      id:                  doc.id,
+      title:               doc.title,
+      fileName:            doc.fileName,
+      processingStatus:    doc.processingStatus,
+      adminApprovalStatus: doc.adminApprovalStatus,
+      aiSummary:           doc.aiSummary,
+      downloadUrl:         doc.downloadUrl,
+      sourceUrl:           doc.sourceUrl,
+      originalSourceUrl:   doc.originalSourceUrl,
+      extractionTier:      doc.extractionTier as string | undefined,
+      atomicCompleted:     doc.atomicCompleted,
+      govFolder:           doc.govFolder,
+      uploadedAt:          doc.uploadedAt,
+      tags:                doc.tags,
+      intelCount:          intelCountByDoc[doc.id] ?? 0,
+      atomicCount:         0,
+      economyCount:        0,
+      classificationCount: 0,
+      classificationApprovedCount: 0,
+    }));
+  }, [docs, intelCountByDoc, pipelineLoading, docLoad]);
+
+  const healthTally = useMemo(() => {
+    if (!pipelineStates) return null;
+    const t: Partial<Record<PipelineHealth, number>> = {};
+    for (const s of pipelineStates) t[s.health] = (t[s.health] ?? 0) + 1;
+    return t;
+  }, [pipelineStates]);
 
   const loading = sigLoad || srcLoad || qLoad || docLoad;
 
@@ -314,14 +368,110 @@ export default function SystemStatusClient() {
 
   const errors = [sigErr, srcErr, qErr, healthErr].filter(Boolean) as string[];
 
+  const HCFG: Record<PipelineHealth, { label: string; dot: string; cls: string }> = {
+    healthy:      { label: "Pipeline पूरा",  dot: "bg-emerald-400", cls: "text-emerald-400" },
+    in_progress:  { label: "प्रक्रियामा",    dot: "bg-blue-400",    cls: "text-blue-400"    },
+    needs_action: { label: "Action चाहिन्छ", dot: "bg-amber-400",   cls: "text-amber-400"   },
+    stuck:        { label: "अड्किएको",       dot: "bg-red-400",     cls: "text-red-400"     },
+    suspect:      { label: "संदिग्ध",        dot: "bg-zinc-500",    cls: "text-zinc-500"    },
+  };
+
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-xl font-semibold text-white">System Status</h1>
-        <p className="text-sm text-zinc-500 mt-1">
-          {isOwner ? "Founder view" : "Observer view"} · Live intelligence pipeline + AI worker health
-        </p>
+
+      {/* ── Founder header ── */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-white">Vault Health</h1>
+          <p className="text-sm text-zinc-500 mt-0.5">
+            Pipeline · Infrastructure · AI Providers
+          </p>
+        </div>
+        <Link
+          href="/vault/system-cleanup"
+          className="text-xs border border-zinc-700 text-zinc-400 hover:text-white hover:border-zinc-500 rounded-lg px-3 py-1.5 transition-colors shrink-0"
+        >
+          🧹 Data Cleanup →
+        </Link>
       </div>
+
+      {/* ── Pipeline Health ── */}
+      <section>
+        <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">Document Pipeline</h2>
+        {(pipelineLoading || docLoad) ? (
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            {[1,2,3,4,5].map(i => <div key={i} className="h-20 rounded-xl bg-zinc-900 animate-pulse" />)}
+          </div>
+        ) : pipelineStates && pipelineStates.length === 0 ? (
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl px-5 py-4 flex items-center gap-3">
+            <span className="text-zinc-600 text-sm">कुनै document upload भएको छैन।</span>
+            <Link href="/vault/documents?upload=1" className="text-xs text-cyan-400 hover:text-cyan-300 underline ml-auto">
+              Document Upload गर्नुहोस् →
+            </Link>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {/* Health tally cards */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              <div className="bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3 sm:col-span-1">
+                <div className="text-2xl font-black text-white">{pipelineStates?.length ?? 0}</div>
+                <div className="text-[11px] text-zinc-500 mt-0.5">Documents</div>
+              </div>
+              {(["healthy", "needs_action", "stuck", "suspect"] as PipelineHealth[]).map(h => {
+                const count = healthTally?.[h] ?? 0;
+                const cfg   = HCFG[h];
+                return (
+                  <div key={h} className={`bg-zinc-900 border rounded-xl px-4 py-3 ${
+                    count > 0 && h !== "healthy" ? "border-zinc-700" : "border-zinc-800"
+                  }`}>
+                    <div className={`text-2xl font-black ${count > 0 ? cfg.cls : "text-zinc-700"}`}>{count}</div>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${count > 0 ? cfg.dot : "bg-zinc-800"}`} />
+                      <span className="text-[11px] text-zinc-500">{cfg.label}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Action-needed docs */}
+            {pipelineStates && pipelineStates.filter(s => s.health === "stuck" || s.health === "needs_action").length > 0 && (
+              <div className="bg-amber-950/20 border border-amber-800/30 rounded-xl px-4 py-3 space-y-1.5">
+                <p className="text-amber-400 text-xs font-semibold mb-2">Action चाहिन्छ:</p>
+                {pipelineStates
+                  .filter(s => s.health === "stuck" || s.health === "needs_action")
+                  .slice(0, 5)
+                  .map(s => (
+                    <div key={s.docId} className="flex items-start gap-2">
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 mt-1.5 ${HCFG[s.health].dot}`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-xs truncate">{s.title}</p>
+                        <p className="text-zinc-500 text-[10px]">{s.statusNp}</p>
+                      </div>
+                      <Link href={s.nextActionHref} className="text-cyan-500 text-[10px] hover:text-cyan-400 shrink-0">
+                        Fix →
+                      </Link>
+                    </div>
+                  ))
+                }
+                {pipelineStates.filter(s => s.health === "stuck" || s.health === "needs_action").length > 5 && (
+                  <Link href="/vault/system-cleanup" className="text-zinc-600 text-[10px] hover:text-zinc-400">
+                    + {pipelineStates.filter(s => s.health === "stuck" || s.health === "needs_action").length - 5} more — Data Cleanup हेर्नुहोस् →
+                  </Link>
+                )}
+              </div>
+            )}
+
+            {/* All healthy banner */}
+            {pipelineStates && healthTally && !healthTally.stuck && !healthTally.needs_action && (
+              <div className="bg-emerald-950/20 border border-emerald-800/30 rounded-xl px-4 py-3 flex items-center gap-3">
+                <span className="text-emerald-400 text-lg">✓</span>
+                <p className="text-emerald-400 text-sm">सबै documents pipeline मा OK छन्</p>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
 
       {/* Firestore errors (separate from checklist) */}
       {errors.map(e => (
@@ -484,38 +634,53 @@ export default function SystemStatusClient() {
         </div>
       </section>
 
-      {/* ── AI workers ── */}
+      {/* ── Technical Details (collapsible) ── */}
       <section>
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">
-          AI Workers
-          {health && (
-            <span className="ml-2 text-zinc-600 font-normal normal-case tracking-normal">
-              — checked {new Date(health.timestamp).toLocaleTimeString()}
-            </span>
-          )}
-        </h2>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4">
-          {AI_WORKERS.map(w => <WorkerRow key={w.name} w={w} health={health} />)}
-        </div>
-      </section>
+        <button
+          onClick={() => setTechExpanded(p => !p)}
+          className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-zinc-600 hover:text-zinc-400 transition-colors"
+        >
+          <span>{techExpanded ? "▾" : "▸"}</span>
+          Technical Details
+        </button>
 
-      {/* ── Scheduled jobs ── */}
-      <section>
-        <h2 className="text-xs font-semibold uppercase tracking-widest text-zinc-500 mb-3">Scheduled Jobs</h2>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4">
-          {[
-            { name: "update-rates.yml",          schedule: "Daily 12:15 UTC", purpose: "Scrape EPF/SSF/CIT market rates" },
-            { name: "poll-monitored-sources.yml", schedule: "Hourly :30",     purpose: "Poll active sources → SourceSignals" },
-          ].map(job => (
-            <div key={job.name} className="flex items-center justify-between py-3 border-b border-zinc-800 last:border-0">
-              <div>
-                <div className="text-sm font-mono text-zinc-200">{job.name}</div>
-                <div className="text-xs text-zinc-500">{job.purpose}</div>
+        {techExpanded && (
+          <div className="mt-4 space-y-6">
+            {/* AI workers */}
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-widest text-zinc-600 mb-3">
+                AI Workers
+                {health && (
+                  <span className="ml-2 text-zinc-700 font-normal normal-case tracking-normal">
+                    — checked {new Date(health.timestamp).toLocaleTimeString()}
+                  </span>
+                )}
+              </h3>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4">
+                {AI_WORKERS.map(w => <WorkerRow key={w.name} w={w} health={health} />)}
               </div>
-              <span className="text-xs text-zinc-400 font-mono">{job.schedule}</span>
             </div>
-          ))}
-        </div>
+
+            {/* Scheduled jobs */}
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-widest text-zinc-600 mb-3">Scheduled Jobs</h3>
+              <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4">
+                {[
+                  { name: "update-rates.yml",          schedule: "Daily 12:15 UTC", purpose: "Scrape EPF/SSF/CIT market rates" },
+                  { name: "poll-monitored-sources.yml", schedule: "Hourly :30",     purpose: "Poll active sources → SourceSignals" },
+                ].map(job => (
+                  <div key={job.name} className="flex items-center justify-between py-3 border-b border-zinc-800 last:border-0">
+                    <div>
+                      <div className="text-sm font-mono text-zinc-200">{job.name}</div>
+                      <div className="text-xs text-zinc-500">{job.purpose}</div>
+                    </div>
+                    <span className="text-xs text-zinc-400 font-mono">{job.schedule}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* ── Quick links ── */}
@@ -528,6 +693,7 @@ export default function SystemStatusClient() {
             { label: "Firebase Storage",           href: "https://console.firebase.google.com/project/zeneration-z-chautari/storage" },
             { label: "Cloudflare Pages",           href: "https://dash.cloudflare.com" },
             { label: "Admin Vault",                href: "/vault/admin" },
+            { label: "Data Cleanup",               href: "/vault/system-cleanup" },
             { label: "Content Queue",              href: "/vault/content/queue" },
           ].map(l => (
             l.href.startsWith("http") ? (

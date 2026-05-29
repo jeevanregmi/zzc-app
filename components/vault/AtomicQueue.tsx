@@ -12,6 +12,7 @@ import type { IntelligenceDocument } from "../../lib/types/documents";
 const BUDGET_KEY    = "zzc_atomic_budget_monthly";
 const SPENT_KEY     = "zzc_atomic_budget_spent";
 const SPENT_MO_KEY  = "zzc_atomic_budget_month"; // "2026-05" — resets on new month
+const DONE_KEY      = "zzc_atomic_done_v3";       // persisted set of docIds confirmed run
 
 const currentMonth = () => new Date().toISOString().slice(0, 7); // "YYYY-MM"
 
@@ -34,13 +35,26 @@ function saveBudget(monthly: number, spent: number) {
   localStorage.setItem(SPENT_MO_KEY,  currentMonth());
 }
 
-interface Props {
-  docs:           IntelligenceDocument[];
-  onRunAtomic:    (doc: IntelligenceDocument) => void;
-  extractingId?:  string | null;
+function loadDoneIds(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const raw = localStorage.getItem(DONE_KEY);
+    return raw ? new Set(JSON.parse(raw) as string[]) : new Set();
+  } catch { return new Set(); }
 }
 
-export function AtomicQueue({ docs, onRunAtomic, extractingId }: Props) {
+function saveDoneIds(ids: Set<string>) {
+  try { localStorage.setItem(DONE_KEY, JSON.stringify([...ids])); } catch { /* ignore */ }
+}
+
+interface Props {
+  docs:              IntelligenceDocument[];
+  onRunAtomic:       (doc: IntelligenceDocument) => void;
+  extractingId?:     string | null;
+  atomicCountByDoc?: Record<string, number>;  // Firestore-sourced counts — truest signal
+}
+
+export function AtomicQueue({ docs, onRunAtomic, extractingId, atomicCountByDoc = {} }: Props) {
   const [open,           setOpen]           = useState(true);
   const [confirmed,      setConfirmed]      = useState(false);
   const [queueRunning,   setQueueRunning]   = useState(false);
@@ -59,6 +73,8 @@ export function AtomicQueue({ docs, onRunAtomic, extractingId }: Props) {
     setBudgetMonthly(monthly);
     setBudgetSpent(spent);
     setBudgetInput(monthly.toString());
+    // Restore persisted done IDs from previous sessions
+    setDoneIds(loadDoneIds());
   }, []);
 
   const queue = useMemo(() => buildAtomicQueue(
@@ -82,17 +98,29 @@ export function AtomicQueue({ docs, onRunAtomic, extractingId }: Props) {
     }))
   ), [docs]);
 
-  if (queue.items.length === 0) return null;
+  // Exclude docs that already have Firestore atomic records OR were marked done in this session
+  const alreadyDone = (id: string) =>
+    doneIds.has(id) || (atomicCountByDoc[id] ?? 0) > 0;
 
-  const pending       = queue.items.filter(i => !doneIds.has(i.docId));
+  const visibleQueue = useMemo(
+    () => ({ ...queue, items: queue.items.filter(i => !alreadyDone(i.docId)) }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [queue, doneIds, atomicCountByDoc],
+  );
+
+  if (visibleQueue.items.length === 0) return null;
+
+  const pending       = visibleQueue.items;
   const pendingCost   = pending.reduce((s, i) => s + i.estimatedCostUSD, 0);
   const budgetLeft    = Math.max(0, budgetMonthly - budgetSpent);
   const willExceed    = pendingCost > budgetLeft;
+  const excessUSD     = pendingCost - budgetLeft;
 
   async function runQueue() {
     setQueueRunning(true);
     setQueueTotal(pending.length);
     setQueueProgress(0);
+    let runningSpent = budgetSpent;
 
     for (const item of pending) {
       const doc = docs.find(d => d.id === item.docId);
@@ -109,12 +137,16 @@ export function AtomicQueue({ docs, onRunAtomic, extractingId }: Props) {
         }, 500);
       });
 
-      // Track spend
-      const newSpent = budgetSpent + item.estimatedCostUSD;
-      setBudgetSpent(newSpent);
-      saveBudget(budgetMonthly, newSpent);
+      // Track spend and persist done state
+      runningSpent += item.estimatedCostUSD;
+      setBudgetSpent(runningSpent);
+      saveBudget(budgetMonthly, runningSpent);
 
-      setDoneIds(prev => new Set([...prev, item.docId]));
+      setDoneIds(prev => {
+        const next = new Set([...prev, item.docId]);
+        saveDoneIds(next);
+        return next;
+      });
       setQueueProgress(p => p + 1);
     }
 
@@ -144,15 +176,16 @@ export function AtomicQueue({ docs, onRunAtomic, extractingId }: Props) {
           <div className="text-left">
             <p className="text-amber-200 font-black text-sm">Recommended Atomic Queue</p>
             <p className="text-amber-600/70 text-xs mt-0.5">
-              {queue.items.length} document{queue.items.length !== 1 ? "s" : ""} atomic extraction को लागि ready
-              {queue.foundationCount > 0 && ` · ${queue.foundationCount} Foundation`}
-              {queue.nationalCount > 0 && ` · ${queue.nationalCount} National`}
+              {visibleQueue.items.length} document{visibleQueue.items.length !== 1 ? "s" : ""} बाँकी
+              {queue.items.length > visibleQueue.items.length && (
+                <span className="text-green-600 ml-1">· {queue.items.length - visibleQueue.items.length} already done ✓</span>
+              )}
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <span className="text-amber-400 font-black text-sm">
-            {formatCost(queue.totalCostUSD)} अनुमानित
+            {formatCost(pendingCost)} अनुमानित
           </span>
           <span className="text-zinc-600 text-xs">{open ? "↑" : "↓"}</span>
         </div>
@@ -200,9 +233,9 @@ export function AtomicQueue({ docs, onRunAtomic, extractingId }: Props) {
 
           {/* Queue items */}
           <div className="px-4 py-3 space-y-2">
-            {queue.items.map((item, idx) => {
+            {visibleQueue.items.map((item, idx) => {
               const meta   = KNOWLEDGE_TIER_META[item.tier];
-              const done   = doneIds.has(item.docId);
+              const done   = alreadyDone(item.docId);
               const active = extractingId === item.docId;
               const valueRatio = item.estimatedCostUSD > 0
                 ? Math.round(item.knowledgeGainScore / item.estimatedCostUSD)
@@ -298,12 +331,16 @@ export function AtomicQueue({ docs, onRunAtomic, extractingId }: Props) {
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-zinc-400 text-xs">
-                    <span className="text-white font-bold">{pending.length} document</span> — अनुमानित खर्च{" "}
-                    <span className={`font-bold ${willExceed ? "text-red-400" : "text-amber-400"}`}>
+                    <span className="text-white font-bold">{pending.length} document</span>
+                    {" — "}<span className={`font-bold ${willExceed ? "text-red-400" : "text-amber-400"}`}>
                       {formatCost(pendingCost)}
                     </span>
-                    {willExceed && (
-                      <span className="text-red-400 font-bold"> — Budget exceed हुन्छ!</span>
+                    {willExceed ? (
+                      <span className="text-red-400 font-bold">
+                        {" "}— Budget {formatCost(excessUSD)} बढी हुन्छ
+                      </span>
+                    ) : (
+                      <span className="text-green-500 font-bold"> — Budget भित्र छ ✓</span>
                     )}
                   </p>
                   <p className="text-zinc-600 text-[10px] mt-0.5">
@@ -330,7 +367,9 @@ export function AtomicQueue({ docs, onRunAtomic, extractingId }: Props) {
                     <p>• अनुमानित खर्च: <span className={`font-bold ${willExceed ? "text-red-400" : "text-amber-300"}`}>
                       {formatCost(pendingCost)}
                     </span>
-                    {willExceed && <span className="text-red-400"> — monthly budget (${budgetMonthly}) exceed</span>}
+                    {willExceed
+                      ? <span className="text-red-400"> — monthly budget ${budgetMonthly} भन्दा {formatCost(excessUSD)} बढी</span>
+                      : <span className="text-green-500"> — budget भित्र ✓</span>}
                     </p>
                     <p className="text-zinc-500">Browser बन्द नगर्नुहोस् — process complete हुन्जेल।</p>
                   </div>

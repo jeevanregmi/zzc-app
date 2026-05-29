@@ -76,9 +76,10 @@ const ADVANCED_GROUPS = [
   {
     label: "System",
     items: [
-      { href: "/vault/system",   icon: "◉", label: "System"    },
-      { href: "/vault/deploy",   icon: "▶", label: "Deploy"    },
-      { href: "/vault/ai-queue", icon: "⚡", label: "AI Queue" },
+      { href: "/vault/system",         icon: "◉", label: "System"      },
+      { href: "/vault/system-cleanup", icon: "🧹", label: "Data Cleanup" },
+      { href: "/vault/deploy",         icon: "▶", label: "Deploy"       },
+      { href: "/vault/ai-queue",       icon: "⚡", label: "AI Queue"    },
     ],
   },
 ];

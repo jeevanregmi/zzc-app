@@ -454,6 +454,14 @@ export default function EconomyVaultClient() {
                           setExtracting(null);
                           setModal({ doc, fiscalYear: "", nepaliYear: "", docType: "budget_speech" });
                         }}
+                        onNotFound={() => {
+                          setJobStates(prev => {
+                            const next = { ...prev };
+                            delete next[doc.id];
+                            return next;
+                          });
+                          setExtracting(curr => curr === doc.id ? null : curr);
+                        }}
                       />
                     </div>
                   )}

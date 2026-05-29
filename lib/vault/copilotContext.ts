@@ -20,15 +20,17 @@ import {
 // ─── Sub-types ────────────────────────────────────────────────────────────────
 
 export interface PipelineState {
-  totalDocs:         number;
-  pendingAI:         number;   // processingStatus === "ready" and no aiSummary
-  pendingReview:     number;   // ai_ready + pending_review
-  approved:          number;
-  pendingExtract:    number;   // approved + 0 intel records
-  aiPaused:          number;   // billing/quota fail — document safe
-  recentDocTitles:   string[]; // last 3 uploaded (for context)
-  approvedTitles:    string[];
-  neverAnalyzedTitles: string[];
+  totalDocs:            number;
+  pendingAI:            number;   // processingStatus === "ready" and no aiSummary
+  pendingReview:        number;   // ai_ready + pending_review
+  approved:             number;
+  pendingExtract:       number;   // approved + 0 intel records
+  aiPaused:             number;   // billing/quota fail — document safe
+  recentDocTitles:      string[]; // last 3 uploaded (for context)
+  approvedTitles:       string[];
+  approvedNoExtractIds: string[]; // first 3 doc IDs that are approved but have 0 intel — for direct cockpit links
+  neverAnalyzedTitles:  string[];
+  neverAnalyzedIds:     string[]; // first 3 doc IDs that have never been analyzed
 }
 
 export interface IntelligenceState {
@@ -203,15 +205,17 @@ export async function buildCopilotContext(
   const title = (d: DocRow) => String(d.title ?? d.fileName ?? "Untitled");
 
   const pipeline: PipelineState = {
-    totalDocs:           docs.length,
-    pendingAI:           pendingAI.length,
-    pendingReview:       pendingRev.length,
-    approved:            approved.length,
-    pendingExtract:      pendingExtract.length,
-    aiPaused:            paused.length,
-    recentDocTitles:     docs.slice(-3).map(title).reverse(),
-    approvedTitles:      approved.slice(0, 3).map(title),
-    neverAnalyzedTitles: pendingAI.slice(0, 2).map(title),
+    totalDocs:            docs.length,
+    pendingAI:            pendingAI.length,
+    pendingReview:        pendingRev.length,
+    approved:             approved.length,
+    pendingExtract:       pendingExtract.length,
+    aiPaused:             paused.length,
+    recentDocTitles:      docs.slice(-3).map(title).reverse(),
+    approvedTitles:       approved.slice(0, 3).map(title),
+    approvedNoExtractIds: pendingExtract.slice(0, 3).map(d => d.id),
+    neverAnalyzedTitles:  pendingAI.slice(0, 2).map(title),
+    neverAnalyzedIds:     pendingAI.slice(0, 3).map(d => d.id),
   };
 
   // ── Intelligence state ─────────────────────────────────────────────────────
