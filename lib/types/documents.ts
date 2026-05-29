@@ -1,5 +1,26 @@
 export type DocFileType = "pdf" | "docx" | "md" | "txt" | "image" | "other";
 
+/**
+ * Knowledge priority tier — determines atomic extraction priority order.
+ * Set by the knowledge priority classifier (rule-based, never manual per-doc).
+ *
+ *   foundation   — Constitution, core laws, sacred texts (Gita, Upanishads)
+ *                  These are permanent infrastructure. Always atomic-recommended.
+ *   national     — CIAA, NHRC, Auditor General, NRB, National Budget, PSC
+ *                  Annual intelligence assets. Atomic-recommended.
+ *   strategic    — Sectoral reports, commission reports, research
+ *                  Important but not annual infrastructure.
+ *   operational  — Ministry routine reports, local governance
+ *                  Normal documents. Atomic only if explicitly requested.
+ *   archive      — Low-value historical. No atomic unless founder approves.
+ */
+export type KnowledgeTier =
+  | "foundation"
+  | "national"
+  | "strategic"
+  | "operational"
+  | "archive";
+
 /** Official sources = NRB, Parliament, MoF, EPF, SSF, SEBON, IRD */
 export type SourceType = "official" | "unofficial" | "research" | "unknown";
 
@@ -196,6 +217,14 @@ export interface IntelligenceDocument {
   // Once set, this document's identity is anchored to the canonical record.
   canonicalId?:        string;   // canonical_documents doc ID
   contentHash?:        string;   // SHA-256 of raw file content (for exact dedup)
+  // ── Knowledge Priority — atomic extraction queue ──────────────────────────
+  // Set by lib/vault/knowledgePriority.ts classifier (rule-based, instant).
+  // Foundation + National documents are auto-recommended for Tier 2 extraction.
+  knowledgeTier?:        KnowledgeTier;
+  knowledgeValueScore?:  number;   // 0-100 — priority score from classifier
+  atomicRecommended?:    boolean;  // true = classifier says this doc needs Tier 2
+  atomicCompleted?:      boolean;  // true = Tier 2 has been run (also readable from extractionTier === "atomic")
+
   // ── Metadata ──────────────────────────────────────────────────────────────
   pageCount?:          number;
   language?:           string;

@@ -29,6 +29,7 @@ import {
 } from "../../../lib/vault/lifecycleHelpers";
 import { DocumentLifecycleCard } from "../../../components/vault/documents/DocumentLifecycleCard";
 import { WorkflowGuide, DOC_INTEL_STEPS, docIntelStep } from "../../../components/vault/WorkflowGuide";
+import { AtomicQueue } from "../../../components/vault/AtomicQueue";
 import type { QueueContentType, QueuePlatform } from "../../../lib/types/queue";
 
 // ── Lifecycle View ────────────────────────────────────────────────────────────
@@ -1590,6 +1591,15 @@ export default function DocumentsClient() {
             </div>
           )}
         </div>
+
+        {/* Atomic Intelligence Queue — recommended extraction order */}
+        {!loading && docs.length > 0 && (
+          <AtomicQueue
+            docs={docs}
+            onRunAtomic={handleExtractAtomic}
+            extractingId={extractingAtomicId}
+          />
+        )}
 
         {/* Document grid */}
         {loading ? (

@@ -6,6 +6,7 @@ import { LearnTip } from "../LearnTip";
 import type { IntelligenceDocument, AdminApprovalStatus, SourceType } from "../../../lib/types/documents";
 import { EXTRACTION_TIER_LABELS, EXTRACTION_TIER_BADGE } from "../../../lib/types/extraction-pipeline";
 import type { ExtractionTier } from "../../../lib/types/extraction-pipeline";
+import { classifyDocument, KNOWLEDGE_TIER_META } from "../../../lib/vault/knowledgePriority";
 import { TrustBadge }  from "../TrustBadge";
 import { trustFromDoc } from "../../../lib/intelligence/trust-score";
 
@@ -119,11 +120,11 @@ const DOC_ACTIONS: DocActionDef[] = [
   {
     id:       "deepintel",
     icon:     "🏛️",
-    label:    "Intelligence Extract",
+    label:    "Intelligence Extract (Tier 1.5 — संरचित)",
     color:    "border-indigo-700 text-indigo-300",
     bgColor:  "bg-indigo-950/30",
-    aiSees:   "doc.ocrText — paragraph by paragraph scan। AI ले document लाई chunks मा divide गर्छ र प्रत्येक chunk मा trackable commitments खोज्छ।",
-    aiThinks: "THINKING PATTERN (सबभन्दा sophisticated): Document = government accountability source। AI ले सोच्छ: 'यो budget speech मा 'शिक्षामा ५ अर्ब' भनेको छ → यो एउटा budget_target record हो। Constitutional ref: धारा ३१ (शिक्षाको हक)। Implementation status: announced। Measurable: yes। Timeline: fiscal year 2081/82।' प्रत्येक record future मा track हुन्छ — fulfilled वा unfulfilled।",
+    aiSees:   "doc.ocrText — chunk by chunk scan (Tier 1.5 Structured Intelligence)। AI ले document लाई 14,000 character chunks मा divide गर्छ र प्रत्येक chunk बाट trackable commitments extract गर्छ। NOTE: यो page-level extraction होइन — page number र verbatim evidence को लागि Tier 2 Atomic Extract चाहिन्छ।",
+    aiThinks: "THINKING PATTERN (Tier 1.5 — Structured): Document = government accountability source। AI ले सोच्छ: 'यो budget speech मा शिक्षामा ५ अर्ब भनेको छ → यो एउटा budget_target record हो। Constitutional ref: धारा ३१। Implementation status: announced। Measurable: yes।' प्रत्येक record future मा track हुन्छ। तर page number र verbatim text Tier 1.5 मा store हुँदैन — त्यसको लागि Atomic Extract (Tier 2) चाहिन्छ।",
     creates:  [
       "janta_intelligence → multiple IntelligenceRecord documents",
       "Types: promise, budget_target, project, institution, reform, social_program",
@@ -404,6 +405,13 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
   const tier           = (doc.extractionTier ?? "none") as ExtractionTier;
   const tierMeta       = EXTRACTION_TIER_LABELS[tier];
   const tierBadge      = EXTRACTION_TIER_BADGE[tier];
+  const knowledgeTier  = doc.knowledgeTier ?? classifyDocument({
+    title: doc.title, fileName: doc.fileName, sourceAuthority: doc.sourceAuthority,
+    institutionName: doc.institutionName, govFolder: doc.govFolder,
+    sourceType: doc.sourceType, tags: doc.tags, category: doc.category,
+    description: doc.description,
+  }).tier;
+  const kMeta          = KNOWLEDGE_TIER_META[knowledgeTier];
 
   // Detect stuck: Firestore says processing_ai but this browser session isn't the one running it
   const isStuck = doc.processingStatus === "processing_ai" && !isProcessing;
@@ -434,12 +442,19 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
           ) : (
             <span className={`text-xs px-2 py-0.5 rounded-full ${status.cls}`}>{status.label}</span>
           )}
-          {/* Extraction tier — always visible, honest label */}
+          {/* Extraction tier — honest label (never says "deep" unless atomic) */}
           <span
             title={tierMeta.desc}
             className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${tierBadge.bg} ${tierBadge.color} ${tierBadge.border}`}
           >
             {tierMeta.np}
+          </span>
+          {/* Knowledge priority tier — what kind of intelligence asset this is */}
+          <span
+            title={`Knowledge Priority: ${kMeta.en}`}
+            className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${kMeta.bg} ${kMeta.color} ${kMeta.border}`}
+          >
+            {kMeta.np}
           </span>
           {doc.processingStatus === "ai_ready" && <TrustBadge trust={trust} />}
         </div>
