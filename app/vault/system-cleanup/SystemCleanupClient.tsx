@@ -86,6 +86,92 @@ const FILTER_LABELS: Record<FilterMode, string> = {
 const safe = <T,>(p: Promise<T>, fb: T): Promise<T> =>
   p.catch(e => { console.warn("[system-cleanup] read failed:", e?.code ?? e); return fb; });
 
+// ── Constitution Conflict Banner ───────────────────────────────────────────────
+
+function ConstitutionConflictBanner({
+  myCount,
+  peerCounts,
+}: {
+  myCount:    number;
+  peerCounts: number[];
+}) {
+  const maxCount   = Math.max(myCount, ...peerCounts);
+  const isCanonical = myCount === maxCount;
+
+  return (
+    <div className="mt-2 rounded-xl border border-red-900/40 bg-red-950/10 px-4 py-3 space-y-3">
+      {/* Header */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-red-400 text-[11px] font-bold">⚡ Constitution Source Conflict</span>
+        <span className="text-zinc-600 text-[10px]">
+          दुबैमा Constitution records छन् — पहिले Canonical Review चाहिन्छ
+        </span>
+      </div>
+
+      {/* Canonical verdict */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className={`text-[11px] border rounded-full px-2.5 py-1 font-semibold ${
+          isCanonical
+            ? "border-emerald-800/60 bg-emerald-950/20 text-emerald-400"
+            : "border-zinc-700 bg-zinc-900/50 text-zinc-500"
+        }`}>
+          {isCanonical ? "✓ Canonical Candidate" : "Duplicate Candidate"} — Const {myCount}
+        </span>
+        {peerCounts.map((pc, i) => (
+          <span key={i} className={`text-[11px] border rounded-full px-2.5 py-1 ${
+            !isCanonical && pc === maxCount
+              ? "border-emerald-800/60 bg-emerald-950/20 text-emerald-400"
+              : "border-zinc-700 bg-zinc-900/50 text-zinc-500"
+          }`}>
+            Peer — Const {pc}
+          </span>
+        ))}
+      </div>
+
+      {/* Why counts differ */}
+      <div className="rounded-lg bg-zinc-900/60 border border-zinc-800/50 px-3 py-2 space-y-1">
+        <p className="text-zinc-500 text-[10px] font-medium">किन count फरक छ?</p>
+        <p className="text-zinc-600 text-[10px] leading-relaxed">
+          एउटै PDF बाट अलग-अलग batch size वा AI run मा Constitution extraction भयो।
+          {isCanonical
+            ? ` यो document (${myCount} records) बढी complete छ — Canonical रूपमा राख्नुहोस्।`
+            : ` यो document (${myCount} records) कम complete छ — Archive candidate।`}
+        </p>
+      </div>
+
+      {/* Archive safety note */}
+      <div className="rounded-lg bg-sky-950/20 border border-sky-900/30 px-3 py-2">
+        <p className="text-sky-400 text-[10px] font-semibold">✅ Archive safe छ — Constitution records हट्दैन</p>
+        <p className="text-sky-700 text-[10px] mt-0.5 leading-relaxed">
+          Archive action ले केवल Intelligence र Relationship records हटाउँछ।
+          Constitution framework records सधैं safe रहन्छन् र Constitution Tree मा देखिन्छन्।
+        </p>
+      </div>
+
+      {/* Safe workflow */}
+      <div className="space-y-1.5 pt-0.5">
+        <p className="text-zinc-600 text-[10px] font-semibold uppercase tracking-wide">Safe Consolidation Workflow</p>
+        {[
+          { done: true,  text: "दुबै राख्नुहोस् — अहिले नछुनुहोस्" },
+          { done: false, text: "▼ Layer map खोलेर child records compare गर्नुहोस्" },
+          { done: false, text: `बढी records भएको (Const ${maxCount}) लाई Canonical छान्नुहोस्` },
+          { done: false, text: isCanonical
+              ? "यो Canonical — राख्नुहोस्, Delete/Archive नगर्नुहोस्"
+              : "यो Duplicate Candidate — Archive गर्न सकिन्छ (Constitution safe रहन्छ)" },
+          { done: false, text: "Constitution Tree मा दुबैको content compare गर्नुहोस् (/vault/constitution)" },
+        ].map(({ done, text }, i) => (
+          <div key={i} className="flex items-start gap-2 text-[10px]">
+            <span className={`shrink-0 font-mono font-bold ${done ? "text-emerald-600" : "text-zinc-700"}`}>
+              {i + 1}.
+            </span>
+            <span className={done ? "text-zinc-400" : "text-zinc-500 leading-relaxed"}>{text}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Consolidation Copilot ──────────────────────────────────────────────────────
 
 const SEVERITY_CFG = {
@@ -169,12 +255,14 @@ function ImpactPreviewModal({
   doc,
   action,
   counts,
+  constConflict,
   onConfirm,
   onClose,
 }: {
   doc: IntelligenceDocument;
   action: "archive" | "delete";
   counts: DocCounts;
+  constConflict?: boolean;
   onConfirm: () => void;
   onClose: () => void;
 }) {
@@ -233,6 +321,17 @@ function ImpactPreviewModal({
             <p key={s} className="text-xs text-emerald-600">✓ {s}</p>
           ))}
         </div>
+
+        {/* Constitution conflict + archive safety note */}
+        {constConflict && isArchive && (
+          <div className="bg-sky-950/30 border border-sky-800/50 rounded-xl px-4 py-2.5 space-y-1">
+            <p className="text-sky-400 text-xs font-semibold">✅ Constitution records safe रहन्छन्</p>
+            <p className="text-sky-700 text-[10px] leading-relaxed">
+              Archive ले केवल Intelligence र Relationship records हटाउँछ।
+              Constitutional framework records हट्दैन — Constitution Tree मा देखिन्छ।
+            </p>
+          </div>
+        )}
 
         {!isArchive && (
           <div className="bg-red-950/40 border border-red-800/60 rounded-xl px-4 py-2.5">
@@ -395,14 +494,50 @@ export default function SystemCleanupClient() {
     return m;
   }, [duplicateGroups]);
 
+  // ── Constitution source conflict detection ─────────────────────────────────
+  // A conflict = 2+ docs in the same dup group BOTH have constitutionalCount > 0.
+  // These need a different workflow (canonical review) before archive/delete.
+
+  const constConflictMap = useMemo(() => {
+    const m = new Map<string, { peerIds: string[]; myCount: number; peerCounts: number[] }>();
+    if (countsLoading) return m;
+    duplicateGroups.forEach(docIds => {
+      const withConst = docIds.filter(id => (counts[id] ?? EMPTY_COUNTS).constitutionalCount > 0);
+      if (withConst.length < 2) return;
+      withConst.forEach(id => {
+        const peers = withConst.filter(pid => pid !== id);
+        m.set(id, {
+          peerIds:    peers,
+          myCount:    (counts[id] ?? EMPTY_COUNTS).constitutionalCount,
+          peerCounts: peers.map(pid => (counts[pid] ?? EMPTY_COUNTS).constitutionalCount),
+        });
+      });
+    });
+    return m;
+  }, [duplicateGroups, counts, countsLoading]);
+
+  const constConflictDocIds = useMemo(() => new Set(constConflictMap.keys()), [constConflictMap]);
+
   // ── Consolidation groups (auto-computed) ───────────────────────────────────
 
   const consolidationGroups = useMemo((): ConsolidationGroup[] => {
     if (pipelineStates.length === 0) return [];
     const groups: ConsolidationGroup[] = [];
 
-    // 1. Duplicates
-    const dupDocIds = Array.from(docDupKey.keys());
+    // 0. Constitution Source Conflicts — highest priority (before regular duplicates)
+    const constConflictIds = Array.from(constConflictDocIds);
+    if (constConflictIds.length > 0) {
+      groups.push({
+        key: "const_conflict", icon: "⚡", severity: "critical",
+        titleNp: `${constConflictIds.length} Documents — Constitution Source Conflict`,
+        whyNp: "यी duplicate documents दुबैमा constitutional framework records छन्। साधारण delete वा archive unsafe छ — पहिले कुन document canonical source हो छान्नु पर्छ।",
+        recommendNp: "बढी records भएको document Canonical राख्नुहोस्। कम records भएको Archive गर्नुहोस् — Delete नगर्नुहोस्।",
+        docIds: constConflictIds,
+      });
+    }
+
+    // 1. Regular duplicates (excluding const-conflict docs which have their own group)
+    const dupDocIds = Array.from(docDupKey.keys()).filter(id => !constConflictDocIds.has(id));
     if (dupDocIds.length > 0) {
       groups.push({
         key: "duplicates", icon: "🔁", severity: "critical",
@@ -620,6 +755,7 @@ export default function SystemCleanupClient() {
           doc={impactDoc}
           action={impactAction}
           counts={counts[impactDoc.id] ?? EMPTY_COUNTS}
+          constConflict={constConflictMap.has(impactDoc.id)}
           onConfirm={() => {
             if (impactAction === "archive") handleArchive(impactDoc);
             else handleDelete(impactDoc);
@@ -754,12 +890,14 @@ export default function SystemCleanupClient() {
               const suggestion = overrides[state.docId] ?? state.cleanupSuggestion;
               const sCfg       = CLEANUP_CONFIG[suggestion];
               const isActing   = actionLoading === state.docId;
-              const wasDeleted = overrides[state.docId] === "delete";
-              const isKept     = overrides[state.docId] === "keep";
-              const c          = counts[state.docId] ?? EMPTY_COUNTS;
-              const isDup      = docDupKey.has(state.docId);
-              const showLineage= expandedLineage === state.docId;
-              const lineage    = lineageMap[state.docId];
+              const wasDeleted     = overrides[state.docId] === "delete";
+              const isKept         = overrides[state.docId] === "keep";
+              const c              = counts[state.docId] ?? EMPTY_COUNTS;
+              const isDup          = docDupKey.has(state.docId);
+              const isConstConflict= constConflictMap.has(state.docId);
+              const conflictInfo   = constConflictMap.get(state.docId);
+              const showLineage    = expandedLineage === state.docId;
+              const lineage        = lineageMap[state.docId];
 
               if (wasDeleted) return null;
 
@@ -779,7 +917,11 @@ export default function SystemCleanupClient() {
                       <div className="flex items-start gap-2 flex-wrap">
                         <span className="text-white text-sm font-bold truncate flex-1">{state.title}</span>
                         <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
-                          {isDup && (
+                          {isConstConflict ? (
+                            <span className="text-[10px] border border-red-800/60 bg-red-950/20 text-red-400 rounded-full px-2 py-0.5">
+                              ⚡ Const Conflict
+                            </span>
+                          ) : isDup && (
                             <span className="text-[10px] border border-amber-800/60 bg-amber-950/20 text-amber-400 rounded-full px-2 py-0.5">
                               duplicate
                             </span>
@@ -809,6 +951,14 @@ export default function SystemCleanupClient() {
                         <p className="text-zinc-500 text-[11px] mt-1 leading-relaxed">
                           💡 {lineage.recommendation}
                         </p>
+                      )}
+
+                      {/* Constitution conflict banner */}
+                      {isConstConflict && conflictInfo && (
+                        <ConstitutionConflictBanner
+                          myCount={conflictInfo.myCount}
+                          peerCounts={conflictInfo.peerCounts}
+                        />
                       )}
 
                       {/* Counts row */}
@@ -920,16 +1070,25 @@ export default function SystemCleanupClient() {
                         cls="border-amber-800/60 text-amber-500 hover:bg-amber-900/30"
                         label="Reset" />
 
-                      {/* Delete */}
-                      <ActionButton
-                        onClick={() => {
-                          if (!rawDoc) return;
-                          setImpactDoc(rawDoc);
-                          setImpactAction("delete");
-                        }}
-                        disabled={isActing || !rawDoc}
-                        cls="border-red-900/60 text-red-500 hover:bg-red-950/40"
-                        label="Delete" danger />
+                      {/* Delete — blocked on const-conflict docs */}
+                      {isConstConflict ? (
+                        <span
+                          title="Constitution records छन् — Delete unsafe। Archive मात्र।"
+                          className="text-[10px] border border-zinc-800/40 text-zinc-700 rounded-lg px-2.5 py-1 cursor-not-allowed select-none"
+                        >
+                          Delete 🔒
+                        </span>
+                      ) : (
+                        <ActionButton
+                          onClick={() => {
+                            if (!rawDoc) return;
+                            setImpactDoc(rawDoc);
+                            setImpactAction("delete");
+                          }}
+                          disabled={isActing || !rawDoc}
+                          cls="border-red-900/60 text-red-500 hover:bg-red-950/40"
+                          label="Delete" danger />
+                      )}
                     </div>
                   </div>
                 </div>
@@ -947,6 +1106,7 @@ export default function SystemCleanupClient() {
             <p><span className="text-amber-500 font-bold">Reset</span> — AI analysis हट्छ, document फेरि pipeline मा जान तयार</p>
             <p><span className="text-red-500 font-bold">Delete</span> — Firestore बाट सबै records हट्छन् (R2 file manually delete गर्नुहोस्)</p>
             <p><span className="text-zinc-400 font-bold">▼ Layer</span> — Data layers, tier, safety, र system reasoning हेर्नुहोस्</p>
+            <p><span className="text-red-500 font-bold">⚡ Const Conflict</span> — दुबैमा Constitution records छन् — Archive safe, Delete blocked। Canonical छानेपछि duplicate Archive गर्नुहोस्।</p>
           </div>
         )}
       </div>
