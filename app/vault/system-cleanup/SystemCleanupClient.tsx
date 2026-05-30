@@ -4,7 +4,7 @@ import { useEffect, useState, useMemo }        from "react";
 import Link                                     from "next/link";
 import {
   collection, query, where, limit, getDocs,
-  deleteDoc, updateDoc, doc as firestoreDoc,
+  deleteDoc, updateDoc, addDoc, doc as firestoreDoc,
 } from "firebase/firestore";
 import { db }                                   from "../../firebase";
 import { useVaultAuth }                         from "../../../hooks/vault/useVaultAuth";
@@ -86,14 +86,150 @@ const FILTER_LABELS: Record<FilterMode, string> = {
 const safe = <T,>(p: Promise<T>, fb: T): Promise<T> =>
   p.catch(e => { console.warn("[system-cleanup] read failed:", e?.code ?? e); return fb; });
 
+// ── Merge Preview Modal ────────────────────────────────────────────────────────
+// Before archiving a duplicate that has child records, offer to re-link those
+// records to the canonical document. Zero data loss — audit trail preserved.
+
+function MergePreviewModal({
+  duplicateDoc,
+  canonicalDoc,
+  duplicateCounts,
+  canonicalCounts,
+  merging,
+  onMerge,
+  onClose,
+}: {
+  duplicateDoc:    IntelligenceDocument;
+  canonicalDoc:    IntelligenceDocument;
+  duplicateCounts: DocCounts;
+  canonicalCounts: DocCounts;
+  merging:         boolean;
+  onMerge:         () => void;
+  onClose:         () => void;
+}) {
+  const dc = duplicateCounts;
+  const cc = canonicalCounts;
+  const totalMoving = dc.intelCount + dc.relCount + dc.economyCount + dc.promiseCount;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+      <div className="bg-zinc-950 border border-zinc-800 rounded-2xl p-6 max-w-lg w-full space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+
+        {/* Header */}
+        <div className="flex items-start gap-3">
+          <span className="text-2xl shrink-0">🔀</span>
+          <div>
+            <p className="text-white font-black text-base">Merge Preview</p>
+            <p className="text-zinc-500 text-xs mt-0.5">
+              Duplicate को records Canonical मा move गर्नुहोस् — data loss हुँदैन
+            </p>
+          </div>
+        </div>
+
+        {/* Doc labels */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 px-3 py-2.5">
+            <p className="text-[10px] text-zinc-600 uppercase tracking-wide">Duplicate (Archive हुन्छ)</p>
+            <p className="text-zinc-300 text-xs font-medium mt-1 leading-tight">{duplicateDoc.title}</p>
+            <p className="text-zinc-600 text-[10px] mt-1">Const {dc.constitutionalCount}</p>
+          </div>
+          <div className="rounded-xl border border-emerald-800/40 bg-emerald-950/10 px-3 py-2.5">
+            <p className="text-[10px] text-emerald-600 uppercase tracking-wide">Canonical (राख्नुहोस्)</p>
+            <p className="text-zinc-300 text-xs font-medium mt-1 leading-tight">{canonicalDoc.title}</p>
+            <p className="text-zinc-600 text-[10px] mt-1">Const {cc.constitutionalCount}</p>
+          </div>
+        </div>
+
+        {/* What moves */}
+        {totalMoving > 0 ? (
+          <div className="space-y-1.5">
+            <p className="text-[10px] text-zinc-600 uppercase tracking-wide">Canonical मा re-link हुने records:</p>
+            {dc.intelCount > 0 && (
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-zinc-500">Intelligence records</span>
+                <span className="font-bold font-mono text-blue-400">+{dc.intelCount}</span>
+              </div>
+            )}
+            {dc.relCount > 0 && (
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-zinc-500">Relationship records</span>
+                <span className="font-bold font-mono text-cyan-400">+{dc.relCount}</span>
+              </div>
+            )}
+            {dc.economyCount > 0 && (
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-zinc-500">Economy atoms</span>
+                <span className="font-bold font-mono text-amber-400">+{dc.economyCount}</span>
+              </div>
+            )}
+            {dc.promiseCount > 0 && (
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-zinc-500">Promise atoms</span>
+                <span className="font-bold font-mono text-emerald-400">+{dc.promiseCount}</span>
+              </div>
+            )}
+            <p className="text-zinc-700 text-[10px] pt-1">
+              Records copied हुँदैनन् — sourceDocId field update मात्र हुन्छ (originalSourceDocId audit trail रहन्छ)
+            </p>
+          </div>
+        ) : (
+          <p className="text-zinc-600 text-xs">
+            Duplicate मा कुनै child records छैनन् — directly archive गर्न सकिन्छ।
+          </p>
+        )}
+
+        {/* What stays safe */}
+        <div className="rounded-xl border border-sky-900/30 bg-sky-950/10 px-4 py-3 space-y-1.5">
+          <p className="text-sky-400 text-[11px] font-semibold">✅ Safe — हट्दैन:</p>
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-sky-700">Duplicate Constitution records</span>
+            <span className="text-sky-600">{dc.constitutionalCount} records ✓</span>
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-sky-700">Canonical Constitution records</span>
+            <span className="text-sky-600">{cc.constitutionalCount} records ✓</span>
+          </div>
+          <p className="text-sky-800 text-[10px]">R2 PDF files (manually delete गर्नुहोस् अन्त्यमा)</p>
+        </div>
+
+        {/* After merge */}
+        <div className="rounded-xl border border-violet-900/30 bg-violet-950/10 px-4 py-3 space-y-1.5">
+          <p className="text-violet-400 text-[11px] font-semibold">Merge पछि के हुन्छ:</p>
+          {totalMoving > 0 && (
+            <p className="text-violet-600 text-[10px]">
+              Canonical +{totalMoving} records पाउँछ (canonical source अझ complete बन्छ)
+            </p>
+          )}
+          <p className="text-violet-600 text-[10px]">Duplicate → Archived Alias बन्छ</p>
+          <p className="text-violet-600 text-[10px]">document_merge_logs मा audit record लेखिन्छ</p>
+        </div>
+
+        {/* Buttons */}
+        <div className="flex gap-3 pt-1">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl border border-zinc-700 text-zinc-300 text-sm hover:bg-zinc-800 transition-colors">
+            रद्द
+          </button>
+          <button onClick={onMerge} disabled={merging}
+            className="flex-1 py-2.5 rounded-xl bg-violet-700 hover:bg-violet-600 text-white text-sm font-bold transition-colors disabled:opacity-50">
+            {merging ? "Merging…" : "Merge र Archive गर्नुहोस्"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Constitution Conflict Banner ───────────────────────────────────────────────
 
 function ConstitutionConflictBanner({
   myCount,
   peerCounts,
+  dupHasChildRecords,
 }: {
-  myCount:    number;
-  peerCounts: number[];
+  myCount:             number;
+  peerCounts:          number[];
+  dupHasChildRecords?: boolean;
 }) {
   const maxCount   = Math.max(myCount, ...peerCounts);
   const isCanonical = myCount === maxCount;
@@ -150,14 +286,28 @@ function ConstitutionConflictBanner({
         </p>
       </div>
 
-      {/* Archive safety note */}
-      <div className="rounded-lg bg-sky-950/20 border border-sky-900/30 px-3 py-2">
-        <p className="text-sky-400 text-[10px] font-semibold">✅ Archive safe छ — Constitution records हट्दैन</p>
-        <p className="text-sky-700 text-[10px] mt-0.5 leading-relaxed">
-          Archive action ले केवल Intelligence र Relationship records हटाउँछ।
-          Constitution framework records सधैं safe रहन्छन् र Constitution Tree मा देखिन्छन्।
-        </p>
-      </div>
+      {/* Safety level — merge-first or archive-safe */}
+      {!isCanonical && dupHasChildRecords ? (
+        <div className="rounded-lg bg-amber-950/20 border border-amber-900/30 px-3 py-2 space-y-1">
+          <p className="text-amber-400 text-[10px] font-semibold">⚠ Merge before Archive — Records छन्</p>
+          <p className="text-amber-600 text-[10px] leading-relaxed">
+            Archive action ले Intelligence र Relationship records हटाउँछ।
+            पहिले "Merge →" थिचेर ती records Canonical मा move गर्नुहोस् — त्यसपछि Archive।
+          </p>
+          <p className="text-sky-600 text-[10px]">✅ Constitution records archive ले हट्दैन — सधैं safe।</p>
+        </div>
+      ) : (
+        <div className="rounded-lg bg-sky-950/20 border border-sky-900/30 px-3 py-2">
+          <p className="text-sky-400 text-[10px] font-semibold">
+            {isCanonical ? "✅ Canonical Source — राख्नुहोस्" : "✅ Archive safe — child records छैनन्"}
+          </p>
+          <p className="text-sky-700 text-[10px] mt-0.5 leading-relaxed">
+            {isCanonical
+              ? "यो बढी complete source हो। Duplicate archive गरेपछि canonical intact रहन्छ।"
+              : "Duplicate मा कुनै intelligence records छैनन् — directly archive गर्न सकिन्छ। Constitution records हट्दैन।"}
+          </p>
+        </div>
+      )}
 
       {/* Safe workflow */}
       <div className="space-y-1.5 pt-0.5">
@@ -168,7 +318,9 @@ function ConstitutionConflictBanner({
           { done: false, text: `बढी records भएको (Const ${maxCount}) लाई Canonical छान्नुहोस्` },
           { done: false, text: isCanonical
               ? "यो Canonical — राख्नुहोस्, Delete/Archive नगर्नुहोस्"
-              : "यो Duplicate Candidate — Archive गर्न सकिन्छ (Constitution safe रहन्छ)" },
+              : dupHasChildRecords
+                ? "यो Duplicate — पहिले 'Merge →' थिच्नुहोस् → records canonical मा move → Archive"
+                : "यो Duplicate — child records छैनन् → Archive safe (Constitution safe रहन्छ)" },
           { done: false, text: "Constitution Tree मा दुबैको content compare गर्नुहोस् (/vault/constitution)" },
         ].map(({ done, text }, i) => (
           <div key={i} className="flex items-start gap-2 text-[10px]">
@@ -388,6 +540,8 @@ export default function SystemCleanupClient() {
   const [expandedLineage, setExpandedLineage]= useState<string | null>(null);
   const [impactDoc,       setImpactDoc]      = useState<IntelligenceDocument | null>(null);
   const [impactAction,    setImpactAction]   = useState<"archive" | "delete" | null>(null);
+  const [mergeTarget,     setMergeTarget]    = useState<{ duplicateDoc: IntelligenceDocument; canonicalDoc: IntelligenceDocument } | null>(null);
+  const [merging,         setMerging]        = useState(false);
 
   // ── Load collection counts ─────────────────────────────────────────────────
 
@@ -727,6 +881,78 @@ export default function SystemCleanupClient() {
     finally { setActionLoading(null); }
   };
 
+  const handleMerge = async (duplicateDoc: IntelligenceDocument, canonicalDoc: IntelligenceDocument) => {
+    setMerging(true);
+    try {
+      const now = new Date().toISOString();
+
+      const [intelSnap, relSnap, economySnap, promiseSnap] = await Promise.all([
+        getDocs(query(collection(db, "janta_intelligence"),
+          where("sourceDocId",      "==", duplicateDoc.id), where("ownerId", "==", uid))),
+        getDocs(query(collection(db, "janta_relationships"),
+          where("sourceDocId",      "==", duplicateDoc.id), where("ownerId", "==", uid))),
+        getDocs(query(collection(db, "economy_atoms"),
+          where("sourceDocumentId", "==", duplicateDoc.id), where("ownerId", "==", uid))),
+        getDocs(query(collection(db, "promise_atoms"),
+          where("sourceDocumentId", "==", duplicateDoc.id), where("ownerId", "==", uid))),
+      ]);
+
+      // Re-link all child records to canonical (update sourceDocId, preserve originalSourceDocId)
+      await Promise.all([
+        ...intelSnap.docs.map(d => updateDoc(d.ref, {
+          sourceDocId: canonicalDoc.id, originalSourceDocId: duplicateDoc.id, updatedAt: now,
+        })),
+        ...relSnap.docs.map(d => updateDoc(d.ref, {
+          sourceDocId: canonicalDoc.id, originalSourceDocId: duplicateDoc.id, updatedAt: now,
+        })),
+        ...economySnap.docs.map(d => updateDoc(d.ref, {
+          sourceDocumentId: canonicalDoc.id, originalSourceDocumentId: duplicateDoc.id, updatedAt: now,
+        })),
+        ...promiseSnap.docs.map(d => updateDoc(d.ref, {
+          sourceDocumentId: canonicalDoc.id, originalSourceDocumentId: duplicateDoc.id, updatedAt: now,
+        })),
+      ]);
+
+      // Write merge audit log
+      const dc = counts[duplicateDoc.id] ?? EMPTY_COUNTS;
+      await addDoc(collection(db, "document_merge_logs"), {
+        ownerId:                  uid,
+        canonicalDocId:           canonicalDoc.id,
+        duplicateDocId:           duplicateDoc.id,
+        mergedIntelCount:         intelSnap.docs.length,
+        mergedRelationCount:      relSnap.docs.length,
+        mergedEconomyCount:       economySnap.docs.length,
+        mergedPromiseCount:       promiseSnap.docs.length,
+        preservedFrameworkCount:  dc.constitutionalCount,
+        status:                   "merged",
+        runAt:                    now,
+        runBy:                    "founder",
+      });
+
+      // Archive duplicate (child records are re-linked — nothing to delete)
+      await updateIntelligenceDoc(duplicateDoc.id, { archived: true } as Partial<IntelligenceDocument>);
+
+      // Update local UI state
+      setMergeTarget(null);
+      setOverrides(p => ({ ...p, [duplicateDoc.id]: "archive" }));
+      setCounts(prev => ({
+        ...prev,
+        [duplicateDoc.id]: { ...(prev[duplicateDoc.id] ?? EMPTY_COUNTS), intelCount: 0, relCount: 0, economyCount: 0, promiseCount: 0 },
+        [canonicalDoc.id]: {
+          ...(prev[canonicalDoc.id] ?? EMPTY_COUNTS),
+          intelCount:   (prev[canonicalDoc.id]?.intelCount   ?? 0) + intelSnap.docs.length,
+          relCount:     (prev[canonicalDoc.id]?.relCount     ?? 0) + relSnap.docs.length,
+          economyCount: (prev[canonicalDoc.id]?.economyCount ?? 0) + economySnap.docs.length,
+          promiseCount: (prev[canonicalDoc.id]?.promiseCount ?? 0) + promiseSnap.docs.length,
+        },
+      }));
+    } catch (e) {
+      alert(`Merge failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setMerging(false);
+    }
+  };
+
   const handleReset = async (doc: IntelligenceDocument) => {
     if (!window.confirm(`"${doc.title}" को pipeline reset गर्ने?\nAI analysis र approval status हट्नेछ — document file safe।`)) return;
     setActionLoading(doc.id);
@@ -759,6 +985,19 @@ export default function SystemCleanupClient() {
 
   return (
     <div className="min-h-screen bg-zinc-950 text-white">
+
+      {/* Merge Preview Modal */}
+      {mergeTarget && (
+        <MergePreviewModal
+          duplicateDoc={mergeTarget.duplicateDoc}
+          canonicalDoc={mergeTarget.canonicalDoc}
+          duplicateCounts={counts[mergeTarget.duplicateDoc.id] ?? EMPTY_COUNTS}
+          canonicalCounts={counts[mergeTarget.canonicalDoc.id] ?? EMPTY_COUNTS}
+          merging={merging}
+          onMerge={() => handleMerge(mergeTarget.duplicateDoc, mergeTarget.canonicalDoc)}
+          onClose={() => setMergeTarget(null)}
+        />
+      )}
 
       {/* Impact Preview Modal */}
       {impactDoc && impactAction && (
@@ -912,6 +1151,16 @@ export default function SystemCleanupClient() {
                 ? conflictInfo.myCount >= Math.max(conflictInfo.myCount, ...conflictInfo.peerCounts)
                 : false;
               const isAlreadyArchived = overrides[state.docId] === "archive";
+              // For duplicate candidate: find which peer is the canonical so we can offer Merge
+              const canonicalPeerId = !isCanonicalDoc && conflictInfo && conflictInfo.peerIds.length > 0
+                ? (() => {
+                    const maxCount = Math.max(...conflictInfo.peerCounts);
+                    const maxIdx   = conflictInfo.peerCounts.indexOf(maxCount);
+                    return conflictInfo.peerIds[maxIdx];
+                  })()
+                : null;
+              const canonicalRawDoc  = canonicalPeerId ? (docs.find(d => d.id === canonicalPeerId) ?? null) : null;
+              const dupHasChildRecords = !isCanonicalDoc && (c.intelCount > 0 || c.relCount > 0 || c.economyCount > 0 || c.promiseCount > 0);
               const showLineage      = expandedLineage === state.docId;
               const lineage          = lineageMap[state.docId];
 
@@ -974,6 +1223,7 @@ export default function SystemCleanupClient() {
                         <ConstitutionConflictBanner
                           myCount={conflictInfo.myCount}
                           peerCounts={conflictInfo.peerCounts}
+                          dupHasChildRecords={dupHasChildRecords}
                         />
                       )}
 
@@ -1083,17 +1333,39 @@ export default function SystemCleanupClient() {
                             Archive 🔒
                           </span>
                         ) : (
-                          <button
-                            onClick={() => { if (!rawDoc) return; setImpactDoc(rawDoc); setImpactAction("archive"); }}
-                            disabled={isActing || !rawDoc}
-                            className={`text-[10px] border rounded-lg px-2.5 py-1 transition-colors font-medium ${
-                              isActing || !rawDoc
-                                ? "border-zinc-800 text-zinc-700 cursor-not-allowed"
-                                : "border-blue-700 text-blue-400 bg-blue-950/20 hover:bg-blue-900/30 cursor-pointer"
-                            }`}
-                          >
-                            Archive ← सिफारिस
-                          </button>
+                          <>
+                            {/* Merge button — primary CTA when duplicate has child records */}
+                            {dupHasChildRecords && canonicalRawDoc && (
+                              <button
+                                onClick={() => rawDoc && setMergeTarget({ duplicateDoc: rawDoc, canonicalDoc: canonicalRawDoc })}
+                                disabled={isActing || !rawDoc}
+                                className={`text-[10px] border rounded-lg px-2.5 py-1 transition-colors font-medium ${
+                                  isActing || !rawDoc
+                                    ? "border-zinc-800 text-zinc-700 cursor-not-allowed"
+                                    : "border-violet-700 text-violet-400 bg-violet-950/20 hover:bg-violet-900/30 cursor-pointer"
+                                }`}
+                              >
+                                Merge →
+                              </button>
+                            )}
+                            {/* Archive — safe if no child records, secondary+warning if has records */}
+                            <button
+                              onClick={() => { if (!rawDoc) return; setImpactDoc(rawDoc); setImpactAction("archive"); }}
+                              disabled={isActing || !rawDoc}
+                              title={dupHasChildRecords
+                                ? "⚠ Merge नगरी Archive गर्दा intel records हराउन सक्छ — पहिले 'Merge →' थिच्नुहोस्"
+                                : "Archive safe — child records छैनन्"}
+                              className={`text-[10px] border rounded-lg px-2.5 py-1 transition-colors font-medium ${
+                                isActing || !rawDoc
+                                  ? "border-zinc-800 text-zinc-700 cursor-not-allowed"
+                                  : dupHasChildRecords
+                                    ? "border-zinc-700/60 text-zinc-600 hover:border-amber-800/60 hover:text-amber-500 cursor-pointer"
+                                    : "border-blue-700 text-blue-400 bg-blue-950/20 hover:bg-blue-900/30 cursor-pointer"
+                              }`}
+                            >
+                              {dupHasChildRecords ? "Archive ⚠" : "Archive ← सिफारिस"}
+                            </button>
+                          </>
                         )
                       ) : (
                         <ActionButton
@@ -1137,11 +1409,13 @@ export default function SystemCleanupClient() {
 
                   {/* Conflict action reason */}
                   {isConstConflict && !isAlreadyArchived && (
-                    <div className="px-4 pb-2.5 flex items-center gap-2">
-                      <span className={`text-[10px] ${isCanonicalDoc ? "text-emerald-700" : "text-blue-700"}`}>
+                    <div className="px-4 pb-2.5">
+                      <span className={`text-[10px] ${isCanonicalDoc ? "text-emerald-700" : dupHasChildRecords ? "text-violet-700" : "text-blue-700"}`}>
                         {isCanonicalDoc
-                          ? "Archive locked — यो Canonical source हो। Duplicate document Archive गर्नुहोस् पहिले।"
-                          : "Delete locked — Constitution records linked छन्। Archive मात्र safe छ।"}
+                          ? "Archive locked — यो Canonical source हो। Duplicate archive गर्नुहोस् पहिले।"
+                          : dupHasChildRecords
+                            ? "Merge → थिच्नुहोस् — Intel records canonical मा move हुन्छन्, त्यसपछि Archive। Delete blocked।"
+                            : "Child records छैनन् — Archive safe छ। Delete blocked।"}
                       </span>
                     </div>
                   )}
@@ -1160,7 +1434,8 @@ export default function SystemCleanupClient() {
             <p><span className="text-amber-500 font-bold">Reset</span> — AI analysis हट्छ, document फेरि pipeline मा जान तयार</p>
             <p><span className="text-red-500 font-bold">Delete</span> — Firestore बाट सबै records हट्छन् (R2 file manually delete गर्नुहोस्)</p>
             <p><span className="text-zinc-400 font-bold">▼ Layer</span> — Data layers, tier, safety, र system reasoning हेर्नुहोस्</p>
-            <p><span className="text-red-500 font-bold">⚡ Const Conflict</span> — दुबैमा Constitution records छन् — Archive safe, Delete blocked। Canonical छानेपछि duplicate Archive गर्नुहोस्।</p>
+            <p><span className="text-violet-400 font-bold">Merge →</span> — Duplicate को intel records Canonical मा re-link गर्छ। Zero data loss — audit log लेखिन्छ।</p>
+            <p><span className="text-red-500 font-bold">⚡ Const Conflict</span> — Records भए: पहिले "Merge →" → त्यसपछि Archive। Records नभए: Archive direct। Delete blocked।</p>
           </div>
         )}
       </div>
