@@ -16,6 +16,7 @@ import {
 import type { SpiritualTradition } from "../../../lib/types/semantic-atom";
 import type { SacredTextType, SacredLanguage } from "../../../lib/types/sacred-text";
 import { SACRED_TEXT_TYPE_LABELS, SACRED_LANGUAGE_LABELS } from "../../../lib/types/sacred-text";
+import { SacredWorkspacePanel, type WorkRef } from "./SacredWorkspacePanel";
 
 type WorkDoc = SacredWork & { id: string };
 
@@ -680,10 +681,12 @@ function WorkCard({
   work,
   onEdit,
   onDelete,
+  onOpenWorkspace,
 }: {
-  work: WorkDoc;
-  onEdit: (w: WorkDoc) => void;
-  onDelete: (id: string) => void;
+  work:            WorkDoc;
+  onEdit:          (w: WorkDoc) => void;
+  onDelete:        (id: string) => void;
+  onOpenWorkspace: (w: WorkDoc) => void;
 }) {
   const tColor   = TRADITION_TEXT_COLORS[work.tradition] ?? "text-zinc-400";
   const tDot     = TRADITION_DOT_COLORS[work.tradition]  ?? "bg-zinc-500";
@@ -714,6 +717,12 @@ function WorkCard({
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => onOpenWorkspace(work)}
+            className="text-[11px] px-2.5 py-1 rounded-lg border border-violet-800/40 text-violet-400 hover:bg-violet-950/30 transition-colors"
+          >
+            Workspace →
+          </button>
           <button onClick={() => onEdit(work)} className="text-zinc-700 hover:text-zinc-400 text-[11px] transition-colors">
             सम्पादन
           </button>
@@ -809,8 +818,9 @@ export function SacredWorkPanel({ ownerId }: { ownerId: string }) {
   const [showForm,    setShowForm]    = useState(false);
   const [editingWork, setEditingWork] = useState<WorkDoc | null>(null);
   const [seedForm,    setSeedForm]    = useState<SacredWorkPreset | null>(null);
-  const [filterTrad,  setFilterTrad]  = useState<SpiritualTradition | "all">("all");
-  const [search,      setSearch]      = useState("");
+  const [filterTrad,    setFilterTrad]    = useState<SpiritualTradition | "all">("all");
+  const [search,        setSearch]        = useState("");
+  const [workspaceWork, setWorkspaceWork] = useState<WorkDoc | null>(null);
 
   async function loadWorks() {
     setLoading(true);
@@ -960,7 +970,7 @@ export function SacredWorkPanel({ ownerId }: { ownerId: string }) {
       ) : visible.length > 0 ? (
         <div className="space-y-2">
           {visible.map(w => (
-            <WorkCard key={w.id} work={w} onEdit={openEdit} onDelete={handleDelete} />
+            <WorkCard key={w.id} work={w} onEdit={openEdit} onDelete={handleDelete} onOpenWorkspace={setWorkspaceWork} />
           ))}
         </div>
       ) : works.length === 0 ? null : (
@@ -990,6 +1000,15 @@ export function SacredWorkPanel({ ownerId }: { ownerId: string }) {
           onSave={handleSave}
           onClose={() => { setShowForm(false); setEditingWork(null); setSeedForm(null); }}
           seed={seedForm ?? undefined}
+        />
+      )}
+
+      {/* Workspace modal */}
+      {workspaceWork && (
+        <SacredWorkspacePanel
+          work={workspaceWork as WorkRef}
+          ownerId={ownerId}
+          onClose={() => setWorkspaceWork(null)}
         />
       )}
     </div>
