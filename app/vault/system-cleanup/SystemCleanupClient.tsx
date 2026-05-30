@@ -15,17 +15,33 @@ import {
   type FullPipelineState,
   type PipelineHealth,
 } from "../../../lib/vault/fullPipelineState";
+import {
+  computeLineage,
+  detectDuplicateGroups,
+  TIER_CFG,
+  SAFETY_CFG,
+  type LineageCounts,
+} from "../../../lib/vault/documentLineage";
 import type { IntelligenceDocument } from "../../../lib/types/documents";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 interface DocCounts {
-  intelCount:                number;
-  atomicCount:               number;
-  economyCount:              number;
-  classificationCount:       number;
+  intelCount:                  number;
+  atomicCount:                 number;
+  economyCount:                number;
+  classificationCount:         number;
   classificationApprovedCount: number;
+  constitutionalCount:         number;
+  promiseCount:                number;
+  relCount:                    number;
 }
+
+const EMPTY_COUNTS: DocCounts = {
+  intelCount: 0, atomicCount: 0, economyCount: 0,
+  classificationCount: 0, classificationApprovedCount: 0,
+  constitutionalCount: 0, promiseCount: 0, relCount: 0,
+};
 
 type FilterMode = "all" | "healthy" | "needs_action" | "stuck" | "suspect" | "in_progress";
 type OverrideDecision = "keep" | "archive" | "delete" | "review" | null;
@@ -68,13 +84,14 @@ export default function SystemCleanupClient() {
   const uid                            = user?.uid ?? null;
   const { docs, loading: docsLoading } = useIntelligenceDocs(uid);
 
-  const [counts,        setCounts]       = useState<Record<string, DocCounts>>({});
-  const [countsLoading, setCountsLoading]= useState(true);
-  const [overrides,     setOverrides]    = useState<Record<string, OverrideDecision>>({});
-  const [actionLoading, setActionLoading]= useState<string | null>(null);
-  const [filter,        setFilter]       = useState<FilterMode>("all");
-  const [search,        setSearch]       = useState("");
-  const [confirmDelete, setConfirmDelete]= useState<IntelligenceDocument | null>(null);
+  const [counts,          setCounts]         = useState<Record<string, DocCounts>>({});
+  const [countsLoading,   setCountsLoading]  = useState(true);
+  const [overrides,       setOverrides]      = useState<Record<string, OverrideDecision>>({});
+  const [actionLoading,   setActionLoading]  = useState<string | null>(null);
+  const [filter,          setFilter]         = useState<FilterMode>("all");
+  const [search,          setSearch]         = useState("");
+  const [confirmDelete,   setConfirmDelete]  = useState<IntelligenceDocument | null>(null);
+  const [expandedLineage, setExpandedLineage]= useState<string | null>(null);
 
   // ── Load collection counts ─────────────────────────────────────────────────
 
@@ -84,32 +101,32 @@ export default function SystemCleanupClient() {
     const EMPTY_SNAP = { docs: [] as { data(): Record<string, unknown>; id: string }[] };
 
     Promise.all([
-      safe(getDocs(query(collection(db, "janta_intelligence"),      where("ownerId", "==", uid), limit(2000))), EMPTY_SNAP),
-      safe(getDocs(query(collection(db, "atomic_extraction_logs"),  where("ownerId", "==", uid), limit(500))),  EMPTY_SNAP),
-      safe(getDocs(query(collection(db, "economy_atoms"),           where("ownerId", "==", uid), limit(500))),  EMPTY_SNAP),
-      safe(getDocs(query(collection(db, "classification_suggestions"), where("ownerId", "==", uid), limit(500))), EMPTY_SNAP),
-    ]).then(([intelSnap, atomicSnap, economySnap, classSnap]) => {
+      safe(getDocs(query(collection(db, "janta_intelligence"),        where("ownerId", "==", uid), limit(2000))), EMPTY_SNAP),
+      safe(getDocs(query(collection(db, "atomic_extraction_logs"),    where("ownerId", "==", uid), limit(500))),  EMPTY_SNAP),
+      safe(getDocs(query(collection(db, "economy_atoms"),             where("ownerId", "==", uid), limit(500))),  EMPTY_SNAP),
+      safe(getDocs(query(collection(db, "classification_suggestions"),where("ownerId", "==", uid), limit(500))),  EMPTY_SNAP),
+      safe(getDocs(query(collection(db, "constitutional_framework"),  where("ownerId", "==", uid), limit(500))),  EMPTY_SNAP),
+      safe(getDocs(query(collection(db, "promise_atoms"),             where("ownerId", "==", uid), limit(500))),  EMPTY_SNAP),
+      safe(getDocs(query(collection(db, "janta_relationships"),       where("ownerId", "==", uid), limit(500))),  EMPTY_SNAP),
+    ]).then(([intelSnap, atomicSnap, economySnap, classSnap, constSnap, promiseSnap, relSnap]) => {
       const map: Record<string, DocCounts> = {};
 
       const ensure = (id: string) => {
-        if (!map[id]) map[id] = { intelCount: 0, atomicCount: 0, economyCount: 0, classificationCount: 0, classificationApprovedCount: 0 };
+        if (!map[id]) map[id] = { ...EMPTY_COUNTS };
       };
 
       intelSnap.docs.forEach(d => {
         const srcId = d.data().sourceDocId as string | undefined;
         if (srcId) { ensure(srcId); map[srcId].intelCount++; }
       });
-
       atomicSnap.docs.forEach(d => {
         const srcId = d.data().docId as string | undefined;
         if (srcId) { ensure(srcId); map[srcId].atomicCount++; }
       });
-
       economySnap.docs.forEach(d => {
         const srcId = d.data().sourceDocumentId as string | undefined;
         if (srcId) { ensure(srcId); map[srcId].economyCount++; }
       });
-
       classSnap.docs.forEach(d => {
         const srcId  = d.data().sourceDocumentId as string | undefined;
         const status = d.data().status as string | undefined;
@@ -118,6 +135,18 @@ export default function SystemCleanupClient() {
           map[srcId].classificationCount++;
           if (status === "approved") map[srcId].classificationApprovedCount++;
         }
+      });
+      constSnap.docs.forEach(d => {
+        const srcId = d.data().sourceDocId as string | undefined;
+        if (srcId) { ensure(srcId); map[srcId].constitutionalCount++; }
+      });
+      promiseSnap.docs.forEach(d => {
+        const srcId = d.data().sourceDocumentId as string | undefined;
+        if (srcId) { ensure(srcId); map[srcId].promiseCount++; }
+      });
+      relSnap.docs.forEach(d => {
+        const srcId = d.data().sourceDocId as string | undefined;
+        if (srcId) { ensure(srcId); map[srcId].relCount++; }
       });
 
       setCounts(map);
@@ -130,30 +159,48 @@ export default function SystemCleanupClient() {
   const pipelineStates = useMemo(() => {
     if (docsLoading || countsLoading) return [];
     return docs.map(doc => {
-      const c = counts[doc.id] ?? { intelCount: 0, atomicCount: 0, economyCount: 0, classificationCount: 0, classificationApprovedCount: 0 };
+      const c = counts[doc.id] ?? EMPTY_COUNTS;
       return computeFullPipelineState({
-        id:                       doc.id,
-        title:                    doc.title,
-        fileName:                 doc.fileName,
-        processingStatus:         doc.processingStatus,
-        adminApprovalStatus:      doc.adminApprovalStatus,
-        aiSummary:                doc.aiSummary,
-        downloadUrl:              doc.downloadUrl,
-        sourceUrl:                doc.sourceUrl,
-        originalSourceUrl:        doc.originalSourceUrl,
-        extractionTier:           doc.extractionTier as string | undefined,
-        atomicCompleted:          doc.atomicCompleted,
-        govFolder:                doc.govFolder,
-        uploadedAt:               doc.uploadedAt,
-        tags:                     doc.tags,
-        intelCount:               c.intelCount,
-        atomicCount:              c.atomicCount,
-        economyCount:             c.economyCount,
-        classificationCount:      c.classificationCount,
+        id:                          doc.id,
+        title:                       doc.title,
+        fileName:                    doc.fileName,
+        processingStatus:            doc.processingStatus,
+        adminApprovalStatus:         doc.adminApprovalStatus,
+        aiSummary:                   doc.aiSummary,
+        downloadUrl:                 doc.downloadUrl,
+        sourceUrl:                   doc.sourceUrl,
+        originalSourceUrl:           doc.originalSourceUrl,
+        extractionTier:              doc.extractionTier as string | undefined,
+        atomicCompleted:             doc.atomicCompleted,
+        govFolder:                   doc.govFolder,
+        uploadedAt:                  doc.uploadedAt,
+        tags:                        doc.tags,
+        intelCount:                  c.intelCount,
+        atomicCount:                 c.atomicCount,
+        economyCount:                c.economyCount,
+        classificationCount:         c.classificationCount,
         classificationApprovedCount: c.classificationApprovedCount,
       });
     });
   }, [docs, counts, docsLoading, countsLoading]);
+
+  // ── Duplicate groups ───────────────────────────────────────────────────────
+
+  const duplicateGroups = useMemo(() => {
+    if (docsLoading) return new Map<string, string[]>();
+    return detectDuplicateGroups(
+      docs.map(d => ({ id: d.id, title: d.title, govFolder: d.govFolder, sourceUrl: d.sourceUrl }))
+    );
+  }, [docs, docsLoading]);
+
+  // Invert: docId → fingerprint key (so we can look up which group a doc is in)
+  const docDupKey = useMemo(() => {
+    const m = new Map<string, string>();
+    duplicateGroups.forEach((ids, key) => {
+      ids.forEach(id => m.set(id, key));
+    });
+    return m;
+  }, [duplicateGroups]);
 
   // ── Filter + search ────────────────────────────────────────────────────────
 
@@ -195,11 +242,26 @@ export default function SystemCleanupClient() {
     }
   };
 
+  const handleUndoKeep = async (doc: IntelligenceDocument) => {
+    if (!uid) return;
+    setActionLoading(doc.id);
+    try {
+      await updateDoc(firestoreDoc(db, "vault_intelligence_docs", doc.id), {
+        archivePolicy: null,
+        updatedAt: new Date().toISOString(),
+      });
+      setOverrides(p => { const n = { ...p }; delete n[doc.id]; return n; });
+    } catch (e) {
+      alert(`Undo failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleArchive = async (doc: IntelligenceDocument) => {
     if (!uid) return;
     setActionLoading(doc.id);
     try {
-      // Delete janta_intelligence records
       const intelSnap = await getDocs(query(
         collection(db, "janta_intelligence"),
         where("sourceDocId", "==", doc.id),
@@ -207,7 +269,6 @@ export default function SystemCleanupClient() {
       ));
       await Promise.all(intelSnap.docs.map(d => deleteDoc(d.ref)));
 
-      // Delete janta_relationships records
       const relSnap = await getDocs(query(
         collection(db, "janta_relationships"),
         where("sourceDocId", "==", doc.id),
@@ -215,7 +276,6 @@ export default function SystemCleanupClient() {
       ));
       await Promise.all(relSnap.docs.map(d => deleteDoc(d.ref)));
 
-      // Mark doc archived
       await updateIntelligenceDoc(doc.id, { archived: true } as Partial<IntelligenceDocument>);
       setOverrides(p => ({ ...p, [doc.id]: "archive" }));
     } catch (e) {
@@ -230,7 +290,6 @@ export default function SystemCleanupClient() {
     setConfirmDelete(null);
     setActionLoading(doc.id);
     try {
-      // Delete all related intelligence records (null fallback = collection read failed, skip)
       const [intelSnap, relSnap, constSnap, atomicSnap, economySnap, classSnap] = await Promise.all([
         safe(getDocs(query(collection(db, "janta_intelligence"),         where("sourceDocId",      "==", doc.id), where("ownerId", "==", uid))), null),
         safe(getDocs(query(collection(db, "janta_relationships"),        where("sourceDocId",      "==", doc.id), where("ownerId", "==", uid))), null),
@@ -239,13 +298,8 @@ export default function SystemCleanupClient() {
         safe(getDocs(query(collection(db, "economy_atoms"),              where("sourceDocumentId", "==", doc.id), where("ownerId", "==", uid))), null),
         safe(getDocs(query(collection(db, "classification_suggestions"), where("sourceDocumentId", "==", doc.id), where("ownerId", "==", uid))), null),
       ]);
-
       const snaps = [intelSnap, relSnap, constSnap, atomicSnap, economySnap, classSnap];
-      await Promise.all(
-        snaps.flatMap(snap => snap ? snap.docs.map(d => deleteDoc(d.ref)) : []),
-      );
-
-      // Hard delete the document record
+      await Promise.all(snaps.flatMap(snap => snap ? snap.docs.map(d => deleteDoc(d.ref)) : []));
       await deleteIntelligenceDoc(doc.id);
       setOverrides(p => ({ ...p, [doc.id]: "delete" }));
     } catch (e) {
@@ -356,12 +410,19 @@ export default function SystemCleanupClient() {
               हरेक document को pipeline state हेर्नुहोस् — Keep, Archive, Delete, वा Reset गर्नुहोस्
             </p>
           </div>
-          <Link
-            href="/vault/documents"
-            className="text-xs text-zinc-600 hover:text-zinc-400 border border-zinc-800 rounded-lg px-3 py-1.5 shrink-0"
-          >
-            Documents →
-          </Link>
+          <div className="flex items-center gap-2 shrink-0">
+            {duplicateGroups.size > 0 && (
+              <span className="text-[10px] border border-amber-800/60 bg-amber-950/20 text-amber-400 rounded-full px-2.5 py-1">
+                ⚠ {duplicateGroups.size} duplicate group{duplicateGroups.size > 1 ? "s" : ""}
+              </span>
+            )}
+            <Link
+              href="/vault/documents"
+              className="text-xs text-zinc-600 hover:text-zinc-400 border border-zinc-800 rounded-lg px-3 py-1.5"
+            >
+              Documents →
+            </Link>
+          </div>
         </div>
 
         {/* Summary strip */}
@@ -447,14 +508,39 @@ export default function SystemCleanupClient() {
         ) : (
           <div className="space-y-2">
             {visible.map(state => {
-              const rawDoc    = docs.find(d => d.id === state.docId);
-              const hCfg      = HEALTH_CONFIG[state.health];
-              const suggestion= overrides[state.docId] ?? state.cleanupSuggestion;
-              const sCfg      = CLEANUP_CONFIG[suggestion];
-              const isActing  = actionLoading === state.docId;
-              const wasDeleted= overrides[state.docId] === "delete";
+              const rawDoc     = docs.find(d => d.id === state.docId);
+              const hCfg       = HEALTH_CONFIG[state.health];
+              const suggestion = overrides[state.docId] ?? state.cleanupSuggestion;
+              const sCfg       = CLEANUP_CONFIG[suggestion];
+              const isActing   = actionLoading === state.docId;
+              const wasDeleted = overrides[state.docId] === "delete";
+              const isKept     = overrides[state.docId] === "keep";
+              const c          = counts[state.docId] ?? EMPTY_COUNTS;
+              const isDup      = docDupKey.has(state.docId);
+              const showLineage= expandedLineage === state.docId;
 
               if (wasDeleted) return null;
+
+              // Lineage computation (only when panel open — avoid cost when hidden)
+              const linCounts: LineageCounts = {
+                intelCount:          c.intelCount,
+                atomicCount:         c.atomicCount,
+                economyCount:        c.economyCount,
+                promiseCount:        c.promiseCount,
+                constitutionalCount: c.constitutionalCount,
+                classificationCount: c.classificationCount,
+                relCount:            c.relCount,
+              };
+              const lineage = showLineage ? computeLineage(
+                state.title,
+                linCounts,
+                {
+                  processingStatus:    rawDoc?.processingStatus,
+                  adminApprovalStatus: rawDoc?.adminApprovalStatus,
+                  hasSourceUrl:        !!(rawDoc?.sourceUrl || rawDoc?.originalSourceUrl),
+                  hasDownloadUrl:      !!rawDoc?.downloadUrl,
+                }
+              ) : null;
 
               return (
                 <div
@@ -473,6 +559,11 @@ export default function SystemCleanupClient() {
                       <div className="flex items-start gap-2 flex-wrap">
                         <span className="text-white text-sm font-bold truncate flex-1">{state.title}</span>
                         <div className="flex items-center gap-1.5 shrink-0">
+                          {isDup && (
+                            <span className="text-[10px] border border-amber-800/60 bg-amber-950/20 text-amber-400 rounded-full px-2 py-0.5">
+                              duplicate
+                            </span>
+                          )}
                           <span className={`text-[10px] border rounded-full px-2 py-0.5 ${hCfg.cls}`}>
                             {hCfg.label}
                           </span>
@@ -487,9 +578,11 @@ export default function SystemCleanupClient() {
 
                       {/* Counts row */}
                       <div className="flex items-center gap-4 mt-2 flex-wrap">
-                        <CountPill label="Intel" value={state.intelCount}   color={state.intelCount   > 0 ? "text-blue-400"  : "text-zinc-700"} />
-                        <CountPill label="Atomic" value={state.atomicCount}  color={state.atomicCount  > 0 ? "text-violet-400": "text-zinc-700"} />
-                        <CountPill label="Economy" value={state.economyCount} color={state.economyCount > 0 ? "text-amber-400" : "text-zinc-700"} />
+                        <CountPill label="Intel"   value={c.intelCount}          color={c.intelCount          > 0 ? "text-blue-400"    : "text-zinc-700"} />
+                        <CountPill label="Atomic"  value={c.atomicCount}         color={c.atomicCount         > 0 ? "text-violet-400"  : "text-zinc-700"} />
+                        <CountPill label="Economy" value={c.economyCount}        color={c.economyCount        > 0 ? "text-amber-400"   : "text-zinc-700"} />
+                        <CountPill label="Const"   value={c.constitutionalCount} color={c.constitutionalCount > 0 ? "text-sky-400"     : "text-zinc-700"} />
+                        <CountPill label="Promise" value={c.promiseCount}        color={c.promiseCount        > 0 ? "text-emerald-400" : "text-zinc-700"} />
                         {state.classificationCount > 0 && (
                           <CountPill
                             label="Class"
@@ -509,6 +602,50 @@ export default function SystemCleanupClient() {
                     </div>
                   </div>
 
+                  {/* Lineage layer map (collapsible) */}
+                  {showLineage && lineage && (
+                    <div className="mx-4 mb-3 rounded-xl border border-zinc-700/60 bg-zinc-900/80 overflow-hidden">
+                      <div className="px-4 py-3 border-b border-zinc-800/60 flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-zinc-300">Data Layer Map</span>
+                          <span className={`text-[10px] border rounded-full px-2 py-0.5 ${TIER_CFG[lineage.tier].cls}`}>
+                            {lineage.tierLabel}
+                          </span>
+                          <span className={`text-[10px] border rounded-full px-2 py-0.5 ${SAFETY_CFG[lineage.safetyLevel].cls}`}>
+                            {lineage.safetyLabel}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-zinc-600">Score: {lineage.score}</span>
+                      </div>
+
+                      {/* Layer bars */}
+                      <div className="px-4 py-3 grid grid-cols-2 gap-x-6 gap-y-1.5">
+                        {[
+                          { label: "Constitution",    val: c.constitutionalCount, color: "bg-sky-500"     },
+                          { label: "Intel (Layer 2)", val: c.intelCount,          color: "bg-blue-500"    },
+                          { label: "Relationships",   val: c.relCount,            color: "bg-cyan-500"    },
+                          { label: "Atomic logs",     val: c.atomicCount,         color: "bg-violet-500"  },
+                          { label: "Economy atoms",   val: c.economyCount,        color: "bg-amber-500"   },
+                          { label: "Promise atoms",   val: c.promiseCount,        color: "bg-emerald-500" },
+                          { label: "Classification",  val: c.classificationCount, color: "bg-pink-500"    },
+                        ].map(({ label, val, color }) => (
+                          <div key={label} className="flex items-center gap-2">
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${val > 0 ? color : "bg-zinc-700"}`} />
+                            <span className="text-[10px] text-zinc-500 flex-1 truncate">{label}</span>
+                            <span className={`text-[10px] font-mono font-bold ${val > 0 ? "text-zinc-200" : "text-zinc-700"}`}>{val}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Nepali recommendation */}
+                      <div className="px-4 pb-3">
+                        <p className="text-[11px] text-zinc-400 leading-relaxed bg-zinc-800/50 rounded-lg px-3 py-2">
+                          💡 {lineage.recommendation}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Action buttons */}
                   <div className="px-4 pb-3 flex items-center gap-2 flex-wrap border-t border-zinc-800/50 pt-2.5">
                     {/* Next action hint */}
@@ -520,13 +657,35 @@ export default function SystemCleanupClient() {
                     </Link>
 
                     <div className="flex items-center gap-1.5 shrink-0">
-                      {/* Keep */}
-                      <ActionButton
-                        onClick={() => rawDoc && handleKeep(rawDoc)}
-                        disabled={isActing || !rawDoc || overrides[state.docId] === "keep"}
-                        cls="border-emerald-800/60 text-emerald-500 hover:bg-emerald-900/30"
-                        activeLabel={overrides[state.docId] === "keep" ? "✓ राखियो" : "राख्नुहोस्"}
-                      />
+                      {/* Lineage toggle */}
+                      <button
+                        onClick={() => setExpandedLineage(showLineage ? null : state.docId)}
+                        className="text-[10px] border border-zinc-700 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600 rounded-lg px-2.5 py-1 transition-colors"
+                      >
+                        {showLineage ? "▲ Layer" : "▼ Layer"}
+                      </button>
+
+                      {/* Keep / Undo Keep */}
+                      {isKept ? (
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-emerald-500 font-semibold">✓ राखियो</span>
+                          <button
+                            onClick={() => rawDoc && handleUndoKeep(rawDoc)}
+                            disabled={isActing || !rawDoc}
+                            className="text-[10px] border border-zinc-700 text-zinc-500 hover:text-amber-400 hover:border-amber-800/60 rounded-lg px-2 py-1 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                            title="Decision फेर्नुहोस्"
+                          >
+                            ↩ Undo
+                          </button>
+                        </div>
+                      ) : (
+                        <ActionButton
+                          onClick={() => rawDoc && handleKeep(rawDoc)}
+                          disabled={isActing || !rawDoc}
+                          cls="border-emerald-800/60 text-emerald-500 hover:bg-emerald-900/30"
+                          activeLabel="राख्नुहोस्"
+                        />
+                      )}
 
                       {/* Archive */}
                       <ActionButton
@@ -535,7 +694,7 @@ export default function SystemCleanupClient() {
                           const ok = window.confirm(`"${state.title}" archive गर्ने?\n\nIntel records हट्नेछन् — document file safe रहनेछ।`);
                           if (ok) handleArchive(rawDoc);
                         }}
-                        disabled={isActing || !rawDoc || overrides[state.docId] === "archive" || state.intelCount === 0}
+                        disabled={isActing || !rawDoc || overrides[state.docId] === "archive"}
                         cls="border-blue-800/60 text-blue-500 hover:bg-blue-900/30"
                         activeLabel="Archive"
                       />
@@ -568,10 +727,11 @@ export default function SystemCleanupClient() {
         {!isLoading && visible.length > 0 && (
           <div className="rounded-xl border border-zinc-800/50 bg-zinc-900/30 px-5 py-4 space-y-1.5 text-[11px] text-zinc-600">
             <p className="text-zinc-500 font-semibold text-xs mb-2">Actions को बारेमा:</p>
-            <p><span className="text-emerald-500 font-bold">राख्नुहोस्</span> — document लाई permanent रूपमा mark गर्छ, केही delete हुँदैन</p>
+            <p><span className="text-emerald-500 font-bold">राख्नुहोस्</span> — document लाई permanent रूपमा mark गर्छ, केही delete हुँदैन। Undo गर्न "↩ Undo" थिच्नुहोस्।</p>
             <p><span className="text-blue-500 font-bold">Archive</span> — Intel records हट्छन्, document file R2 मा safe रहन्छ</p>
             <p><span className="text-amber-500 font-bold">Reset</span> — AI analysis हट्छ, document फेरि pipeline मा जान तयार हुन्छ</p>
             <p><span className="text-red-500 font-bold">Delete</span> — Firestore बाट सबै records हट्छन् (R2 file manually delete गर्नुहोस्)</p>
+            <p><span className="text-zinc-400 font-bold">▼ Layer</span> — Document का सबै data layers र system recommendation हेर्नुहोस्</p>
           </div>
         )}
       </div>

@@ -12,8 +12,10 @@ import { SACRED_CHAMBERS } from "../../../lib/types/temple-vault";
 import { CharacterIntelligencePanel } from "../../../components/vault/temple/CharacterIntelligencePanel";
 import { SacredTextIntakePanel } from "../../../components/vault/temple/SacredTextIntakePanel";
 import { SpiritualRecommendationQueue } from "../../../components/vault/temple/SpiritualRecommendationQueue";
+import { SacredWorkPanel } from "../../../components/vault/temple/SacredWorkPanel";
+import { SacredSourcePanel } from "../../../components/vault/temple/SacredSourcePanel";
 
-type ActiveTab = "mantra" | "charitra" | "granth" | "sugjhav";
+type ActiveTab = "mantra" | "charitra" | "granth" | "karya" | "srota" | "sugjhav";
 
 // ─── Chamber accent palette ────────────────────────────────────────────────────
 
@@ -787,13 +789,15 @@ export default function TempleClient() {
   return (
     <div className="min-h-screen bg-[#070714]">
 
-      {/* Tab bar — मन्दिर · चरित्र · ग्रन्थ · सुझाव */}
-      <div className="flex items-end justify-center gap-10 pt-5 border-b border-white/[0.03]">
-        {(["mantra", "charitra", "granth", "sugjhav"] as const).map(tab => {
+      {/* Tab bar — मन्दिर · चरित्र · ग्रन्थ · कार्य · स्रोत · सुझाव */}
+      <div className="flex items-end justify-center gap-7 pt-5 border-b border-white/[0.03] overflow-x-auto">
+        {(["mantra", "charitra", "granth", "karya", "srota", "sugjhav"] as const).map(tab => {
           const labels: Record<ActiveTab, string> = {
             mantra:   "मन्दिर",
             charitra: "चरित्र",
             granth:   "ग्रन्थ",
+            karya:    "कार्य",
+            srota:    "स्रोत",
             sugjhav:  pendingSuggCount > 0 ? `सुझाव (${pendingSuggCount})` : "सुझाव",
           };
           return (
@@ -821,6 +825,14 @@ export default function TempleClient() {
       ) : activeTab === "granth" ? (
         <div className="px-5 sm:px-8 py-8">
           <SacredTextIntakePanel ownerId={user.uid} />
+        </div>
+      ) : activeTab === "karya" ? (
+        <div className="px-5 sm:px-8 py-8">
+          <SacredWorkPanel ownerId={user.uid} />
+        </div>
+      ) : activeTab === "srota" ? (
+        <div className="px-5 sm:px-8 py-8">
+          <SacredSourcePanel ownerId={user.uid} />
         </div>
       ) : (
         <div className="px-5 sm:px-8 py-8">

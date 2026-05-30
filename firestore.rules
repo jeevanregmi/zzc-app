@@ -620,6 +620,47 @@ service cloud.firestore {
       allow delete: if false;  // versions are an audit trail — reject/defer, not delete
     }
 
+    // ── SACRED INTELLIGENCE STUDIO ──────────────────────────────────────────────
+    // sacred_works: Canonical work registry (Rudrashtakam, Nirvana Shatakam, etc.)
+    // One SacredWork links multiple language versions + audio tracks.
+    // Owner-only. Phase 5+: add || resource.data.publicReady == true for public read.
+    match /sacred_works/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+
+    // audio_assets: Audio track registry (stotra recordings, bhajans, kirtan).
+    // License-gated: unknown/restricted = private only.
+    // Phase 5+: public read when publicReady==true && licenseStatus==public_domain|open_license
+    match /audio_assets/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+
+    // source_licenses: License/rights tracking records for external sources.
+    // Critical for Bhakti Chautari publish gate — must be verified before public.
+    // Owner-only (license status is editorial metadata, not public).
+    match /source_licenses/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+
+    // sacred_alignments: Line-by-line multilingual alignment (Sanskrit ↔ IAST ↔
+    // Nepali ↔ Hindi ↔ English ↔ audio timestamp ↔ rasa).
+    // Private study layer. Feeds AI Guru explanation engine (Phase 5+).
+    match /sacred_alignments/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+
     // ── Deny all other paths (catch-all) ─────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
