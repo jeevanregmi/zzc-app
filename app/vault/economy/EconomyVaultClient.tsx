@@ -86,7 +86,9 @@ export default function EconomyVaultClient() {
   const [filterYear, setFilterYear]     = useState("all");
   const [filterSector, setFilterSector] = useState("all");
   const [filterType, setFilterType]     = useState("all");
-  const [expandedAtom, setExpandedAtom] = useState<string | null>(null);
+  const [expandedAtom, setExpandedAtom]         = useState<string | null>(null);
+  const [expandedDocAtoms, setExpandedDocAtoms] = useState<string | null>(null);
+  const [reExtractDoc, setReExtractDoc]         = useState<VaultDoc | null>(null);
 
   const searchParams   = useSearchParams();
   const autoDocId      = searchParams.get("docId");
@@ -380,14 +382,22 @@ export default function EconomyVaultClient() {
               const jobDone    = job?.status === "completed";
               const jobFailed  = job?.status === "failed";
               const stuck      = job ? isJobStuck(job) : false;
-              const showPanel  = isExtr || jobActive || jobFailed || stuck;
-              const canExtract = !showPanel && !!doc.downloadUrl;
+              // Only show job panel when: actively extracting in this session,
+              // OR job is non-terminal and no atoms yet (count=0 means extraction didn't finish)
+              // If count>0, job already succeeded — don't block the card with a stale panel
+              const showPanel  = isExtr || (count === 0 && (jobActive || jobFailed || stuck));
+              // Block extract if atoms already exist — must go through re-extract warning
+              const canExtract = !showPanel && !!doc.downloadUrl && count === 0;
+              const canReExtr  = !showPanel && !!doc.downloadUrl && count > 0;
               const msg        = jobMsgs[doc.id];
+
+              const docAtoms = atoms.filter(a => a.sourceDocumentId === doc.id);
+              const isAtomExpanded = expandedDocAtoms === doc.id;
 
               return (
                 <div key={doc.id} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
 
-                  {/* Doc header */}
+                  {/* Doc header row */}
                   <div className="p-3 flex flex-col md:flex-row md:items-center gap-3">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-zinc-200 truncate">{doc.title}</p>
@@ -400,21 +410,28 @@ export default function EconomyVaultClient() {
                         {doc.pageCount && (
                           <span className="text-[10px] text-zinc-600">{doc.pageCount} pages</span>
                         )}
-                        <span className={`text-[10px] font-medium ${count > 0 ? "text-cyan-400" : "text-zinc-600"}`}>
-                          {count} atoms
-                        </span>
-                        {jobDone && !showPanel && (
-                          <span className="text-[10px] font-medium text-green-400">
-                            ✅ {job!.recordsExtracted ?? 0} atoms निकालियो
+
+                        {/* ── Pipeline status badge ── */}
+                        {count > 0 ? (
+                          <span className="text-[10px] font-bold text-green-400 bg-green-950/50 border border-green-800/50 px-2 py-0.5 rounded-full">
+                            ✅ {count} atoms extracted
                           </span>
-                        )}
-                        {jobActive && !isExtr && (
+                        ) : jobDone && count === 0 ? (
+                          <span className="text-[10px] font-medium text-amber-400">
+                            ⚠ Job done तर 0 atoms — re-extract गर्नुहोस्
+                          </span>
+                        ) : jobActive && !isExtr ? (
                           <span className="text-[10px] font-medium text-cyan-400 animate-pulse">
-                            ● चलिरहेको छ
+                            ● Extraction चलिरहेको छ
                           </span>
+                        ) : stuck ? (
+                          <span className="text-[10px] font-medium text-amber-400">⚠ Job अड्किएको</span>
+                        ) : !doc.downloadUrl ? (
+                          <span className="text-[10px] text-red-400">⚠ URL नभेटिएको</span>
+                        ) : (
+                          <span className="text-[10px] text-zinc-600">Ready to extract</span>
                         )}
                       </div>
-                      {/* Start-failure message only */}
                       {!showPanel && msg && (
                         <p className={`text-xs mt-1 ${msg.startsWith("❌") ? "text-red-400" : "text-zinc-500"}`}>
                           {msg}
@@ -422,30 +439,49 @@ export default function EconomyVaultClient() {
                       )}
                     </div>
 
-                    {/* Action button */}
-                    {canExtract && (
-                      <button
-                        onClick={() => setModal({ doc, fiscalYear: "", nepaliYear: "", docType: "budget_speech" })}
-                        className="shrink-0 text-xs px-3 py-1.5 rounded-lg font-bold bg-cyan-700 hover:bg-cyan-600 text-white transition-colors"
-                      >
-                        {jobDone ? "🔄 Re-extract" : "💰 Economy Extract"}
-                      </button>
-                    )}
-                    {!doc.downloadUrl && !showPanel && (
-                      <span className="text-[10px] text-zinc-600 shrink-0">URL नभेटिएको</span>
-                    )}
+                    {/* Action buttons */}
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                      {/* View atoms — only when atoms exist */}
+                      {count > 0 && (
+                        <button
+                          onClick={() => setExpandedDocAtoms(isAtomExpanded ? null : doc.id)}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 hover:border-zinc-500 transition-colors"
+                        >
+                          {isAtomExpanded ? "▲ छोट्याउनुहोस्" : `▼ ${count} atoms हेर्नुहोस्`}
+                        </button>
+                      )}
+                      {/* Primary extract — only when 0 atoms */}
+                      {canExtract && (
+                        <button
+                          onClick={() => setModal({ doc, fiscalYear: "", nepaliYear: "", docType: "budget_speech" })}
+                          className="text-xs px-3 py-1.5 rounded-lg font-bold bg-cyan-700 hover:bg-cyan-600 text-white transition-colors"
+                        >
+                          💰 Economy Extract
+                        </button>
+                      )}
+                      {/* Re-extract — gated behind cost warning */}
+                      {canReExtr && (
+                        <button
+                          onClick={() => setReExtractDoc(doc)}
+                          className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-500 border border-zinc-700 hover:border-amber-700 hover:text-amber-300 transition-colors"
+                          title="Already extracted — re-extract requires confirmation"
+                        >
+                          🔄
+                        </button>
+                      )}
+                      {!doc.downloadUrl && !showPanel && (
+                        <span className="text-[10px] text-red-400/70">No URL</span>
+                      )}
+                    </div>
                   </div>
 
-                  {/* ── Job cockpit — shows for ANY active/failed/stuck job, survives page refresh ── */}
+                  {/* ── Job cockpit — survives page refresh ── */}
                   {showPanel && (
                     <div className="px-3 pb-3 border-t border-zinc-800/60 pt-2">
                       <ExtractionProgress
                         docId={doc.id}
                         collectionName="economy_extraction_jobs"
-                        onComplete={() => {
-                          setExtracting(null);
-                          loadAtoms();
-                        }}
+                        onComplete={() => { setExtracting(null); loadAtoms(); }}
                         onError={errMsg => {
                           setExtracting(null);
                           setJobMsgs(p => ({ ...p, [doc.id]: `❌ ${errMsg.slice(0, 120)}` }));
@@ -455,14 +491,56 @@ export default function EconomyVaultClient() {
                           setModal({ doc, fiscalYear: "", nepaliYear: "", docType: "budget_speech" });
                         }}
                         onNotFound={() => {
-                          setJobStates(prev => {
-                            const next = { ...prev };
-                            delete next[doc.id];
-                            return next;
-                          });
+                          setJobStates(prev => { const next = { ...prev }; delete next[doc.id]; return next; });
                           setExtracting(curr => curr === doc.id ? null : curr);
                         }}
                       />
+                    </div>
+                  )}
+
+                  {/* ── Per-doc atom records — inline backend view ── */}
+                  {isAtomExpanded && count > 0 && (
+                    <div className="border-t border-zinc-800/60 px-3 pb-3 pt-2 space-y-2">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-[10px] text-zinc-500 uppercase tracking-wider">
+                          {count} atoms — यस documentबाट निकालिएका records
+                        </p>
+                        {job?.estimatedCostUSD != null && (
+                          <span className="text-[10px] text-zinc-600">
+                            💰 {job.estimatedCostUSD < 0.01 ? "&lt;$0.01" : `$${job.estimatedCostUSD.toFixed(3)}`} खर्च
+                          </span>
+                        )}
+                      </div>
+                      {docAtoms.map(atom => (
+                        <div key={atom.id} className="bg-zinc-800/50 rounded-lg p-2.5 border border-zinc-700/50 space-y-1.5">
+                          <p className="text-xs text-zinc-200 leading-snug">{atom.summaryNepali}</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            <span className="text-[10px] text-zinc-500 bg-zinc-900 px-1.5 py-0.5 rounded">{atom.fiscalYear}</span>
+                            <span className="text-[10px] text-zinc-600">p.{atom.pageNumber}</span>
+                            <SectorBadge sector={atom.sector} />
+                            <AtomTypeBadge type={atom.atomType} />
+                            {atom.amount != null && (
+                              <span className="text-[10px] text-yellow-400 font-medium">{formatNPR(atom.amount)}</span>
+                            )}
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${
+                              atom.publishedToPublic
+                                ? "bg-green-950 text-green-400 border-green-800"
+                                : "bg-zinc-800 text-zinc-500 border-zinc-700"
+                            }`}>
+                              {atom.publishedToPublic ? "🌐 Public" : "🔒 Private"}
+                            </span>
+                            <span className="text-[10px] text-zinc-600">
+                              {Math.round(atom.confidence * 100)}% confidence
+                            </span>
+                          </div>
+                          {atom.citizenMeaningNepali && (
+                            <p className="text-[10px] text-zinc-500 leading-snug italic">
+                              {atom.citizenMeaningNepali.slice(0, 140)}
+                              {atom.citizenMeaningNepali.length > 140 ? "…" : ""}
+                            </p>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -649,6 +727,51 @@ export default function EconomyVaultClient() {
         fiscalYears={fiscalYears}
         onAtomsUpdated={loadAtoms}
       />
+
+      {/* ── Re-extract Warning Modal ── */}
+      {reExtractDoc && (
+        <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-amber-700/60 rounded-2xl p-6 w-full max-w-md space-y-4">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">⚠️</span>
+              <h3 className="text-base font-semibold text-amber-300">Double Extract Warning</h3>
+            </div>
+            <div className="bg-amber-950/40 border border-amber-800/40 rounded-lg p-3 space-y-1.5">
+              <p className="text-amber-200 text-sm font-medium truncate">{reExtractDoc.title}</p>
+              <p className="text-amber-400 text-xs leading-relaxed">
+                यस documentमा already{" "}
+                <strong className="text-amber-200">{atomCountByDoc[reExtractDoc.id] ?? 0} atoms</strong>{" "}
+                छन्। Re-extract गर्दा duplicate records बन्न सक्छ र AI API cost खर्च हुन्छ।
+              </p>
+            </div>
+            <p className="text-zinc-400 text-xs leading-relaxed">
+              Re-extract गर्नु अघि{" "}
+              <a href="/vault/system-cleanup" className="text-cyan-400 underline hover:text-cyan-300">
+                Data Cleanup
+              </a>{" "}
+              मा गएर पुरानो atoms delete गर्न सिफारिश गरिन्छ।
+            </p>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setReExtractDoc(null)}
+                className="flex-1 text-sm py-2 rounded-lg bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200 transition-colors"
+              >
+                रद्द गर्नुहोस्
+              </button>
+              <button
+                onClick={() => {
+                  const d = reExtractDoc;
+                  setReExtractDoc(null);
+                  setModal({ doc: d, fiscalYear: "", nepaliYear: "", docType: "budget_speech" });
+                }}
+                className="flex-1 text-sm py-2 rounded-lg font-medium bg-amber-700 hover:bg-amber-600 text-white transition-colors"
+              >
+                हो, Re-extract गर्नुहोस्
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Extraction Modal */}
       {modal && (
