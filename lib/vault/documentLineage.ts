@@ -39,7 +39,7 @@ export interface LineageResult {
   safetyLabel:    string;
 }
 
-const TEST_PATTERNS = /^(test|demo|sample|tmp|untitled|temp|xxx|yyy|zzz)/i;
+export const TEST_PATTERNS = /^(test|demo|sample|tmp|untitled|temp|xxx|yyy|zzz)/i;
 
 // ── Title fingerprint for duplicate detection ─────────────────────────────────
 
