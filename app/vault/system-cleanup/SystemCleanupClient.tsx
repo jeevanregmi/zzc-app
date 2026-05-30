@@ -108,6 +108,17 @@ function ConstitutionConflictBanner({
         </span>
       </div>
 
+      {/* One-line verdict */}
+      <div className={`text-[11px] font-bold rounded-lg px-3 py-2 border ${
+        isCanonical
+          ? "bg-emerald-950/30 border-emerald-900/30 text-emerald-400"
+          : "bg-amber-950/20 border-amber-900/30 text-amber-400"
+      }`}>
+        {isCanonical
+          ? `✓ यो बढी complete Canonical source हो (${myCount} records) — राख्नुहोस्।`
+          : `→ यो कम complete Duplicate हो (${myCount} records) — Archive गर्न सिफारिस।`}
+      </div>
+
       {/* Canonical verdict */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className={`text-[11px] border rounded-full px-2.5 py-1 font-semibold ${
@@ -894,10 +905,15 @@ export default function SystemCleanupClient() {
               const isKept         = overrides[state.docId] === "keep";
               const c              = counts[state.docId] ?? EMPTY_COUNTS;
               const isDup          = docDupKey.has(state.docId);
-              const isConstConflict= constConflictMap.has(state.docId);
-              const conflictInfo   = constConflictMap.get(state.docId);
-              const showLineage    = expandedLineage === state.docId;
-              const lineage        = lineageMap[state.docId];
+              const isConstConflict  = constConflictMap.has(state.docId);
+              const conflictInfo     = constConflictMap.get(state.docId);
+              // Canonical = doc with more (or equal) constitution records — keep it
+              const isCanonicalDoc   = isConstConflict && conflictInfo
+                ? conflictInfo.myCount >= Math.max(conflictInfo.myCount, ...conflictInfo.peerCounts)
+                : false;
+              const isAlreadyArchived = overrides[state.docId] === "archive";
+              const showLineage      = expandedLineage === state.docId;
+              const lineage          = lineageMap[state.docId];
 
               if (wasDeleted) return null;
 
@@ -1053,16 +1069,43 @@ export default function SystemCleanupClient() {
                           label="राख्नुहोस्" />
                       )}
 
-                      {/* Archive */}
-                      <ActionButton
-                        onClick={() => {
-                          if (!rawDoc) return;
-                          setImpactDoc(rawDoc);
-                          setImpactAction("archive");
-                        }}
-                        disabled={isActing || !rawDoc || overrides[state.docId] === "archive"}
-                        cls="border-blue-800/60 text-blue-500 hover:bg-blue-900/30"
-                        label="Archive" />
+                      {/* Archive — conflict-aware */}
+                      {isConstConflict ? (
+                        isAlreadyArchived ? (
+                          <span className="text-[10px] border border-zinc-800/40 text-zinc-600 rounded-lg px-2.5 py-1 select-none">
+                            📦 Archived
+                          </span>
+                        ) : isCanonicalDoc ? (
+                          <span
+                            title="Canonical source — Archive नगर्नुहोस्। Duplicate document Archive गर्नुहोस्।"
+                            className="text-[10px] border border-zinc-800/40 text-zinc-700 rounded-lg px-2.5 py-1 cursor-not-allowed select-none"
+                          >
+                            Archive 🔒
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => { if (!rawDoc) return; setImpactDoc(rawDoc); setImpactAction("archive"); }}
+                            disabled={isActing || !rawDoc}
+                            className={`text-[10px] border rounded-lg px-2.5 py-1 transition-colors font-medium ${
+                              isActing || !rawDoc
+                                ? "border-zinc-800 text-zinc-700 cursor-not-allowed"
+                                : "border-blue-700 text-blue-400 bg-blue-950/20 hover:bg-blue-900/30 cursor-pointer"
+                            }`}
+                          >
+                            Archive ← सिफारिस
+                          </button>
+                        )
+                      ) : (
+                        <ActionButton
+                          onClick={() => {
+                            if (!rawDoc) return;
+                            setImpactDoc(rawDoc);
+                            setImpactAction("archive");
+                          }}
+                          disabled={isActing || !rawDoc || overrides[state.docId] === "archive"}
+                          cls="border-blue-800/60 text-blue-500 hover:bg-blue-900/30"
+                          label="Archive" />
+                      )}
 
                       {/* Reset */}
                       <ActionButton onClick={() => rawDoc && handleReset(rawDoc)}
@@ -1091,6 +1134,17 @@ export default function SystemCleanupClient() {
                       )}
                     </div>
                   </div>
+
+                  {/* Conflict action reason */}
+                  {isConstConflict && !isAlreadyArchived && (
+                    <div className="px-4 pb-2.5 flex items-center gap-2">
+                      <span className={`text-[10px] ${isCanonicalDoc ? "text-emerald-700" : "text-blue-700"}`}>
+                        {isCanonicalDoc
+                          ? "Archive locked — यो Canonical source हो। Duplicate document Archive गर्नुहोस् पहिले।"
+                          : "Delete locked — Constitution records linked छन्। Archive मात्र safe छ।"}
+                      </span>
+                    </div>
+                  )}
                 </div>
               );
             })}
