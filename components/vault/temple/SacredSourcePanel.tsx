@@ -34,6 +34,7 @@ import {
 import type { SacredWork } from "../../../lib/types/sacred-work";
 import type { SacredLanguage } from "../../../lib/types/sacred-text";
 import { SACRED_LANGUAGE_LABELS } from "../../../lib/types/sacred-text";
+import { SourceRightsAnalyzer } from "./SourceRightsAnalyzer";
 
 type AudioDoc   = AudioAsset    & { id: string };
 type LicenseDoc = SourceLicense & { id: string };
@@ -531,12 +532,15 @@ export function SacredSourcePanel({ ownerId }: { ownerId: string }) {
 
   return (
     <div className="space-y-6">
+      {/* URL Rights Scanner — primary entry point for all source intake */}
+      <SourceRightsAnalyzer ownerId={ownerId} />
+
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-base font-semibold text-zinc-200">स्रोत / Media</h2>
+          <h2 className="text-base font-semibold text-zinc-200">Audio र License Registry</h2>
           <p className="text-zinc-600 text-xs mt-0.5">
-            Audio tracks, source URLs, र license records — Sacred Intelligence को आधार
+            Verified audio tracks र license records — Scanner बाट save भएपछि यहाँ register गर्नुहोस्
           </p>
         </div>
         {unknownCount > 0 && (
