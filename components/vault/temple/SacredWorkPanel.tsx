@@ -7,7 +7,7 @@ import {
 } from "firebase/firestore";
 import { db } from "../../../app/firebase";
 import type {
-  SacredWork, LicenseStatus, SourcePlatform, UsageRight,
+  SacredWork, LicenseStatus,
 } from "../../../lib/types/sacred-work";
 import {
   LICENSE_LABELS, LICENSE_COLORS,
@@ -22,63 +22,6 @@ type WorkDoc = SacredWork & { id: string };
 
 const safe = <T,>(p: Promise<T>, fb: T): Promise<T> =>
   p.catch(e => { console.warn("[SacredWorkPanel]", e?.code ?? e); return fb; });
-
-// ── Source URL helpers ─────────────────────────────────────────────────────────
-
-type SourceType = "text" | "audio" | "image" | "video" | "mixed";
-
-interface SourceInput {
-  sourceUrl:    string;
-  platform:     SourcePlatform;
-  sourceType:   SourceType;
-  licenseStatus: LicenseStatus;
-  usageAllowed: UsageRight[];
-  usageNote:    string;
-}
-
-const SOURCE_TYPE_OPTIONS: Array<{ value: SourceType; label: string }> = [
-  { value: "text",  label: "📄 Text"  },
-  { value: "audio", label: "🎵 Audio" },
-  { value: "image", label: "🖼 Image" },
-  { value: "video", label: "🎬 Video" },
-  { value: "mixed", label: "📦 Mixed" },
-];
-
-const SOURCE_USAGE_OPTIONS: Array<{ value: UsageRight; label: string }> = [
-  { value: "private_study",      label: "Private Study"      },
-  { value: "public_display",     label: "Public Display"     },
-  { value: "audio_reuse",        label: "Audio Reuse"        },
-  { value: "derivative_allowed", label: "Derivatives Allowed"},
-];
-
-const PLATFORM_LABELS: Record<SourcePlatform, string> = {
-  internet_archive:     "Internet Archive",
-  youtube:              "YouTube",
-  website:              "Website",
-  scripture_repository: "Scripture Repository",
-  personal_recording:   "Personal Recording",
-  other:                "Other",
-};
-
-function detectPlatformFromUrl(url: string): SourcePlatform {
-  if (url.includes("archive.org"))                             return "internet_archive";
-  if (url.includes("youtube.com") || url.includes("youtu.be")) return "youtube";
-  return "website";
-}
-
-function suggestLicense(platform: SourcePlatform): LicenseStatus {
-  if (platform === "internet_archive") return "public_domain";
-  if (platform === "youtube")          return "unknown";
-  return "unknown";
-}
-
-function platformGuidance(platform: SourcePlatform, license: LicenseStatus): { text: string; cls: string } {
-  if (platform === "internet_archive" && license === "public_domain")
-    return { text: "Internet Archive — ancient texts often public domain। Item page मा confirm गर्नुहोस्।", cls: "text-emerald-700" };
-  if (platform === "youtube")
-    return { text: "YouTube content copyright restricted हुन्छ। Private study मात्र।", cls: "text-amber-600" };
-  return { text: "यो source को license manually verify गर्नुहोस्।", cls: "text-zinc-600" };
-}
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -232,10 +175,7 @@ const KNOWN_WORKS: SacredWorkPreset[] = [
 interface WorkFormProps {
   editing: WorkDoc | null;
   ownerId: string;
-  onSave: (
-    data:    Omit<SacredWork, "id" | "ownerId" | "createdAt" | "updatedAt">,
-    source?: SourceInput,
-  ) => Promise<void>;
+  onSave: (data: Omit<SacredWork, "id" | "ownerId" | "createdAt" | "updatedAt">) => Promise<void>;
   onClose: () => void;
   seed?: SacredWorkPreset;
 }
@@ -255,29 +195,7 @@ function WorkForm({ editing, ownerId, onSave, onClose, seed }: WorkFormProps) {
   const [publicDomainStatus, setPublicDomainStatus] = useState(editing?.publicDomainStatus ?? false);
   const [founderNotes,       setFounderNotes]       = useState(editing?.founderNotes ?? seed?.sourceHint ?? "");
 
-  // Source URL fields
-  const [showSource,    setShowSource]    = useState(false);
-  const [sourceUrl,     setSourceUrl]     = useState("");
-  const [sourcePlatform,setSourcePlatform]= useState<SourcePlatform>("internet_archive");
-  const [sourceType,    setSourceType]    = useState<SourceType>("text");
-  const [srcLicense,    setSrcLicense]    = useState<LicenseStatus>("unknown");
-  const [srcUsage,      setSrcUsage]      = useState<UsageRight[]>(["private_study"]);
-  const [usageNote,     setUsageNote]     = useState("");
-
   const [saving, setSaving] = useState(false);
-
-  function handleUrlChange(url: string) {
-    setSourceUrl(url);
-    if (url.trim()) {
-      const plat = detectPlatformFromUrl(url);
-      setSourcePlatform(plat);
-      setSrcLicense(suggestLicense(plat));
-    }
-  }
-
-  function toggleUsage(u: UsageRight) {
-    setSrcUsage(prev => prev.includes(u) ? prev.filter(x => x !== u) : [...prev, u]);
-  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -294,7 +212,7 @@ function WorkForm({ editing, ownerId, onSave, onClose, seed }: WorkFormProps) {
         attributedAuthor: attributedAuthor.trim() || undefined,
         languageOriginal,
         primaryDeity:     primaryDeity.trim() || undefined,
-        sourceRefs:       sourceUrl.trim() ? [sourceUrl.trim()] : [],
+        sourceRefs:       [],
         licenseStatus,
         publicDomainStatus,
         licenseNotes:     undefined,
@@ -316,23 +234,13 @@ function WorkForm({ editing, ownerId, onSave, onClose, seed }: WorkFormProps) {
         visibility:  "private",
       };
 
-      const source: SourceInput | undefined = sourceUrl.trim() ? {
-        sourceUrl:    sourceUrl.trim(),
-        platform:     sourcePlatform,
-        sourceType,
-        licenseStatus: srcLicense,
-        usageAllowed: srcUsage.length > 0 ? srcUsage : ["private_study"],
-        usageNote:    usageNote.trim(),
-      } : undefined;
-
-      await onSave(workData, source);
+      await onSave(workData);
     } finally {
       setSaving(false);
     }
   }
 
-  const tColor    = TRADITION_TEXT_COLORS[tradition] ?? "text-zinc-400";
-  const guidance  = sourceUrl ? platformGuidance(sourcePlatform, srcLicense) : null;
+  const tColor = TRADITION_TEXT_COLORS[tradition] ?? "text-zinc-400";
 
   return (
     <div
@@ -502,147 +410,6 @@ function WorkForm({ editing, ownerId, onSave, onClose, seed }: WorkFormProps) {
               <span className="text-xs text-zinc-400">Public domain verified (pre-1925 वा explicit dedication)</span>
             </label>
 
-            {/* ── SOURCE URL SECTION ──────────────────────────────────────────── */}
-            <div className="rounded-xl border border-white/[0.06] overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setShowSource(o => !o)}
-                className="w-full flex items-center justify-between px-4 py-3 bg-white/[0.025] hover:bg-white/[0.04] transition-colors"
-              >
-                <div className="flex items-center gap-2.5">
-                  <span className="text-sky-400">🔗</span>
-                  <span className="text-xs font-medium text-zinc-400">स्रोत URL थप्नुहोस्</span>
-                  <span className="text-[10px] text-zinc-700">(Internet Archive / YouTube / Website)</span>
-                  {sourceUrl && (
-                    <span className="text-[10px] border border-sky-800/50 bg-sky-950/20 text-sky-400 rounded-full px-2 py-0.5">
-                      linked
-                    </span>
-                  )}
-                </div>
-                <span className="text-zinc-700 text-[10px]">{showSource ? "▲" : "▼"}</span>
-              </button>
-
-              {showSource && (
-                <div className="px-4 pb-4 pt-3 space-y-4 border-t border-white/[0.04] bg-white/[0.01]">
-
-                  {/* URL input */}
-                  <div className="space-y-2">
-                    <label className="text-[10px] text-zinc-600 uppercase tracking-wide">Source URL</label>
-                    <input
-                      value={sourceUrl}
-                      onChange={e => handleUrlChange(e.target.value)}
-                      type="url"
-                      placeholder="https://archive.org/details/…"
-                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 text-xs text-zinc-200 placeholder-zinc-700 focus:outline-none focus:border-sky-800/60"
-                    />
-                    {sourceUrl && (
-                      <div className="flex items-start gap-2">
-                        <span className="text-[10px] border border-sky-800/50 bg-sky-950/20 text-sky-400 rounded-full px-2 py-0.5 shrink-0 mt-0.5">
-                          {PLATFORM_LABELS[sourcePlatform]}
-                        </span>
-                        {guidance && (
-                          <span className={`text-[10px] leading-relaxed ${guidance.cls}`}>{guidance.text}</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Source type */}
-                  <div className="space-y-2">
-                    <label className="text-[10px] text-zinc-600 uppercase tracking-wide">Source Type</label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {SOURCE_TYPE_OPTIONS.map(t => (
-                        <button key={t.value} type="button" onClick={() => setSourceType(t.value)}
-                          className={`text-[11px] px-3 py-1.5 rounded-full border transition-all ${
-                            sourceType === t.value
-                              ? "bg-white/[0.08] border-sky-700/50 text-sky-300"
-                              : "border-white/[0.06] text-zinc-600 hover:text-zinc-400"
-                          }`}
-                        >
-                          {t.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Source license */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2">
-                      <label className="text-[10px] text-zinc-600 uppercase tracking-wide">यो URL को License</label>
-                      {sourceUrl && (
-                        <span className="text-[10px] text-zinc-700 italic">system suggestion — verify गर्नुहोस्</span>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {LICENSE_OPTIONS.map(l => (
-                        <button key={l} type="button" onClick={() => setSrcLicense(l)}
-                          className={`text-[11px] px-3 py-1.5 rounded-full border transition-all ${
-                            srcLicense === l ? LICENSE_COLORS[l] : "border-white/[0.06] text-zinc-600 hover:text-zinc-400"
-                          }`}
-                        >
-                          {LICENSE_LABELS[l]}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Usage allowed */}
-                  <div className="space-y-2">
-                    <label className="text-[10px] text-zinc-600 uppercase tracking-wide">Usage Allowed</label>
-                    <div className="flex flex-wrap gap-1.5">
-                      {SOURCE_USAGE_OPTIONS.map(u => (
-                        <button key={u.value} type="button" onClick={() => toggleUsage(u.value)}
-                          className={`text-[11px] px-3 py-1.5 rounded-full border transition-all ${
-                            srcUsage.includes(u.value)
-                              ? "bg-white/[0.08] border-white/20 text-zinc-200"
-                              : "border-white/[0.06] text-zinc-600 hover:text-zinc-400"
-                          }`}
-                        >
-                          {u.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Usage note */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-zinc-600 uppercase tracking-wide">Usage Note</label>
-                    <input
-                      value={usageNote}
-                      onChange={e => setUsageNote(e.target.value)}
-                      placeholder="License page check गरेको, CC BY-SA confirmed…"
-                      className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 text-xs text-zinc-400 placeholder-zinc-700 focus:outline-none focus:border-white/15"
-                    />
-                  </div>
-
-                  {/* License warning or confirmation */}
-                  {sourceUrl && srcLicense === "unknown" && (
-                    <div className="rounded-xl border border-amber-900/40 bg-amber-950/20 px-4 py-3">
-                      <p className="text-amber-400 text-[11px] font-semibold">⚠ License Unknown — Private Study Only</p>
-                      <p className="text-amber-700 text-[10px] mt-0.5 leading-relaxed">
-                        Bhakti Chautari publish गर्नु भन्दा पहिले license verify गर्नुहोस्।
-                      </p>
-                    </div>
-                  )}
-                  {sourceUrl && srcLicense === "public_domain" && (
-                    <div className="rounded-xl border border-emerald-900/40 bg-emerald-950/20 px-4 py-3">
-                      <p className="text-emerald-400 text-[11px] font-semibold">✅ Public Domain — Share freely</p>
-                      <p className="text-emerald-700 text-[10px] mt-0.5">
-                        Source URL को specific item page मा license confirm गर्नुभएको छ भने यो record safe।
-                      </p>
-                    </div>
-                  )}
-                  {sourceUrl && srcLicense === "restricted" && (
-                    <div className="rounded-xl border border-red-900/40 bg-red-950/20 px-4 py-3">
-                      <p className="text-red-400 text-[11px] font-semibold">🚫 Restricted — Private Study Only</p>
-                      <p className="text-red-700 text-[10px] mt-0.5">यो source reuse वा publish गर्न मिल्दैन।</p>
-                    </div>
-                  )}
-
-                </div>
-              )}
-            </div>
-
             {/* Notes */}
             <div className="space-y-1">
               <label className="text-[10px] text-zinc-600 uppercase tracking-wide">Founder Notes</label>
@@ -667,7 +434,7 @@ function WorkForm({ editing, ownerId, onSave, onClose, seed }: WorkFormProps) {
           <button form="work-form" type="submit" disabled={saving || !canonicalTitle.trim()}
             className={`flex-1 py-2.5 rounded-xl border border-white/10 bg-white/[0.06] text-sm font-medium transition-all disabled:opacity-30 ${tColor}`}
           >
-            {saving ? "…" : editing ? "अपडेट" : sourceUrl ? "दर्ता + स्रोत link" : "दर्ता गर्नुहोस्"}
+            {saving ? "…" : editing ? "अपडेट" : "दर्ता गर्नुहोस् →"}
           </button>
         </div>
       </div>
@@ -841,42 +608,33 @@ export function SacredWorkPanel({ ownerId }: { ownerId: string }) {
   useEffect(() => { void loadWorks(); }, [ownerId]);
 
   async function handleSave(
-    data:    Omit<SacredWork, "id" | "ownerId" | "createdAt" | "updatedAt">,
-    source?: SourceInput,
+    data: Omit<SacredWork, "id" | "ownerId" | "createdAt" | "updatedAt">,
   ) {
     const now = new Date().toISOString();
-    let workId: string;
 
     if (editingWork) {
       await updateDoc(doc(db, "sacred_works", editingWork.id), { ...data, updatedAt: now });
-      workId = editingWork.id;
+      setShowForm(false);
+      setEditingWork(null);
+      setSeedForm(null);
+      void loadWorks();
     } else {
       const ref = await addDoc(collection(db, "sacred_works"), {
         ...data, ownerId, createdAt: now, updatedAt: now,
       });
-      workId = ref.id;
-    }
-
-    if (source?.sourceUrl) {
-      await addDoc(collection(db, "source_licenses"), {
-        sourceUrl:           source.sourceUrl,
-        sourcePlatform:      source.platform,
-        licenseStatus:       source.licenseStatus,
-        usageAllowed:        source.usageAllowed,
-        attributionRequired: false,
-        notes:               source.usageNote || undefined,
-        relatedSacredWorkId: workId,
-        checkedAt:           now,
-        checkedBy:           "founder",
+      const newWork: WorkDoc = {
+        id: ref.id,
         ownerId,
-        createdAt:           now,
-      });
+        createdAt: now,
+        updatedAt: now,
+        ...data,
+      };
+      setWorks(prev => [newWork, ...prev]);
+      setShowForm(false);
+      setSeedForm(null);
+      // auto-open workspace immediately after creating a new work
+      setWorkspaceWork(newWork);
     }
-
-    setShowForm(false);
-    setEditingWork(null);
-    setSeedForm(null);
-    void loadWorks();
   }
 
   async function handleDelete(id: string) {
