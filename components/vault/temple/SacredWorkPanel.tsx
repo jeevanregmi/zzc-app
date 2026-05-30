@@ -103,17 +103,127 @@ const LANGUAGES  = Object.keys(SACRED_LANGUAGE_LABELS)  as SacredLanguage[];
 
 // ── Known sacred works seed — quick-add for founder ──────────────────────────
 
-const KNOWN_WORKS = [
-  { canonicalTitle: "Rudrashtakam",         tradition: "shaiva",          primaryDeity: "Shiva",       textType: "stotra",   languageOriginal: "sanskrit" as SacredLanguage },
-  { canonicalTitle: "Nirvana Shatakam",     tradition: "advaita_vedanta", primaryDeity: "Shiva",       textType: "stotra",   languageOriginal: "sanskrit" as SacredLanguage },
-  { canonicalTitle: "Achyutashtakam",       tradition: "vaishnava",       primaryDeity: "Vishnu",      textType: "stotra",   languageOriginal: "sanskrit" as SacredLanguage },
-  { canonicalTitle: "Ganesha Pancharatnam", tradition: "ganapatya",       primaryDeity: "Ganesha",     textType: "stotra",   languageOriginal: "sanskrit" as SacredLanguage },
-  { canonicalTitle: "Gauri Dashakam",       tradition: "shakta",          primaryDeity: "Devi",        textType: "stotra",   languageOriginal: "sanskrit" as SacredLanguage },
-  { canonicalTitle: "Shiva Tandava Stotram",tradition: "shaiva",          primaryDeity: "Shiva",       textType: "stotra",   languageOriginal: "sanskrit" as SacredLanguage },
-  { canonicalTitle: "Bhaja Govindam",       tradition: "advaita_vedanta", primaryDeity: "Krishna",     textType: "stotra",   languageOriginal: "sanskrit" as SacredLanguage },
-  { canonicalTitle: "Hanuman Chalisa",      tradition: "vaishnava",       primaryDeity: "Hanuman",     textType: "stotra",   languageOriginal: "hindi"   as SacredLanguage },
-  { canonicalTitle: "Mahamrityunjaya Mantra",tradition:"shaiva",          primaryDeity: "Shiva",       textType: "mantra_set",languageOriginal: "sanskrit" as SacredLanguage },
-  { canonicalTitle: "Lalitha Sahasranama",  tradition: "shakta",          primaryDeity: "Devi",        textType: "stotra",   languageOriginal: "sanskrit" as SacredLanguage },
+// ── Sacred Work Preset Registry ────────────────────────────────────────────────
+// Full known-metadata per work. Every field that the system already knows is
+// pre-filled; founder edits only what's uncertain or different.
+
+interface SacredWorkPreset {
+  canonicalTitle:           string;
+  canonicalTitleDevanagari?: string;
+  alternateTitles:          string[];
+  tradition:                SpiritualTradition;
+  textType:                 SacredTextType;
+  languageOriginal:         SacredLanguage;
+  primaryDeity?:            string;
+  author?:                  string;
+  attributedAuthor?:        string;
+  sourceHint?:              string;
+}
+
+const KNOWN_WORKS: SacredWorkPreset[] = [
+  {
+    canonicalTitle:           "Rudrashtakam",
+    canonicalTitleDevanagari: "रुद्राष्टकम्",
+    alternateTitles:          ["Rudra Ashtakam", "रुद्राष्टकम्", "Shri Rudrashtakam"],
+    tradition:                "shaiva",
+    textType:                 "stotra",
+    languageOriginal:         "sanskrit",
+    primaryDeity:             "Shiva",
+    author:                   "Goswami Tulsidas",
+    sourceHint:               "Ramcharitmanas — Uttara Kanda",
+  },
+  {
+    canonicalTitle:           "Nirvana Shatakam",
+    canonicalTitleDevanagari: "निर्वाण षट्कम्",
+    alternateTitles:          ["Atma Shatakam", "Nirvana Shatakam", "निर्वाण षट्कम्"],
+    tradition:                "advaita_vedanta",
+    textType:                 "stotra",
+    languageOriginal:         "sanskrit",
+    primaryDeity:             "Shiva / Atman",
+    author:                   "Adi Shankaracharya",
+  },
+  {
+    canonicalTitle:           "Achyutashtakam",
+    canonicalTitleDevanagari: "अच्युताष्टकम्",
+    alternateTitles:          ["Achyuta Ashtakam", "अच्युताष्टकम्"],
+    tradition:                "vaishnava",
+    textType:                 "stotra",
+    languageOriginal:         "sanskrit",
+    primaryDeity:             "Vishnu / Krishna",
+    author:                   "Adi Shankaracharya",
+    attributedAuthor:         "attributed to Adi Shankaracharya",
+  },
+  {
+    canonicalTitle:           "Ganesha Pancharatnam",
+    canonicalTitleDevanagari: "गणेश पञ्चरत्नम्",
+    alternateTitles:          ["Ganesha Pancharatna Stotram", "गणेश पञ्चरत्नम्"],
+    tradition:                "ganapatya",
+    textType:                 "stotra",
+    languageOriginal:         "sanskrit",
+    primaryDeity:             "Ganesha",
+    author:                   "Adi Shankaracharya",
+  },
+  {
+    canonicalTitle:           "Gauri Dashakam",
+    canonicalTitleDevanagari: "गौरी दशकम्",
+    alternateTitles:          ["Gauri Dashakam", "गौरी दशकम्"],
+    tradition:                "shakta",
+    textType:                 "stotra",
+    languageOriginal:         "sanskrit",
+    primaryDeity:             "Gauri / Devi",
+    author:                   "Adi Shankaracharya",
+  },
+  {
+    canonicalTitle:           "Shiva Tandava Stotram",
+    canonicalTitleDevanagari: "शिव ताण्डव स्तोत्रम्",
+    alternateTitles:          ["Shiva Tandava Stotra", "शिव ताण्डव स्तोत्रम्"],
+    tradition:                "shaiva",
+    textType:                 "stotra",
+    languageOriginal:         "sanskrit",
+    primaryDeity:             "Shiva",
+    author:                   "Ravana",
+    attributedAuthor:         "attributed to Ravana",
+  },
+  {
+    canonicalTitle:           "Bhaja Govindam",
+    canonicalTitleDevanagari: "भज गोविन्दम्",
+    alternateTitles:          ["Moha Mudgara", "मोह मुद्गर", "भज गोविन्दम्"],
+    tradition:                "advaita_vedanta",
+    textType:                 "stotra",
+    languageOriginal:         "sanskrit",
+    primaryDeity:             "Krishna / Govinda",
+    author:                   "Adi Shankaracharya",
+  },
+  {
+    canonicalTitle:           "Hanuman Chalisa",
+    canonicalTitleDevanagari: "हनुमान चालीसा",
+    alternateTitles:          ["हनुमान चालीसा"],
+    tradition:                "vaishnava",
+    textType:                 "stotra",
+    languageOriginal:         "hindi",
+    primaryDeity:             "Hanuman",
+    author:                   "Goswami Tulsidas",
+  },
+  {
+    canonicalTitle:           "Mahamrityunjaya Mantra",
+    canonicalTitleDevanagari: "महामृत्युञ्जय मन्त्र",
+    alternateTitles:          ["Tryambakam Mantra", "महामृत्युञ्जय मन्त्र"],
+    tradition:                "shaiva",
+    textType:                 "mantra_set",
+    languageOriginal:         "sanskrit",
+    primaryDeity:             "Shiva",
+    attributedAuthor:         "Rigveda — Markandeya Rishi",
+  },
+  {
+    canonicalTitle:           "Lalitha Sahasranama",
+    canonicalTitleDevanagari: "ललिता सहस्रनाम",
+    alternateTitles:          ["Lalitha Sahasranamam", "ललिता सहस्रनाम"],
+    tradition:                "shakta",
+    textType:                 "stotra",
+    languageOriginal:         "sanskrit",
+    primaryDeity:             "Lalitha / Tripura Sundari / Devi",
+    attributedAuthor:         "Brahmanda Purana — Hayagriva",
+  },
 ];
 
 // ── Work form modal ────────────────────────────────────────────────────────────
@@ -126,23 +236,23 @@ interface WorkFormProps {
     source?: SourceInput,
   ) => Promise<void>;
   onClose: () => void;
-  seed?: typeof KNOWN_WORKS[0];
+  seed?: SacredWorkPreset;
 }
 
 function WorkForm({ editing, ownerId, onSave, onClose, seed }: WorkFormProps) {
-  // Work fields
-  const [canonicalTitle,     setCanonicalTitle]     = useState(editing?.canonicalTitle ?? seed?.canonicalTitle ?? "");
-  const [canonicalTitleDev,  setCanonicalTitleDev]  = useState(editing?.canonicalTitleDevanagari ?? "");
-  const [alternateTitles,    setAlternateTitles]    = useState((editing?.alternateTitles ?? []).join(", "));
-  const [tradition,          setTradition]          = useState<SpiritualTradition>(editing?.tradition ?? seed?.tradition as SpiritualTradition ?? "general");
-  const [textType,           setTextType]           = useState<SacredTextType>(editing?.textType ?? seed?.textType as SacredTextType ?? "stotra");
-  const [author,             setAuthor]             = useState(editing?.author ?? "");
-  const [attributedAuthor,   setAttributedAuthor]   = useState(editing?.attributedAuthor ?? "");
-  const [languageOriginal,   setLanguageOriginal]   = useState<SacredLanguage>(editing?.languageOriginal ?? seed?.languageOriginal ?? "sanskrit");
-  const [primaryDeity,       setPrimaryDeity]       = useState(editing?.primaryDeity ?? seed?.primaryDeity ?? "");
+  // Work fields — all initialized from preset when seed is provided
+  const [canonicalTitle,     setCanonicalTitle]     = useState(editing?.canonicalTitle                        ?? seed?.canonicalTitle             ?? "");
+  const [canonicalTitleDev,  setCanonicalTitleDev]  = useState(editing?.canonicalTitleDevanagari              ?? seed?.canonicalTitleDevanagari    ?? "");
+  const [alternateTitles,    setAlternateTitles]    = useState((editing?.alternateTitles ?? seed?.alternateTitles ?? []).join(", "));
+  const [tradition,          setTradition]          = useState<SpiritualTradition>(editing?.tradition          ?? seed?.tradition                  ?? "general");
+  const [textType,           setTextType]           = useState<SacredTextType>(editing?.textType              ?? seed?.textType                   ?? "stotra");
+  const [author,             setAuthor]             = useState(editing?.author                                ?? seed?.author                     ?? "");
+  const [attributedAuthor,   setAttributedAuthor]   = useState(editing?.attributedAuthor                      ?? seed?.attributedAuthor           ?? "");
+  const [languageOriginal,   setLanguageOriginal]   = useState<SacredLanguage>(editing?.languageOriginal      ?? seed?.languageOriginal           ?? "sanskrit");
+  const [primaryDeity,       setPrimaryDeity]       = useState(editing?.primaryDeity                          ?? seed?.primaryDeity               ?? "");
   const [licenseStatus,      setLicenseStatus]      = useState<LicenseStatus>(editing?.licenseStatus ?? "unknown");
   const [publicDomainStatus, setPublicDomainStatus] = useState(editing?.publicDomainStatus ?? false);
-  const [founderNotes,       setFounderNotes]       = useState(editing?.founderNotes ?? "");
+  const [founderNotes,       setFounderNotes]       = useState(editing?.founderNotes ?? seed?.sourceHint ?? "");
 
   // Source URL fields
   const [showSource,    setShowSource]    = useState(false);
@@ -239,6 +349,16 @@ function WorkForm({ editing, ownerId, onSave, onClose, seed }: WorkFormProps) {
         <div className="overflow-y-auto flex-1 px-6 py-4">
           <form id="work-form" onSubmit={handleSubmit} className="space-y-4">
 
+            {/* Preset auto-filled note */}
+            {seed && !editing && (
+              <div className="rounded-xl border border-sky-900/30 bg-sky-950/15 px-4 py-2.5 flex items-center gap-2">
+                <span className="text-sky-400 text-sm">✦</span>
+                <p className="text-sky-400 text-[11px]">
+                  Preset metadata auto-filled — edit गर्न मिल्छ।
+                </p>
+              </div>
+            )}
+
             {/* Canonical title */}
             <div className="space-y-1">
               <label className="text-[10px] text-zinc-600 uppercase tracking-wide">Canonical Title *</label>
@@ -257,7 +377,7 @@ function WorkForm({ editing, ownerId, onSave, onClose, seed }: WorkFormProps) {
               <input
                 value={canonicalTitleDev}
                 onChange={e => setCanonicalTitleDev(e.target.value)}
-                placeholder="रुद्राष्टकम्"
+                placeholder="देवनागरी शीर्षक थप्नुहोस्…"
                 className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-zinc-300 placeholder-zinc-700 focus:outline-none focus:border-white/15"
                 style={{ fontFamily: "serif" }}
               />
@@ -269,7 +389,7 @@ function WorkForm({ editing, ownerId, onSave, onClose, seed }: WorkFormProps) {
               <input
                 value={alternateTitles}
                 onChange={e => setAlternateTitles(e.target.value)}
-                placeholder="Rudra Ashtakam, रुद्राष्टकम्"
+                placeholder="Alternate title थप्नुहोस्…"
                 className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 text-xs text-zinc-400 placeholder-zinc-700 focus:outline-none focus:border-white/15"
               />
             </div>
@@ -326,7 +446,7 @@ function WorkForm({ editing, ownerId, onSave, onClose, seed }: WorkFormProps) {
               <input
                 value={primaryDeity}
                 onChange={e => setPrimaryDeity(e.target.value)}
-                placeholder="Shiva, Vishnu, Devi, Ganesha…"
+                placeholder="देवता / Character नाम थप्नुहोस्…"
                 className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 text-sm text-zinc-300 placeholder-zinc-700 focus:outline-none focus:border-white/15"
               />
             </div>
@@ -338,7 +458,7 @@ function WorkForm({ editing, ownerId, onSave, onClose, seed }: WorkFormProps) {
                 <input
                   value={author}
                   onChange={e => setAuthor(e.target.value)}
-                  placeholder="Goswami Tulsidas"
+                  placeholder="रचयिताको नाम थप्नुहोस्…"
                   className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 text-xs text-zinc-400 placeholder-zinc-700 focus:outline-none focus:border-white/15"
                 />
               </div>
@@ -347,7 +467,7 @@ function WorkForm({ editing, ownerId, onSave, onClose, seed }: WorkFormProps) {
                 <input
                   value={attributedAuthor}
                   onChange={e => setAttributedAuthor(e.target.value)}
-                  placeholder="attributed to Pushpadanta"
+                  placeholder="परम्परागत attribution थप्नुहोस्…"
                   className="w-full bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-2.5 text-xs text-zinc-400 placeholder-zinc-700 focus:outline-none focus:border-white/15"
                 />
               </div>
@@ -659,9 +779,9 @@ function SeedRow({
   existing,
   onAdd,
 }: {
-  seed: typeof KNOWN_WORKS[0];
+  seed: SacredWorkPreset;
   existing: boolean;
-  onAdd: (seed: typeof KNOWN_WORKS[0]) => void;
+  onAdd: (seed: SacredWorkPreset) => void;
 }) {
   const tColor = TRADITION_TEXT_COLORS[seed.tradition as SpiritualTradition] ?? "text-zinc-400";
   return (
@@ -688,7 +808,7 @@ export function SacredWorkPanel({ ownerId }: { ownerId: string }) {
   const [loading,     setLoading]     = useState(true);
   const [showForm,    setShowForm]    = useState(false);
   const [editingWork, setEditingWork] = useState<WorkDoc | null>(null);
-  const [seedForm,    setSeedForm]    = useState<typeof KNOWN_WORKS[0] | null>(null);
+  const [seedForm,    setSeedForm]    = useState<SacredWorkPreset | null>(null);
   const [filterTrad,  setFilterTrad]  = useState<SpiritualTradition | "all">("all");
   const [search,      setSearch]      = useState("");
 
@@ -756,7 +876,7 @@ export function SacredWorkPanel({ ownerId }: { ownerId: string }) {
   }
 
   function openEdit(work: WorkDoc) { setEditingWork(work); setSeedForm(null); setShowForm(true); }
-  function openNew(seed?: typeof KNOWN_WORKS[0]) {
+  function openNew(seed?: SacredWorkPreset) {
     setEditingWork(null);
     setSeedForm(seed ?? null);
     setShowForm(true);
