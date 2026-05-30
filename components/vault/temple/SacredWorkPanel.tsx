@@ -258,12 +258,31 @@ function WorkForm({ editing, ownerId, onSave, onClose, seed }: WorkFormProps) {
         <div className="overflow-y-auto flex-1 px-6 py-4">
           <form id="work-form" onSubmit={handleSubmit} className="space-y-4">
 
-            {/* Preset auto-filled note */}
+            {/* Preset auto-filled note + workspace hint */}
             {seed && !editing && (
-              <div className="rounded-xl border border-sky-900/30 bg-sky-950/15 px-4 py-2.5 flex items-center gap-2">
-                <span className="text-sky-400 text-sm">✦</span>
-                <p className="text-sky-400 text-[11px]">
-                  Preset metadata auto-filled — edit गर्न मिल्छ।
+              <div className="space-y-2">
+                <div className="rounded-xl border border-sky-900/30 bg-sky-950/15 px-4 py-2.5 flex items-center gap-2">
+                  <span className="text-sky-400 text-sm">✦</span>
+                  <p className="text-sky-400 text-[11px]">
+                    Preset metadata auto-filled — edit गर्न मिल्छ।
+                  </p>
+                </div>
+                <div className="rounded-xl border border-violet-900/40 bg-violet-950/15 px-4 py-2.5 flex items-center gap-2">
+                  <span className="text-violet-400 text-base">→</span>
+                  <p className="text-violet-300 text-[11px]">
+                    दर्ता गरेपछि <span className="font-semibold">{seed.canonicalTitle} Workspace</span> automatically खुल्छ —
+                    शब्दार्थ mapping र श्लोक analysis त्यहाँ हुन्छ।
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* New blank form hint */}
+            {!seed && !editing && (
+              <div className="rounded-xl border border-violet-900/40 bg-violet-950/15 px-4 py-2.5 flex items-center gap-2">
+                <span className="text-violet-400 text-base">→</span>
+                <p className="text-violet-300 text-[11px]">
+                  दर्ता गरेपछि Workspace automatically खुल्छ — त्यहाँ Sanskrit text paste र word mapping गर्न मिल्छ।
                 </p>
               </div>
             )}
@@ -484,12 +503,6 @@ function WorkCard({
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={() => onOpenWorkspace(work)}
-            className="text-[11px] px-2.5 py-1 rounded-lg border border-violet-800/40 text-violet-400 hover:bg-violet-950/30 transition-colors"
-          >
-            Workspace →
-          </button>
           <button onClick={() => onEdit(work)} className="text-zinc-700 hover:text-zinc-400 text-[11px] transition-colors">
             सम्पादन
           </button>
@@ -544,6 +557,17 @@ function WorkCard({
       {work.founderNotes && (
         <p className="text-zinc-700 text-[10px] leading-relaxed italic">{work.founderNotes}</p>
       )}
+
+      {/* Primary action — workspace */}
+      <button
+        onClick={() => onOpenWorkspace(work)}
+        className="w-full py-2.5 rounded-xl border border-violet-700/50 bg-violet-950/20 text-violet-300 text-xs font-medium hover:bg-violet-900/30 transition-colors"
+      >
+        श्लोक Mapping Workspace खोल्नुहोस् →
+      </button>
+      <p className="text-zinc-700 text-[10px] text-center -mt-1">
+        Word-by-word mapping यही Workspace मा हुन्छ।
+      </p>
     </div>
   );
 }
@@ -552,23 +576,37 @@ function WorkCard({
 
 function SeedRow({
   seed,
-  existing,
+  matchedWork,
   onAdd,
+  onOpenWorkspace,
 }: {
-  seed: SacredWorkPreset;
-  existing: boolean;
-  onAdd: (seed: SacredWorkPreset) => void;
+  seed:            SacredWorkPreset;
+  matchedWork:     WorkDoc | undefined;
+  onAdd:           (seed: SacredWorkPreset) => void;
+  onOpenWorkspace: (work: WorkDoc) => void;
 }) {
   const tColor = TRADITION_TEXT_COLORS[seed.tradition as SpiritualTradition] ?? "text-zinc-400";
   return (
     <div className="flex items-center justify-between py-1.5 px-3 rounded-lg hover:bg-white/[0.025] group">
-      <span className={`text-xs ${existing ? "text-zinc-600 line-through" : tColor}`}>
-        {seed.canonicalTitle}
-      </span>
-      {!existing && (
+      <div className="min-w-0">
+        <span className={`text-xs ${tColor}`}>{seed.canonicalTitle}</span>
+        {seed.canonicalTitleDevanagari && (
+          <span className="text-zinc-700 text-[10px] ml-2" style={{ fontFamily: "serif" }}>
+            {seed.canonicalTitleDevanagari}
+          </span>
+        )}
+      </div>
+      {matchedWork ? (
+        <button
+          onClick={() => onOpenWorkspace(matchedWork)}
+          className="text-[11px] px-3 py-1 rounded-lg border border-violet-800/50 bg-violet-950/20 text-violet-400 hover:bg-violet-900/30 transition-colors shrink-0 ml-2"
+        >
+          Workspace खोल्नुहोस् →
+        </button>
+      ) : (
         <button
           onClick={() => onAdd(seed)}
-          className="text-[10px] text-zinc-700 group-hover:text-zinc-400 transition-colors"
+          className="text-[10px] text-zinc-700 group-hover:text-zinc-400 transition-colors shrink-0 ml-2"
         >
           + दर्ता
         </button>
@@ -650,7 +688,7 @@ export function SacredWorkPanel({ ownerId }: { ownerId: string }) {
     setShowForm(true);
   }
 
-  const existingTitles = useMemo(() => new Set(works.map(w => w.canonicalTitle.toLowerCase())), [works]);
+  const worksByTitle = useMemo(() => new Map(works.map(w => [w.canonicalTitle.toLowerCase(), w])), [works]);
 
   const visible = useMemo(() => {
     let rows = works;
@@ -743,8 +781,9 @@ export function SacredWorkPanel({ ownerId }: { ownerId: string }) {
             <SeedRow
               key={s.canonicalTitle}
               seed={s}
-              existing={existingTitles.has(s.canonicalTitle.toLowerCase())}
+              matchedWork={worksByTitle.get(s.canonicalTitle.toLowerCase())}
               onAdd={seed => openNew(seed)}
+              onOpenWorkspace={setWorkspaceWork}
             />
           ))}
         </div>
