@@ -415,11 +415,11 @@ async function runAtomicSync(
   }
 
   try {
-    // 20s timeout — ensures we return within Cloudflare's 30s wall-clock limit
+    // 25s timeout — leaves ~3s buffer before Cloudflare's 30s wall-clock limit
     const geminiTimeout = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error(
-        "Gemini timeout (20s) — PDF ठूलो हुनसक्छ। सानो document (< 500KB) मा try गर्नुहोस्।"
-      )), 20_000)
+        "Gemini timeout (25s) — PDF धेरै ठूलो हुनसक्छ। Compressed वा सानो PDF मा try गर्नुहोस्।"
+      )), 25_000)
     );
     const result = await Promise.race([
       callGemini({
@@ -430,7 +430,7 @@ async function runAtomicSync(
           { inline_data: { mime_type: "application/pdf", data: base64 } },
           { text: prompt },
         ],
-        maxTokens: 8192,
+        maxTokens: 4096,
       }),
       geminiTimeout,
     ]);
