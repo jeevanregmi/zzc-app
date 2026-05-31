@@ -957,7 +957,7 @@ export default function DocumentsClient() {
       setExtractingAtomicId(null);
       setAtomicJobMsg(prev => ({
         ...prev,
-        [docId]: "⏱ ५ मिनेट भयो — extract अझै चलिरहेको हुनसक्छ। एकछिन पछि reload गर्नुहोस्।",
+        [docId]: "❌ ५ मिनेट भयो — Cloudflare worker timeout। PDF धेरै ठूलो हुन सक्छ। Firestore मा atomic_extraction_jobs check गर्नुहोस् — status 'processing' छ भने job fail भयो।",
       }));
     }, 5 * 60 * 1000);
 
@@ -1022,6 +1022,15 @@ export default function DocumentsClient() {
     if (!looksLikePdf) {
       setAtomicJobMsg(prev => ({ ...prev, [doc.id]: "❌ PDF document मात्र atomic extract हुन्छ।" }));
       return;
+    }
+
+    // Warn if file is large — Cloudflare waitUntil has ~30s wall-clock limit
+    // 8192 token output cap helps, but > 5MB PDFs may still silently timeout
+    if (doc.fileSize > 5 * 1024 * 1024) {
+      setAtomicJobMsg(prev => ({
+        ...prev,
+        [doc.id]: "⚠ File size > 5 MB — Atomic extract timeout हुन सक्छ। Cloudflare limit भन्दा ठूलो PDF। सानो document मा try गर्नुहोस्।",
+      }));
     }
 
     setExtractingAtomicId(doc.id);

@@ -248,7 +248,7 @@ async function runAtomicBackground(
     const base64 = toBase64(buf);
     log("atomic-extract", "bg_pdf_fetched", { docId: body.docId, sizeMB: sizeMB.toFixed(2) });
 
-    // Call Gemini
+    // Call Gemini — 8192 tokens keeps response under ~40s for Cloudflare waitUntil
     const result = await callGemini({
       apiKey:    env.GEMINI_API_KEY!,
       model:     env.GEMINI_MODEL,
@@ -257,7 +257,7 @@ async function runAtomicBackground(
         { inline_data: { mime_type: "application/pdf", data: base64 } },
         { text: prompt },
       ],
-      maxTokens: 32768,
+      maxTokens: 8192,
     });
 
     let responseText = result.text.trim()
@@ -413,7 +413,7 @@ async function runAtomicSync(
         { inline_data: { mime_type: "application/pdf", data: base64 } },
         { text: prompt },
       ],
-      maxTokens: 32768,
+      maxTokens: 8192,
     });
 
     let responseText = result.text.trim()
