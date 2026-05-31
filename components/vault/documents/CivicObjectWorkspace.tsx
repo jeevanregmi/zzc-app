@@ -13,6 +13,7 @@ import {
 import { db } from "../../../app/firebase";
 import type { IntelligenceDocument } from "../../../lib/types/documents";
 import Link from "next/link";
+import { RecordLayerViewer, type ActiveLayer } from "./RecordLayerViewer";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -120,6 +121,7 @@ export function CivicObjectWorkspace({
   const [trulyAtomicCount,    setTrulyAtomicCount]    = useState<number | null>(null);
   const [rawExhaustiveCount,  setRawExhaustiveCount]  = useState<number | null>(null);
   const [loading,             setLoading]             = useState(true);
+  const [activeLayer,         setActiveLayer]         = useState<ActiveLayer | null>(null);
 
   // Cleanup state — quarantine/delete fallback atoms
   type CleanupState = "idle" | "confirming_quarantine" | "confirming_delete" | "running" | "done";
@@ -479,6 +481,9 @@ export function CivicObjectWorkspace({
   const isConst    = isConstitutionDoc(doc);
   const isApproved = doc.adminApprovalStatus === "approved";
   const hasAI      = doc.processingStatus === "ai_ready";
+  // public_ready = page-traced atoms + any intel records marked publishToJanta
+  // Approximated as trulyAtomicCount for now; RecordLayerViewer does the exact query
+  const allPublicCount = (trulyAtomicCount ?? 0);
 
   // externalAtomicCount overrides local count when parent reports a fresh value
   const effectiveAtomicCount = externalAtomicCount ?? atomicCount ?? 0;
@@ -723,6 +728,19 @@ export function CivicObjectWorkspace({
         {/* ── Scrollable body ── */}
         <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
 
+          {/* ── Records & Layer Viewer — shown when a count card is clicked ── */}
+          {activeLayer && (
+            <RecordLayerViewer
+              docId={doc.id}
+              ownerId={ownerId}
+              layer={activeLayer}
+              onClose={() => setActiveLayer(null)}
+            />
+          )}
+
+          {/* ── Normal workspace content — hidden while viewer is open ── */}
+          {!activeLayer && (<>
+
           {/* ── Phase 1: Coverage Map ── */}
           {!loading && (
             <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 space-y-3">
@@ -755,24 +773,35 @@ export function CivicObjectWorkspace({
                 </div>
               )}
 
-              {/* Metric grid */}
+              {/* Metric grid — each card is clickable → opens RecordLayerViewer */}
               <div className="grid grid-cols-3 gap-1.5 text-center">
-                {[
-                  { label: "Raw paragraphs", count: rawExhaustiveCount ?? 0, color: (rawExhaustiveCount ?? 0) > 0 ? "sky" : "zinc" },
-                  { label: "Page-traced",    count: trulyAtomicCount ?? 0,   color: (trulyAtomicCount ?? 0) > 0 ? "emerald" : "zinc" },
-                  { label: "Fallback draft", count: fallbackCount ?? 0,      color: (fallbackCount ?? 0) > 0 ? "amber" : "zinc" },
-                  { label: "Intel records",  count: intelCount ?? 0,         color: (intelCount ?? 0) > 0 ? "sky" : "zinc" },
-                  { label: "Relationships",  count: relCount ?? 0,           color: (relCount ?? 0) > 0 ? "violet" : "zinc" },
-                  { label: "Public-ready",   count: (trulyAtomicCount ?? 0) > 0 ? (trulyAtomicCount ?? 0) : 0,
-                    color: (trulyAtomicCount ?? 0) > 0 ? "emerald" : "zinc" },
-                ].map(m => (
-                  <div key={m.label} className={`rounded-lg border px-2 py-1.5 ${
-                    m.color === "emerald" ? "border-emerald-800/40 bg-emerald-950/10" :
-                    m.color === "amber"   ? "border-amber-800/40 bg-amber-950/10" :
-                    m.color === "sky"     ? "border-sky-800/40 bg-sky-950/10" :
-                    m.color === "violet"  ? "border-violet-800/40 bg-violet-950/10" :
-                    "border-zinc-800/30 bg-zinc-900/10"
-                  }`}>
+                {([
+                  { label: "Raw paragraphs", count: rawExhaustiveCount ?? 0, color: (rawExhaustiveCount ?? 0) > 0 ? "sky"     : "zinc", layer: "raw_exhaustive" as ActiveLayer },
+                  { label: "Page-traced",    count: trulyAtomicCount ?? 0,   color: (trulyAtomicCount ?? 0) > 0   ? "emerald" : "zinc", layer: "atomic"         as ActiveLayer },
+                  { label: "Fallback draft", count: fallbackCount ?? 0,      color: (fallbackCount ?? 0) > 0      ? "amber"   : "zinc", layer: "fallback"       as ActiveLayer },
+                  { label: "Intel records",  count: intelCount ?? 0,         color: (intelCount ?? 0) > 0         ? "sky"     : "zinc", layer: "intel"          as ActiveLayer },
+                  { label: "Relationships",  count: relCount ?? 0,           color: (relCount ?? 0) > 0           ? "violet"  : "zinc", layer: "relationships"  as ActiveLayer },
+                  {
+                    label: "Public-ready",
+                    count: allPublicCount,
+                    color: allPublicCount > 0 ? "emerald" : "zinc",
+                    layer: "public_ready" as ActiveLayer,
+                  },
+                ] satisfies Array<{ label: string; count: number; color: string; layer: ActiveLayer }>).map(m => (
+                  <button
+                    key={m.label}
+                    onClick={() => m.count > 0 ? setActiveLayer(m.layer) : undefined}
+                    disabled={m.count === 0}
+                    className={`rounded-lg border px-2 py-1.5 transition-all group ${
+                      m.count > 0 ? "hover:border-white/20 cursor-pointer" : "cursor-default opacity-60"
+                    } ${
+                      m.color === "emerald" ? "border-emerald-800/40 bg-emerald-950/10" :
+                      m.color === "amber"   ? "border-amber-800/40 bg-amber-950/10" :
+                      m.color === "sky"     ? "border-sky-800/40 bg-sky-950/10" :
+                      m.color === "violet"  ? "border-violet-800/40 bg-violet-950/10" :
+                      "border-zinc-800/30 bg-zinc-900/10"
+                    }`}
+                  >
                     <p className={`text-sm font-black ${
                       m.color === "emerald" ? "text-emerald-400" :
                       m.color === "amber"   ? "text-amber-400" :
@@ -781,7 +810,10 @@ export function CivicObjectWorkspace({
                       "text-zinc-600"
                     }`}>{m.count}</p>
                     <p className="text-[9px] text-zinc-600 mt-0.5 leading-tight">{m.label}</p>
-                  </div>
+                    {m.count > 0 && (
+                      <p className="text-[8px] text-zinc-700 group-hover:text-zinc-500 mt-0.5 transition-colors">tap →</p>
+                    )}
+                  </button>
                 ))}
               </div>
 
@@ -1273,6 +1305,29 @@ export function CivicObjectWorkspace({
               )}
             </div>
           </div>
+
+          {/* ── Database map ── */}
+          <div className="rounded-xl border border-zinc-800/30 bg-zinc-900/10 px-4 py-3 space-y-2">
+            <p className="text-zinc-600 text-[10px] uppercase tracking-wide">यो Object कुन database layer मा छ?</p>
+            <div className="space-y-1">
+              {[
+                { collection: "vault_documents",       role: "Source document metadata",           action: "Upload, AI analysis, approval status" },
+                { collection: "janta_intelligence",    role: "Intel + raw atoms + fallback drafts", action: "Full extraction, atomic extraction, cleanup" },
+                { collection: "janta_relationships",   role: "Cross-document graph edges",          action: "Relationship matching" },
+                { collection: "document_cleanup_logs", role: "Quarantine / delete audit trail",     action: "Immutable — never modified" },
+              ].map(r => (
+                <div key={r.collection} className="flex items-start gap-2 text-[9px]">
+                  <span className="font-mono text-violet-600 shrink-0 mt-0.5">{r.collection}</span>
+                  <span className="text-zinc-700">→ {r.role}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-[9px] text-zinc-700 pt-1 border-t border-zinc-800/30">
+              Coverage Map को हरेक number मा tap गर्नुहोस् — actual records देखिन्छन्।
+            </p>
+          </div>
+
+          </>)} {/* end !activeLayer */}
 
         </div>
       </div>
