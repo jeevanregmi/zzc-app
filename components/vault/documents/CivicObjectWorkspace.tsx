@@ -150,18 +150,27 @@ export function CivicObjectWorkspace({
   const effectiveAtomicMsg = atomicJobMsg || localAtomicMsg;
 
   function handleAtomicConfirm() {
+    console.log("[CivicObjectWorkspace] handleAtomicConfirm fired", {
+      docId: doc.id,
+      hasHandler: !!onExtractAtomic,
+      isExtractingAtomic,
+    });
     setConfirmAtomic(false);
 
     if (!onExtractAtomic) {
+      console.error("[CivicObjectWorkspace] onExtractAtomic prop is undefined — check DocumentsClient wiring");
       setLocalAtomicMsg("❌ Atomic extraction handler जोडिएको छैन — page reload गर्नुहोस्।");
       return;
     }
 
     setLocalAtomicMsg("⏳ Atomic extraction शुरु हुँदैछ…");
+    console.log("[CivicObjectWorkspace] calling onExtractAtomic…");
 
     try {
       onExtractAtomic(doc);
+      console.log("[CivicObjectWorkspace] onExtractAtomic called — waiting for parent state");
     } catch (err) {
+      console.error("[CivicObjectWorkspace] onExtractAtomic threw:", err);
       setLocalAtomicMsg(
         `❌ Handler error: ${err instanceof Error ? err.message : String(err)}`.slice(0, 150)
       );
@@ -302,7 +311,7 @@ export function CivicObjectWorkspace({
                : doc.sourceType !== "official" ? "Official documents मात्र"
                : "प्रत्येक तथ्य page number + verbatim quote सहित",
       action:  isApproved && doc.sourceType === "official" && !isConst
-               && effectiveAtomicCount === 0 && !isExtractingAtomic && !atomicJobMsg
+               && effectiveAtomicCount === 0 && !isExtractingAtomic && !atomicJobMsg && !localAtomicMsg
                ? () => setConfirmAtomic(true) : undefined,
       actionLabel: "⚛ Atomic Extract गर्नुहोस्",
     },
@@ -367,6 +376,30 @@ export function CivicObjectWorkspace({
             ✕
           </button>
         </div>
+
+        {/* ── Atomic job status — pinned below header, always visible ── */}
+        {effectiveAtomicMsg && (
+          <div className={`mx-5 mt-3 rounded-xl border px-4 py-3 flex items-start gap-3 text-xs leading-relaxed shrink-0 ${
+            effectiveAtomicMsg.startsWith("✅")
+              ? "border-emerald-800/50 bg-emerald-950/15 text-emerald-300"
+              : effectiveAtomicMsg.startsWith("❌")
+              ? "border-red-800/50 bg-red-950/15 text-red-300"
+              : effectiveAtomicMsg.startsWith("⚠")
+              ? "border-amber-700/60 bg-amber-950/20 text-amber-200"
+              : "border-violet-700/60 bg-violet-950/20 text-violet-200 animate-pulse"
+          }`}>
+            <span className="text-base shrink-0">
+              {effectiveAtomicMsg.startsWith("✅") ? "✅"
+               : effectiveAtomicMsg.startsWith("❌") ? "❌"
+               : effectiveAtomicMsg.startsWith("⚠") ? "⚠"
+               : "⚛"}
+            </span>
+            <div className="min-w-0">
+              <p className="font-semibold">Atomic Extraction</p>
+              <p className="mt-0.5 opacity-90">{effectiveAtomicMsg.replace(/^[✅❌⏳⚛⚠]\s*/, "")}</p>
+            </div>
+          </div>
+        )}
 
         {/* ── Scrollable body ── */}
         <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
@@ -492,26 +525,7 @@ export function CivicObjectWorkspace({
             </div>
           )}
 
-          {/* ── Atomic job status message (local or parent) ── */}
-          {effectiveAtomicMsg && (
-            <div className={`rounded-xl border px-4 py-3 flex items-start gap-3 text-xs leading-relaxed ${
-              effectiveAtomicMsg.startsWith("✅")
-                ? "border-emerald-800/40 bg-emerald-950/10 text-emerald-300"
-                : effectiveAtomicMsg.startsWith("❌")
-                ? "border-red-800/40 bg-red-950/10 text-red-300"
-                : effectiveAtomicMsg.startsWith("⚠")
-                ? "border-amber-700/60 bg-amber-950/20 text-amber-300"
-                : "border-amber-800/40 bg-amber-950/10 text-amber-300 animate-pulse"
-            }`}>
-              <span className="text-base shrink-0">
-                {effectiveAtomicMsg.startsWith("✅") ? "✅"
-                 : effectiveAtomicMsg.startsWith("❌") ? "❌"
-                 : effectiveAtomicMsg.startsWith("⚠") ? "⚠"
-                 : "⚛"}
-              </span>
-              <span className="leading-relaxed">{effectiveAtomicMsg.replace(/^[✅❌⏳⚛⚠]\s*/, "")}</span>
-            </div>
-          )}
+          {/* status shown pinned above scrollable area — nothing here */}
 
           {/* ── Key insights ── */}
           {doc.aiKeyInsights && doc.aiKeyInsights.length > 0 && (
