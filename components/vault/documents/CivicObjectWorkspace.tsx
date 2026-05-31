@@ -341,87 +341,100 @@ export function CivicObjectWorkspace({
     const now        = new Date().toISOString();
     let totalAtoms   = 0;
 
+    const MAX_RETRIES = 2;
+
     for (const chunk of chunks) {
-      setFullExtrChunks(prev => prev.map(c =>
-        c.index === chunk.index ? { ...c, status: "running" } : c
-      ));
+      let success = false;
+      let lastError = "";
 
-      try {
-        const res = await fetch("/api/chunk-extract", {
-          method:  "POST",
-          headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({
-            fileUri,
-            startPage:   chunk.start,
-            endPage:     chunk.end,
-            chunkIndex:  chunk.index,
-            totalChunks: chunks.length,
-            docId:       doc.id,
-            ownerId,
-            docTitle:    doc.title,
-            sourceYear,
-            domain,
-          }),
-        });
-        const data = await res.json() as {
-          ok:        boolean;
-          records?:  Record<string, unknown>[];
-          error?:    string;
-          validFound?: number;
-        };
-
-        if (!data.ok) {
-          setFullExtrChunks(prev => prev.map(c =>
-            c.index === chunk.index
-              ? { ...c, status: "error", error: (data.error ?? "Chunk failed").slice(0, 80) }
-              : c
-          ));
-          continue;
+      for (let attempt = 0; attempt <= MAX_RETRIES && !success; attempt++) {
+        // Brief pause before retry (not on first attempt)
+        if (attempt > 0) {
+          await new Promise(r => setTimeout(r, 3000));
         }
 
-        const records = data.records ?? [];
-
-        // Save atoms to Firestore immediately after each chunk
-        if (records.length > 0) {
-          await Promise.all(records.map(r =>
-            addDoc(collection(db, "janta_intelligence"), {
-              summaryNepali:   "",
-              measurable:      true,
-              timeline:        null,
-              budgetAmount:    null,
-              geoScope:        "national",
-              governmentLevel: "federal",
-              tags:            [],
-              affectedGroups:  [],
-              affectedSectors: [],
-              department:      null,
-              ...r,
-              ownerId,
-              sourceDocId:          doc.id,
-              sourceDocTitle:       doc.title,
-              implementationStatus: "announced",
-              verificationStatus:   "ai_extracted",
-              extractionTier:       "atomic",
-              publishToJanta:       true,
-              published:            true,
-              extractionChunk:      chunk.index,
-              chunkPageRange:       `${chunk.start}-${chunk.end}`,
-              createdAt:            now,
-              updatedAt:            now,
-            })
-          ));
-        }
-
-        totalAtoms += records.length;
-        setFullExtrAtoms(totalAtoms);
         setFullExtrChunks(prev => prev.map(c =>
-          c.index === chunk.index ? { ...c, status: "done", records: records.length } : c
+          c.index === chunk.index
+            ? { ...c, status: "running", error: attempt > 0 ? `retry ${attempt}/${MAX_RETRIES}…` : undefined }
+            : c
         ));
 
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        try {
+          const res = await fetch("/api/chunk-extract", {
+            method:  "POST",
+            headers: { "Content-Type": "application/json" },
+            body:    JSON.stringify({
+              fileUri,
+              startPage:   chunk.start,
+              endPage:     chunk.end,
+              chunkIndex:  chunk.index,
+              totalChunks: chunks.length,
+              docId:       doc.id,
+              ownerId,
+              docTitle:    doc.title,
+              sourceYear,
+              domain,
+            }),
+          });
+          const data = await res.json() as {
+            ok:        boolean;
+            records?:  Record<string, unknown>[];
+            error?:    string;
+            validFound?: number;
+          };
+
+          if (!data.ok) {
+            lastError = (data.error ?? "Chunk failed").slice(0, 120);
+            continue;
+          }
+
+          const records = data.records ?? [];
+
+          if (records.length > 0) {
+            await Promise.all(records.map(r =>
+              addDoc(collection(db, "janta_intelligence"), {
+                summaryNepali:   "",
+                measurable:      true,
+                timeline:        null,
+                budgetAmount:    null,
+                geoScope:        "national",
+                governmentLevel: "federal",
+                tags:            [],
+                affectedGroups:  [],
+                affectedSectors: [],
+                department:      null,
+                ...r,
+                ownerId,
+                sourceDocId:          doc.id,
+                sourceDocTitle:       doc.title,
+                implementationStatus: "announced",
+                verificationStatus:   "ai_extracted",
+                extractionTier:       "atomic",
+                publishToJanta:       true,
+                published:            true,
+                extractionChunk:      chunk.index,
+                chunkPageRange:       `${chunk.start}-${chunk.end}`,
+                createdAt:            now,
+                updatedAt:            now,
+              })
+            ));
+          }
+
+          totalAtoms += records.length;
+          setFullExtrAtoms(totalAtoms);
+          setFullExtrChunks(prev => prev.map(c =>
+            c.index === chunk.index ? { ...c, status: "done", records: records.length, error: undefined } : c
+          ));
+          success = true;
+
+        } catch (err) {
+          lastError = (err instanceof Error ? err.message : String(err)).slice(0, 120);
+        }
+      }
+
+      if (!success) {
         setFullExtrChunks(prev => prev.map(c =>
-          c.index === chunk.index ? { ...c, status: "error", error: msg.slice(0, 80) } : c
+          c.index === chunk.index ? { ...c, status: "error", error: lastError } : c
         ));
       }
     }
