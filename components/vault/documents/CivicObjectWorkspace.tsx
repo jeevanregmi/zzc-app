@@ -145,6 +145,13 @@ export function CivicObjectWorkspace({
   const [fullExtrParagraphs, setFullExtrParagraphs] = useState<number>(0);
   const [fullExtrError,      setFullExtrError]       = useState<string>("");
 
+  // Source Coverage Verification
+  const [detectedPageCount,    setDetectedPageCount]    = useState<number | null>(
+    ((doc as unknown as Record<string, unknown>).detectedPageCount as number | undefined) ?? null
+  );
+  const [founderExpectedPages, setFounderExpectedPages] = useState<string>("");
+  const [storedFileUri,        setStoredFileUri]        = useState<string>("");
+
   const [confirmAtomic,  setConfirmAtomic]  = useState(false);
   // localAtomicMsg: immediate feedback, set synchronously on button click.
   // Does NOT depend on parent re-render or prop propagation.
@@ -296,17 +303,7 @@ export function CivicObjectWorkspace({
 
   async function handleFullExtraction() {
     const CHUNK_PAGES = 3;
-    const pageCount   = (doc as unknown as Record<string, unknown>).pageCount as number | undefined
-      ?? Math.ceil(doc.fileSize / 15000); // ~15KB per scanned page
 
-    // Build chunk plan
-    const chunks: ChunkStatus[] = [];
-    for (let p = 1; p <= pageCount; p += CHUNK_PAGES) {
-      const start = p;
-      const end   = Math.min(p + CHUNK_PAGES - 1, pageCount);
-      chunks.push({ index: chunks.length, start, end, status: "pending", records: 0, paragraphs: 0 });
-    }
-    setFullExtrChunks(chunks);
     setFullExtrAtoms(0);
     setFullExtrParagraphs(0);
     setFullExtrError("");
@@ -314,6 +311,7 @@ export function CivicObjectWorkspace({
 
     // Step 1 — Upload PDF to Gemini Files API
     let fileUri = "";
+    let resolvedPageCount = 0;
     try {
       const upRes = await fetch("/api/gemini-file-upload", {
         method:  "POST",
@@ -326,18 +324,46 @@ export function CivicObjectWorkspace({
           docTitle:    doc.title,
         }),
       });
-      const upData = await upRes.json() as { ok: boolean; fileUri?: string; error?: string };
+      const upData = await upRes.json() as {
+        ok: boolean; fileUri?: string; error?: string;
+        pageCount?: number; sizeBytes?: number;
+      };
       if (!upData.ok || !upData.fileUri) {
         setFullExtrError(upData.error ?? "PDF upload to Gemini Files API failed");
         setFullExtrState("error");
         return;
       }
       fileUri = upData.fileUri;
+      setStoredFileUri(fileUri);
+
+      // Use detected page count from binary scan; fall back to manual override or size estimate
+      const detectedPages = upData.pageCount ?? 0;
+      if (detectedPages > 0) {
+        setDetectedPageCount(detectedPages);
+        // Save detected page count back to vault_documents for next session
+        void updateDoc(firestoreDoc(db, "vault_documents", doc.id), {
+          detectedPageCount: detectedPages,
+        }).catch(() => {});
+      }
+      const founderOverride = parseInt(founderExpectedPages, 10);
+      resolvedPageCount =
+        (founderOverride > 0 ? founderOverride : null)
+        ?? (detectedPages > 0 ? detectedPages : null)
+        ?? Math.ceil(doc.fileSize / 15000);
     } catch (err) {
       setFullExtrError(`Upload error: ${err instanceof Error ? err.message : String(err)}`);
       setFullExtrState("error");
       return;
     }
+
+    // Build chunk plan now that we have the real page count
+    const chunks: ChunkStatus[] = [];
+    for (let p = 1; p <= resolvedPageCount; p += CHUNK_PAGES) {
+      const start = p;
+      const end   = Math.min(p + CHUNK_PAGES - 1, resolvedPageCount);
+      chunks.push({ index: chunks.length, start, end, status: "pending", records: 0, paragraphs: 0 });
+    }
+    setFullExtrChunks(chunks);
 
     // Step 2 — Process each chunk sequentially
     setFullExtrState("extracting");
@@ -383,7 +409,10 @@ export function CivicObjectWorkspace({
             ok:              boolean;
             pages?:          Array<{
               pageNumber:  number;
-              paragraphs:  Array<{ text: string; summaryNepali: string; type: string; orderIndex: number }>;
+              paragraphs:  Array<{
+                text: string; summaryNepali: string; type: string; orderIndex: number;
+                sectionTitle?: string; heading?: string; subheading?: string; isHeading?: boolean;
+              }>;
             }>;
             error?:          string;
             totalParagraphs?: number;
@@ -416,6 +445,11 @@ export function CivicObjectWorkspace({
                   title:                para.text.slice(0, 70).trimEnd() + (para.text.length > 70 ? "…" : ""),
                   sector:               "other",
                   fiscalYear:           sourceYear,
+                  // Document structure — preserved from Gemini extraction
+                  sectionTitle:         para.sectionTitle  ?? "",
+                  heading:              para.heading       ?? "",
+                  subheading:           para.subheading    ?? "",
+                  isHeading:            para.isHeading     ?? false,
                   extractionTier:       "raw_exhaustive",
                   publishToJanta:       false,
                   published:            false,
@@ -473,8 +507,8 @@ export function CivicObjectWorkspace({
       runBy:         ownerId,
       runAt:         new Date().toISOString(),
       chunkCount:    chunks.length,
-      pageCount,
-      notes:         `Full chunked extraction via Gemini Files API — ${totalAtoms} page-traced atoms`,
+      pageCount:     resolvedPageCount,
+      notes:         `Full chunked extraction via Gemini Files API — ${totalAtoms} raw exhaustive atoms · ${resolvedPageCount} pages`,
     }).catch(() => {});
   }
 
@@ -958,17 +992,36 @@ export function CivicObjectWorkspace({
               {/* Idle — show start button */}
               {fullExtrState === "idle" && (
                 <div className="space-y-2">
-                  <p className="text-zinc-500 text-[10px] leading-relaxed">
-                    PDF एक पटक Gemini Files API मा upload हुन्छ, त्यसपछि{" "}
-                    <span className="text-sky-400 font-medium">
-                      {Math.ceil(
-                        (((doc as unknown as Record<string, unknown>).pageCount as number | undefined)
-                          ?? Math.ceil(doc.fileSize / 15000)) / 3
-                      )} chunks
-                    </span>{" "}
-                    (3 pages प्रत्येक) sequentially process हुन्छ।
-                    प्रत्येक chunk को atoms तुरुन्त save हुन्छन्।
-                  </p>
+                  {/* Page count info + manual override */}
+                  <div className="rounded-lg border border-zinc-800/50 bg-zinc-900/30 px-3 py-2 space-y-1.5">
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className="text-zinc-500">PDF pages (detected):</span>
+                      <span className={`font-bold ${detectedPageCount ? "text-sky-400" : "text-zinc-600"}`}>
+                        {detectedPageCount ? `${detectedPageCount} pages` : "अज्ञात (size estimate)"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-zinc-600 text-[10px] shrink-0">Founder override:</label>
+                      <input
+                        type="number"
+                        value={founderExpectedPages}
+                        onChange={e => setFounderExpectedPages(e.target.value)}
+                        placeholder={String(detectedPageCount ?? Math.ceil(doc.fileSize / 15000))}
+                        className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-[10px] text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:border-sky-700"
+                      />
+                      <span className="text-zinc-700 text-[10px] shrink-0">pages</span>
+                    </div>
+                    {(() => {
+                      const override = parseInt(founderExpectedPages, 10);
+                      const base = detectedPageCount ?? Math.ceil(doc.fileSize / 15000);
+                      const resolved = override > 0 ? override : base;
+                      return (
+                        <p className="text-zinc-600 text-[10px]">
+                          → <span className="text-sky-400 font-medium">{Math.ceil(resolved / 3)} chunks</span> (3 pages each) · {resolved} total pages
+                        </p>
+                      );
+                    })()}
+                  </div>
                   {(trulyAtomicCount ?? 0) > 0 && (
                     <p className="text-amber-500/70 text-[10px]">
                       ⚠ {trulyAtomicCount} existing atoms छन् — re-run गर्दा नयाँ atoms थपिन्छन् (existing हटाइँदैनन्)।
@@ -1107,6 +1160,99 @@ export function CivicObjectWorkspace({
                     फेरि try गर्नुहोस्
                   </button>
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Source Coverage Verification ── */}
+          {!loading && isApproved && !isConst && (
+            <div className="rounded-xl border border-zinc-800/40 bg-zinc-900/10 px-4 py-3 space-y-2">
+              <p className="text-zinc-500 text-[10px] uppercase tracking-wide">Source Coverage / स्रोत कभरेज</p>
+
+              {/* Coverage grid */}
+              <div className="space-y-1 text-[10px]">
+                {/* File info */}
+                <div className="flex items-center justify-between">
+                  <span className="text-zinc-600">File</span>
+                  <span className="text-zinc-400 font-medium truncate max-w-[60%] text-right">{doc.fileName}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-zinc-600">Size</span>
+                  <span className="text-zinc-400">
+                    {doc.fileSize < 1024*1024
+                      ? `${(doc.fileSize/1024).toFixed(0)} KB`
+                      : `${(doc.fileSize/1024/1024).toFixed(1)} MB`}
+                  </span>
+                </div>
+                {/* Detected page count */}
+                <div className="flex items-center justify-between">
+                  <span className="text-zinc-600">Detected pages (PDF binary)</span>
+                  <span className={`font-bold ${detectedPageCount ? "text-sky-400" : "text-zinc-600"}`}>
+                    {detectedPageCount ? `${detectedPageCount}` : "अज्ञात"}
+                  </span>
+                </div>
+                {/* Founder expected */}
+                {founderExpectedPages && parseInt(founderExpectedPages, 10) > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-zinc-600">Founder expected</span>
+                    <span className="text-violet-400 font-bold">{founderExpectedPages} pages</span>
+                  </div>
+                )}
+                {/* Processed pages */}
+                {fullExtrChunks.length > 0 && (() => {
+                  const doneChunks  = fullExtrChunks.filter(c => c.status === "done");
+                  const errorChunks = fullExtrChunks.filter(c => c.status === "error");
+                  const processedPages = doneChunks.reduce((acc, c) => acc + (c.end - c.start + 1), 0);
+                  const expectedTotal  = parseInt(founderExpectedPages, 10) || detectedPageCount || Math.ceil(doc.fileSize / 15000);
+                  const coveragePct    = expectedTotal > 0 ? Math.round((processedPages / expectedTotal) * 100) : null;
+                  const mismatch       = expectedTotal > 0 && processedPages < expectedTotal;
+                  return (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <span className="text-zinc-600">Processed pages</span>
+                        <span className={`font-bold ${mismatch ? "text-amber-400" : "text-emerald-400"}`}>
+                          {processedPages} / {expectedTotal}
+                        </span>
+                      </div>
+                      {coveragePct !== null && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-zinc-600">Coverage</span>
+                          <span className={`font-bold ${coveragePct < 100 ? "text-amber-400" : "text-emerald-400"}`}>
+                            {coveragePct}%
+                          </span>
+                        </div>
+                      )}
+                      {errorChunks.length > 0 && (
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="text-zinc-600 shrink-0">Failed pages</span>
+                          <span className="text-red-400 text-right">
+                            {errorChunks.map(c => `${c.start}–${c.end}`).join(", ")}
+                          </span>
+                        </div>
+                      )}
+                      {/* Mismatch warning */}
+                      {mismatch && (
+                        <div className="mt-1.5 rounded-lg border border-amber-800/50 bg-amber-950/20 px-3 py-2">
+                          <p className="text-amber-300 text-[10px] font-bold">
+                            ⚠ Page mismatch — document पूरा process भएको छैन।
+                          </p>
+                          <p className="text-amber-600 text-[10px] mt-0.5 leading-relaxed">
+                            {expectedTotal - processedPages} pages अझै बाँकी।
+                            Founder override मा correct page count राखेर फेरि extraction चलाउनुहोस्।
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+
+              {/* Retry failed chunks if we have a stored fileUri */}
+              {storedFileUri && fullExtrState === "complete" &&
+               fullExtrChunks.filter(c => c.status === "error").length > 0 && (
+                <p className="text-zinc-600 text-[10px]">
+                  ⟳ Failed chunks — Gemini Files API URI valid छ (48h)। फेरि extraction run गर्नुहोस् भने failed pages re-process हुन्छन्।
+                </p>
               )}
             </div>
           )}

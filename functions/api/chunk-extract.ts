@@ -38,6 +38,10 @@ export interface RawParagraph {
   summaryNepali: string;
   type:          string;
   orderIndex:    number;
+  sectionTitle?: string;
+  heading?:      string;
+  subheading?:   string;
+  isHeading?:    boolean;
 }
 
 export interface RawPage {
@@ -70,12 +74,24 @@ For EACH paragraph, extract:
 - summaryNepali: one sentence — what does this mean for a citizen? (नागरिकको लागि)
 - type: choose ONE from: budget_allocation | policy | program | institution | tax | revenue | promise | employment | social | infrastructure | macroeconomic | narrative | legal | other
 - orderIndex: paragraph order on this page (0, 1, 2…)
+- sectionTitle: the top-level section name this paragraph belongs to (e.g. "Part 3: Social Development"), empty string if none
+- heading: the nearest heading above this paragraph (e.g. "Education Budget Allocation"), empty string if none
+- subheading: the nearest subheading above this paragraph (e.g. "Secondary School Programs"), empty string if none
+- isHeading: true if this paragraph IS itself a heading/title/section title, false otherwise
+
+DOCUMENT STRUCTURE RULES:
+- Every paragraph must carry the sectionTitle and heading from its context — even if they appeared on a previous page in this chunk
+- If a paragraph is a heading, set isHeading: true and still include it as a paragraph (headings ARE atoms)
+- Carry forward the last seen heading/subheading for every paragraph until a new one appears
+- Budget documents: major sections like "Part 1", "Part 2", "Chapter 3" are sectionTitles
+- Sub-sections like "Education", "Health", "Infrastructure" within a part are headings
+- Program names or specific policy blocks within a heading are subheadings
 
 STRICT RULES:
 - pageNumber MUST be ${req.startPage} to ${req.endPage}
 - Every page must appear in output with at least one paragraph
 - Do NOT return empty paragraphs array for any page
-- If a page only has headings or page numbers, still capture the heading as a paragraph
+- If a page only has headings or page numbers, still capture the heading as a paragraph with isHeading: true
 - Do NOT skip a page because it "looks like" a blank or transition page
 
 Return ONLY this JSON (no markdown, no explanation, start with {):
@@ -88,7 +104,11 @@ Return ONLY this JSON (no markdown, no explanation, start with {):
           "text": "verbatim text from the page",
           "summaryNepali": "नागरिकको लागि सरल अर्थ",
           "type": "narrative",
-          "orderIndex": 0
+          "orderIndex": 0,
+          "sectionTitle": "Part 1: Economic Overview",
+          "heading": "Introduction",
+          "subheading": "",
+          "isHeading": false
         }
       ]
     }
@@ -182,6 +202,10 @@ export const onRequestPost = async (context: {
               summaryNepali: String(para.summaryNepali ?? "").slice(0, 300),
               type:          String(para.type ?? "other"),
               orderIndex:    typeof para.orderIndex === "number" ? para.orderIndex : idx,
+              sectionTitle:  String(para.sectionTitle ?? ""),
+              heading:       String(para.heading ?? ""),
+              subheading:    String(para.subheading ?? ""),
+              isHeading:     para.isHeading === true,
             }))
         : [];
 

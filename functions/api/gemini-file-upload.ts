@@ -129,10 +129,13 @@ export const onRequestPost = async (context: {
     return clientError("Gemini Files API returned no file URI", 500, "GEMINI_UPLOAD_ERROR");
   }
 
+  const pageCount = detectPdfPageCount(pdfBytes);
+
   log("gemini-file-upload", "complete", {
     docId: body.docId,
     uri:   result.file.uri.slice(0, 80),
     bytes: pdfBytes.length,
+    pages: pageCount,
   });
 
   return new Response(
@@ -141,7 +144,18 @@ export const onRequestPost = async (context: {
       fileUri:   result.file.uri,
       fileName:  result.file.name,
       sizeBytes: pdfBytes.length,
+      pageCount,
     }),
     { headers: CORS },
   );
 };
+
+function detectPdfPageCount(bytes: Uint8Array): number {
+  // Scan first 512 KB for /Count entries in the PDF cross-reference structure.
+  // The root Pages dictionary has the highest /Count; return that.
+  const slice = bytes.slice(0, Math.min(bytes.length, 512 * 1024));
+  const text  = new TextDecoder("ascii", { fatal: false }).decode(slice);
+  const hits  = [...text.matchAll(/\/Count\s+(\d+)/g)];
+  if (hits.length === 0) return 0;
+  return Math.max(...hits.map(h => parseInt(h[1], 10)));
+}
