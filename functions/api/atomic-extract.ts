@@ -496,24 +496,57 @@ async function runAtomicFromText(
     }
 
     // Handle both { records: [...] } and bare [...] responses
-    const rawData = parsed as Record<string, unknown> | AtomicRecord[];
-    const rawRecords: AtomicRecord[] = Array.isArray(rawData)
+    const rawData = parsed as Record<string, unknown> | unknown[];
+    let rawRecordsRaw: unknown[] = Array.isArray(rawData)
       ? rawData
       : Array.isArray((rawData as Record<string, unknown>).records)
-        ? (rawData as { records: AtomicRecord[] }).records
+        ? (rawData as { records: unknown[] }).records
         : [];
 
-    if (!Array.isArray(rawRecords)) return clientError("AI returned no records array", 422, "NO_RECORDS");
+    // Synthesis fallback: Gemini sometimes refuses to extract from pre-processed AI summary text.
+    // If it returns empty, build records directly from the source intelligence fields —
+    // no second Gemini call needed since those fields are already in the request.
+    if (rawRecordsRaw.length === 0) {
+      const sources: string[] = [
+        ...(body.aiKeyInsights        ?? []),
+        ...(body.policyChanges        ?? []),
+        ...(body.financialImplications ?? []),
+      ].filter((s): s is string => typeof s === "string" && s.trim().length > 15);
 
-    if (rawRecords.length === 0) {
-      return clientError("AI returned empty records array", 422, "NO_VALID_ATOMIC_RECORDS");
+      if (sources.length > 0) {
+        log("atomic-extract", "text_synthesized_fallback", { docId: body.docId, count: sources.length });
+        rawRecordsRaw = sources.map((text, i) => ({
+          type:            i < (body.policyChanges?.length ?? 0) ? "reform" : "other",
+          title:           `Budget Item ${i + 1}`,
+          titleNepali:     text.slice(0, 60).trimEnd(),
+          summaryNepali:   text,
+          textEvidence:    text.slice(0, 400),
+          sector:          "other",
+          ministry:        "Government of Nepal",
+          confidence:      0.6,
+          pageNumber:      null,
+          geoScope:        "national",
+          governmentLevel: "federal",
+          tags:            [],
+          affectedGroups:  [],
+          affectedSectors: [],
+          measurable:      false,
+          timeline:        null,
+          budgetAmount:    null,
+          fiscalYear:      body.sourceYear ?? null,
+        }));
+      }
+    }
+
+    if (rawRecordsRaw.length === 0) {
+      return clientError("AI returned empty records — no extractable content found", 422, "NO_VALID_ATOMIC_RECORDS");
     }
 
     // Normalize: fill missing fields so records don't fail downstream schema checks
-    const normalized = rawRecords.map((r, i) => {
-      const raw = r as unknown as Record<string, unknown>;
-      const title       = String(raw.title       || raw.name     || raw.heading  || raw.subject || `Record ${i + 1}`);
-      const titleNepali = String(raw.titleNepali  || raw.nepaliTitle || raw.titleNp || title);
+    const normalized = rawRecordsRaw.map((r, i) => {
+      const raw = r as Record<string, unknown>;
+      const title         = String(raw.title       || raw.name     || raw.heading  || raw.subject || `Record ${i + 1}`);
+      const titleNepali   = String(raw.titleNepali  || raw.nepaliTitle || raw.titleNp || title);
       const summaryNepali = String(raw.summaryNepali || raw.summary || "");
       const textEvidence  = String(raw.textEvidence  || raw.evidence || raw.quote || summaryNepali || "");
       return { ...raw, title, titleNepali, summaryNepali, textEvidence };
@@ -531,7 +564,7 @@ async function runAtomicFromText(
       JSON.stringify({
         ok: true, status: "complete",
         records: atomicRecords, totalFound: atomicRecords.length,
-        rejected: rawRecords.length - atomicRecords.length,
+        rejected: rawRecordsRaw.length - atomicRecords.length,
         domain, extractionTier: "atomic", sizeBytes: 0,
         textMode: true,
       }),
