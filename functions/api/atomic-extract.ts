@@ -182,6 +182,17 @@ function normalizeTitle(title: string): string {
     .slice(0, 50);
 }
 
+function dedup(records: AtomicRecord[]): AtomicRecord[] {
+  const seen = new Set<string>();
+  return records.filter(r => {
+    const key = normalizeTitle(r.title);
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+// PDF mode: requires pageNumber >= 1
 function validateAndFilter(records: AtomicRecord[]): AtomicRecord[] {
   const valid = records.filter(r => {
     if (!r.pageNumber || r.pageNumber < 1) return false;
@@ -189,15 +200,19 @@ function validateAndFilter(records: AtomicRecord[]): AtomicRecord[] {
     if (!r.title || !r.titleNepali) return false;
     return true;
   });
+  return dedup(valid);
+}
 
-  const seen = new Set<string>();
-  return valid.filter(r => {
-    const key = normalizeTitle(r.title);
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
+// Text mode: pageNumber may be null — only requires textEvidence + title
+function validateAndFilterText(records: AtomicRecord[]): AtomicRecord[] {
+  const valid = records.filter(r => {
+    if (!r.textEvidence || r.textEvidence.trim().length < 10) return false;
+    if (!r.title || !r.titleNepali) return false;
     return true;
   });
+  return dedup(valid);
 }
+
 
 // ── Shared: fetch PDF from R2 or signed URL ───────────────────────────────────
 
@@ -391,13 +406,58 @@ async function runAtomicBackground(
 
 // ── Text-based extraction (fallback for large/scanned PDFs) ───────────────────
 
+function buildTextPrompt(body: AtomicRequest): string {
+  return `You are a civic intelligence extractor for ZZC (Nepal civic platform).
+
+Extract every specific, trackable fact from the document text below.
+pageNumber should be null (this is pre-extracted text, not a raw PDF).
+textEvidence must be a direct quote from the text provided (max 400 chars).
+
+Document: "${body.docTitle}"
+Type: ${body.docType ?? "official government document"}
+Year: ${body.sourceYear ?? "unknown"}
+
+Extract: budget allocations, policy changes, targets with numbers, institutions,
+deadlines, employment figures, tax changes, subsidies, programs with beneficiaries.
+SKIP vague aspirations and general statements.
+
+Return ONLY this JSON (no markdown, no explanation):
+{
+  "records": [
+    {
+      "type": "budget_target|promise|project|institution|employment_target|social_program|reform|other",
+      "title": "concise English (5-8 words)",
+      "titleNepali": "छोटो नेपाली शीर्षक",
+      "summaryNepali": "नागरिकले बुझ्ने १-२ वाक्य",
+      "sector": "education|health|agriculture|infrastructure|energy|finance|governance|employment|social|environment|other",
+      "ministry": "ministry name from document",
+      "target": "exact figure or null",
+      "measurable": true,
+      "timeline": "deadline or null",
+      "budgetAmount": "रु. X करोड or null",
+      "fiscalYear": "${body.sourceYear ?? "unknown"}",
+      "geoScope": "national|provincial|district|local",
+      "governmentLevel": "federal|provincial|local",
+      "tags": ["tag1", "tag2"],
+      "confidence": 0.85,
+      "affectedGroups": ["group1"],
+      "affectedSectors": ["sector1"],
+      "pageNumber": null,
+      "textEvidence": "direct quote from the text below (max 400 chars)",
+      "paragraphIdx": 0
+    }
+  ]
+}`;
+}
+
 async function runAtomicFromText(
   body: AtomicRequest,
   env: Env,
-  prompt: string,
+  _prompt: string,
   domain: string,
   textContent: string,
 ): Promise<Response> {
+  const textPrompt = buildTextPrompt(body);
   try {
     const geminiTimeout = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error("Gemini timeout (25s) on text extraction")), 25_000)
@@ -406,8 +466,8 @@ async function runAtomicFromText(
       callGemini({
         apiKey:    env.GEMINI_API_KEY!,
         model:     env.GEMINI_MODEL,
-        system:    "You are a precision atomic intelligence extractor. Return ONLY valid JSON. Every record MUST have pageNumber (use null if unknown) and textEvidence. No markdown. No code fences. Start with { end with }.",
-        parts:     [{ text: `DOCUMENT: ${body.docTitle}\n\n${textContent}\n\n---\n${prompt}` }],
+        system:    "Return ONLY valid JSON. No markdown. No code fences. Start with { end with }.",
+        parts:     [{ text: `${textPrompt}\n\n═══ DOCUMENT TEXT ═══\n\n${textContent.slice(0, 30000)}` }],
         maxTokens: 4096,
       }),
       geminiTimeout,
@@ -426,10 +486,17 @@ async function runAtomicFromText(
       );
     }
 
-    const data = parsed as { records: AtomicRecord[] };
-    if (!Array.isArray(data.records)) return clientError("AI returned no records array", 422, "NO_RECORDS");
+    // Handle both { records: [...] } and bare [...] responses
+    const rawData = parsed as Record<string, unknown> | AtomicRecord[];
+    const rawRecords: AtomicRecord[] = Array.isArray(rawData)
+      ? rawData
+      : Array.isArray((rawData as Record<string, unknown>).records)
+        ? (rawData as { records: AtomicRecord[] }).records
+        : [];
 
-    const validated = validateAndFilter(data.records);
+    if (!Array.isArray(rawRecords)) return clientError("AI returned no records array", 422, "NO_RECORDS");
+
+    const validated = validateAndFilterText(rawRecords);
     if (validated.length === 0) {
       return clientError("AI returned no valid records (missing textEvidence)", 422, "NO_VALID_ATOMIC_RECORDS");
     }
@@ -446,7 +513,7 @@ async function runAtomicFromText(
       JSON.stringify({
         ok: true, status: "complete",
         records: atomicRecords, totalFound: atomicRecords.length,
-        rejected: data.records.length - validated.length,
+        rejected: rawRecords.length - validated.length,
         domain, extractionTier: "atomic", sizeBytes: 0,
         textMode: true,
       }),
