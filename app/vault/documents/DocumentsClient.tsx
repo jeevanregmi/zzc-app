@@ -1056,6 +1056,14 @@ export default function DocumentsClient() {
           sourceYear:  (doc as unknown as Record<string,unknown>).docYear?.toString() ?? new Date(doc.uploadedAt).getFullYear().toString(),
           pageCount:   (doc as unknown as Record<string,unknown>).pageCount as number | undefined,
           domain:      doc.category === "finance" ? "finance" : "janta",
+          // Text fallback for scanned PDFs > 400KB — Gemini inline is too slow
+          ...(doc.fileSize > 400 * 1024 && doc.aiSummary ? {
+            aiSummary:            doc.aiSummary,
+            aiKeyInsights:        doc.aiKeyInsights,
+            policyChanges:        doc.policyChanges,
+            financialImplications: doc.financialImplications,
+            nepaliExplainer:      doc.nepaliExplainer,
+          } : {}),
         }),
       });
 

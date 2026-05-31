@@ -48,6 +48,12 @@ interface AtomicRequest {
   sourceYear?:  string;
   pageCount?:   number;
   domain?:      string;
+  // Text fallback fields — sent when PDF > 400KB (scanned docs too slow for Gemini inline)
+  aiSummary?:           string;
+  aiKeyInsights?:       string[];
+  policyChanges?:       string[];
+  financialImplications?: string[];
+  nepaliExplainer?:     string;
 }
 
 interface AtomicRecord {
@@ -383,7 +389,76 @@ async function runAtomicBackground(
   }
 }
 
-// ── Sync extraction (no token — returns records directly) ─────────────────────
+// ── Text-based extraction (fallback for large/scanned PDFs) ───────────────────
+
+async function runAtomicFromText(
+  body: AtomicRequest,
+  env: Env,
+  prompt: string,
+  domain: string,
+  textContent: string,
+): Promise<Response> {
+  try {
+    const geminiTimeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Gemini timeout (25s) on text extraction")), 25_000)
+    );
+    const result = await Promise.race([
+      callGemini({
+        apiKey:    env.GEMINI_API_KEY!,
+        model:     env.GEMINI_MODEL,
+        system:    "You are a precision atomic intelligence extractor. Return ONLY valid JSON. Every record MUST have pageNumber (use null if unknown) and textEvidence. No markdown. No code fences. Start with { end with }.",
+        parts:     [{ text: `DOCUMENT: ${body.docTitle}\n\n${textContent}\n\n---\n${prompt}` }],
+        maxTokens: 4096,
+      }),
+      geminiTimeout,
+    ]);
+
+    let responseText = result.text.trim()
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```\s*$/i, "")
+      .trim();
+
+    const [parsed, parseErr] = extractJson(responseText);
+    if (parseErr || !parsed) {
+      return clientError(
+        `AI response was not valid JSON. Preview: "${responseText.slice(0, 200)}"`,
+        422, "PARSE_ERROR",
+      );
+    }
+
+    const data = parsed as { records: AtomicRecord[] };
+    if (!Array.isArray(data.records)) return clientError("AI returned no records array", 422, "NO_RECORDS");
+
+    const validated = validateAndFilter(data.records);
+    if (validated.length === 0) {
+      return clientError("AI returned no valid records (missing textEvidence)", 422, "NO_VALID_ATOMIC_RECORDS");
+    }
+
+    const atomicRecords = validated.map(r => ({
+      ...r,
+      extractionTier: "atomic" as const,
+      domain,
+      textEvidence: r.textEvidence.slice(0, 400),
+      confidence:   Math.min(1, Math.max(0, r.confidence ?? 0.7)),
+    }));
+
+    return new Response(
+      JSON.stringify({
+        ok: true, status: "complete",
+        records: atomicRecords, totalFound: atomicRecords.length,
+        rejected: data.records.length - validated.length,
+        domain, extractionTier: "atomic", sizeBytes: 0,
+        textMode: true,
+      }),
+      { headers: CORS },
+    );
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return clientError(`Text extraction failed: ${msg}`, 500, "EXTRACTION_ERROR");
+  }
+}
+
+// ── Sync extraction (PDF inline — returns records directly) ───────────────────
 
 async function runAtomicSync(
   body: AtomicRequest,
@@ -391,6 +466,24 @@ async function runAtomicSync(
   prompt: string,
   domain: string,
 ): Promise<Response> {
+  // ── Text-based fallback (scanned PDFs > 400KB are too slow for Gemini inline) ─
+  // Frontend sends aiSummary + aiKeyInsights + policyChanges when PDF is large.
+  // Page numbers will be null/estimated but records are valid and fast.
+  const textParts = [
+    body.aiSummary,
+    ...(body.aiKeyInsights ?? []),
+    ...(body.policyChanges ?? []),
+    ...(body.financialImplications ?? []),
+    body.nepaliExplainer,
+  ].filter(Boolean);
+
+  if (textParts.length > 0) {
+    const textContent = textParts.join("\n\n");
+    log("atomic-extract", "text_mode", { docId: body.docId, chars: textContent.length });
+    return runAtomicFromText(body, env, prompt, domain, textContent);
+  }
+
+  // ── PDF inline mode (small PDFs only) ────────────────────────────────────────
   let sizeBytes = 0;
   let base64: string;
 
