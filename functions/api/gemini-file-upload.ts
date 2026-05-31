@@ -151,11 +151,20 @@ export const onRequestPost = async (context: {
 };
 
 function detectPdfPageCount(bytes: Uint8Array): number {
-  // Scan first 512 KB for /Count entries in the PDF cross-reference structure.
-  // The root Pages dictionary has the highest /Count; return that.
-  const slice = bytes.slice(0, Math.min(bytes.length, 512 * 1024));
-  const text  = new TextDecoder("ascii", { fatal: false }).decode(slice);
-  const hits  = [...text.matchAll(/\/Count\s+(\d+)/g)];
-  if (hits.length === 0) return 0;
-  return Math.max(...hits.map(h => parseInt(h[1], 10)));
+  // Scan the full PDF for /Count entries (root Pages dictionary has the highest value).
+  // Also scan the last 200 KB separately — xref table and trailer live there.
+  // For compressed PDFs (PDF 1.5+ object streams), /Count may not appear as plain
+  // ASCII, so we scan both ends and take the maximum.
+  const dec = new TextDecoder("ascii", { fatal: false });
+
+  const fullText  = dec.decode(bytes);
+  const tailStart = Math.max(0, bytes.length - 200 * 1024);
+  const tailText  = tailStart > 0 ? dec.decode(bytes.slice(tailStart)) : "";
+
+  const allHits = [
+    ...fullText.matchAll(/\/Count\s+(\d+)/g),
+    ...tailText.matchAll(/\/Count\s+(\d+)/g),
+  ];
+  if (allHits.length === 0) return 0;
+  return Math.max(...allHits.map(h => parseInt(h[1], 10)));
 }

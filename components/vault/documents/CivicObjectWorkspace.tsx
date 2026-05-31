@@ -152,6 +152,16 @@ export function CivicObjectWorkspace({
   const [founderExpectedPages, setFounderExpectedPages] = useState<string>("");
   const [storedFileUri,        setStoredFileUri]        = useState<string>("");
 
+  // Clean re-run (delete old extraction atoms, keep intel records)
+  type CleanRerunState = "idle" | "confirming" | "running" | "done";
+  const [cleanRerunState,  setCleanRerunState]  = useState<CleanRerunState>("idle");
+  const [cleanRerunResult, setCleanRerunResult] = useState<string>("");
+
+  // Unpublish all unreviewed public-ready records
+  type UnpublishAllState = "idle" | "confirming" | "running" | "done";
+  const [unpublishAllState, setUnpublishAllState] = useState<UnpublishAllState>("idle");
+  const [unpublishAllCount, setUnpublishAllCount] = useState<number>(0);
+
   const [confirmAtomic,  setConfirmAtomic]  = useState(false);
   // localAtomicMsg: immediate feedback, set synchronously on button click.
   // Does NOT depend on parent re-render or prop propagation.
@@ -297,6 +307,86 @@ export function CivicObjectWorkspace({
     await writeFallbackCleanupLog("keep_fallback_atoms", fallbackCount ?? 0);
     setCleanupState("done");
     setCleanupResult(`Fallback atoms internal draft मा राखियो — full extraction अझै आवश्यक छ।`);
+  }
+
+  // ── Clean re-run: delete raw_exhaustive + atomic atoms, keep intel ──────────
+
+  async function handleCleanRerun() {
+    setCleanRerunState("running");
+    try {
+      const snap = await getDocs(query(
+        collection(db, "janta_intelligence"),
+        where("ownerId",     "==", ownerId),
+        where("sourceDocId", "==", doc.id),
+        limit(1000),
+      ));
+      const toDelete = snap.docs.filter(d => {
+        const tier = (d.data() as Record<string, unknown>).extractionTier;
+        return tier === "raw_exhaustive" || tier === "atomic";
+      });
+      await Promise.all(toDelete.map(d => deleteDoc(firestoreDoc(db, "janta_intelligence", d.id))));
+      await addDoc(collection(db, "document_cleanup_logs"), {
+        actionType:    "clean_rerun_delete_extraction_atoms",
+        documentId:    doc.id,
+        documentTitle: doc.title,
+        affectedCount: toDelete.length,
+        runBy:         ownerId,
+        runAt:         new Date().toISOString(),
+        notes:         `Deleted ${toDelete.length} raw_exhaustive + atomic atoms. Intel records preserved.`,
+      }).catch(() => {});
+      setRawExhaustiveCount(0);
+      setAtomicCount(0);
+      setTrulyAtomicCount(0);
+      setFullExtrState("idle");
+      setFullExtrChunks([]);
+      setFullExtrAtoms(0);
+      setFullExtrParagraphs(0);
+      setCleanRerunResult(`${toDelete.length} extraction atoms हटाइयो — Intel records सुरक्षित। Fresh extraction को लागि ready।`);
+      setCleanRerunState("done");
+    } catch (err) {
+      setCleanRerunResult(`Clean re-run failed: ${err instanceof Error ? err.message : String(err)}`);
+      setCleanRerunState("idle");
+    }
+  }
+
+  // ── Unpublish all unreviewed public-ready records ─────────────────────────
+
+  async function handleUnpublishUnreviewed() {
+    setUnpublishAllState("running");
+    try {
+      const snap = await getDocs(query(
+        collection(db, "janta_intelligence"),
+        where("ownerId",     "==", ownerId),
+        where("sourceDocId", "==", doc.id),
+        limit(500),
+      ));
+      const unreviewed = snap.docs.filter(d => {
+        const data = d.data() as Record<string, unknown>;
+        return (data.publicReady === true || data.publishToJanta === true)
+          && data.founderReviewStatus !== "approved";
+      });
+      await Promise.all(unreviewed.map(d =>
+        updateDoc(firestoreDoc(db, "janta_intelligence", d.id), {
+          publishToJanta:      false,
+          publicReady:         false,
+          founderReviewStatus: "needs_review",
+          updatedAt:           new Date().toISOString(),
+        })
+      ));
+      await addDoc(collection(db, "document_cleanup_logs"), {
+        actionType:    "unpublish_unreviewed_public_records",
+        documentId:    doc.id,
+        documentTitle: doc.title,
+        affectedCount: unreviewed.length,
+        runBy:         ownerId,
+        runAt:         new Date().toISOString(),
+        notes:         `Unpublished ${unreviewed.length} records that were public without founder approval`,
+      }).catch(() => {});
+      setUnpublishAllCount(unreviewed.length);
+      setUnpublishAllState("done");
+    } catch (err) {
+      setUnpublishAllState("idle");
+    }
   }
 
   // ── Full chunked extraction (Phase 2) ─────────────────────────────────────────
@@ -865,6 +955,58 @@ export function CivicObjectWorkspace({
                   Founder approval पछि public।
                 </p>
               )}
+
+              {/* ── Public Safety: Unpublish unreviewed ── */}
+              {allPublicCount > 0 && unpublishAllState !== "done" && (
+                <div className="rounded-lg border border-red-900/50 bg-red-950/20 px-3 py-2.5 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <span className="text-red-400 shrink-0">🔴</span>
+                    <div>
+                      <p className="text-red-300 text-[11px] font-bold">
+                        {allPublicCount} public-ready records — Founder review बाँकी
+                      </p>
+                      <p className="text-red-500/70 text-[10px] mt-0.5 leading-relaxed">
+                        Raw extraction atoms public हुनु हुँदैन। Founder approval मात्र public बनाउँछ।
+                      </p>
+                    </div>
+                  </div>
+                  {unpublishAllState === "idle" && (
+                    <button
+                      onClick={() => setUnpublishAllState("confirming")}
+                      className="w-full text-[11px] py-1.5 rounded-lg bg-red-900/40 border border-red-700/60 text-red-200 hover:bg-red-900/60 transition-colors font-semibold"
+                    >
+                      🔒 सबै unreviewed records unpublish गर्नुहोस्
+                    </button>
+                  )}
+                  {unpublishAllState === "confirming" && (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => void handleUnpublishUnreviewed()}
+                        className="flex-1 text-[11px] py-1.5 rounded-lg bg-red-800/60 border border-red-700 text-red-100 font-bold hover:bg-red-800/80 transition-colors"
+                      >
+                        हो, unpublish गर्नुहोस्
+                      </button>
+                      <button
+                        onClick={() => setUnpublishAllState("idle")}
+                        className="flex-1 text-[11px] py-1.5 rounded-lg border border-zinc-700 text-zinc-500 hover:text-zinc-300 transition-colors"
+                      >
+                        रद्द
+                      </button>
+                    </div>
+                  )}
+                  {unpublishAllState === "running" && (
+                    <p className="text-red-400 text-[10px] animate-pulse text-center">Processing…</p>
+                  )}
+                </div>
+              )}
+              {unpublishAllState === "done" && (
+                <div className="rounded-lg border border-emerald-800/40 bg-emerald-950/10 px-3 py-2">
+                  <p className="text-emerald-300 text-[11px] font-semibold">✓ {unpublishAllCount} records unpublished</p>
+                  <p className="text-emerald-600 text-[10px] mt-0.5">
+                    publicReady: false · founderReviewStatus: needs_review · सबै founder review को लागि queue मा।
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -979,6 +1121,66 @@ export function CivicObjectWorkspace({
             </div>
           )}
 
+          {/* ── Clean Re-run card ── */}
+          {!loading && isApproved && !isConst &&
+           ((rawExhaustiveCount ?? 0) > 0 || (trulyAtomicCount ?? 0) > 0) &&
+           cleanRerunState !== "done" && (
+            <div className="rounded-xl border border-orange-900/40 bg-orange-950/10 px-4 py-3 space-y-2">
+              <div className="flex items-start gap-2">
+                <span className="text-orange-400 shrink-0 text-base">⟳</span>
+                <div>
+                  <p className="text-orange-300 text-xs font-bold">Clean Re-run — fresh extraction को लागि</p>
+                  <p className="text-orange-600/80 text-[10px] mt-0.5 leading-relaxed">
+                    {(rawExhaustiveCount ?? 0) > 0 && `${rawExhaustiveCount} raw_exhaustive atoms`}
+                    {(rawExhaustiveCount ?? 0) > 0 && (trulyAtomicCount ?? 0) > 0 && " · "}
+                    {(trulyAtomicCount ?? 0) > 0 && `${trulyAtomicCount} page-traced atoms`}
+                    {" "}delete हुनेछन्। Intel records ({intelCount ?? 0}) सुरक्षित रहन्छन्।
+                    Fresh extraction चलाउनु अगाडि यो गर्नुहोस्।
+                  </p>
+                </div>
+              </div>
+              {cleanRerunState === "idle" && (
+                <button
+                  onClick={() => setCleanRerunState("confirming")}
+                  className="w-full text-xs py-2 rounded-xl bg-orange-900/30 border border-orange-700/50 text-orange-200 hover:bg-orange-900/50 transition-colors font-semibold"
+                >
+                  🗑 Old extraction atoms हटाउनुहोस् (clean slate)
+                </button>
+              )}
+              {cleanRerunState === "confirming" && (
+                <div className="space-y-2">
+                  <p className="text-orange-200 text-[11px]">
+                    {(rawExhaustiveCount ?? 0) + (trulyAtomicCount ?? 0)} extraction atoms permanently delete हुनेछन्।
+                    Intel records र cleanup logs सुरक्षित।
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => void handleCleanRerun()}
+                      className="flex-1 text-xs py-2 rounded-xl bg-orange-800/50 border border-orange-700 text-orange-100 font-bold hover:bg-orange-800/70 transition-colors"
+                    >
+                      हो, हटाउनुहोस्
+                    </button>
+                    <button
+                      onClick={() => setCleanRerunState("idle")}
+                      className="flex-1 text-xs py-2 rounded-xl border border-zinc-700 text-zinc-500 hover:text-zinc-300 transition-colors"
+                    >
+                      रद्द
+                    </button>
+                  </div>
+                </div>
+              )}
+              {cleanRerunState === "running" && (
+                <p className="text-orange-400 text-xs animate-pulse text-center py-1">Deleting…</p>
+              )}
+            </div>
+          )}
+          {cleanRerunState === "done" && cleanRerunResult && (
+            <div className="rounded-xl border border-emerald-800/40 bg-emerald-950/10 px-4 py-3">
+              <p className="text-emerald-300 text-xs font-semibold">✓ Clean re-run ready</p>
+              <p className="text-emerald-500/80 text-[10px] mt-1">{cleanRerunResult}</p>
+            </div>
+          )}
+
           {/* ── Phase 2: Full Chunked Extraction Panel ── */}
           {!loading && isApproved && !isConst && (
             <div className="rounded-xl border border-sky-900/40 bg-sky-950/10 px-4 py-3 space-y-3">
@@ -1022,9 +1224,13 @@ export function CivicObjectWorkspace({
                       );
                     })()}
                   </div>
-                  {(trulyAtomicCount ?? 0) > 0 && (
-                    <p className="text-amber-500/70 text-[10px]">
-                      ⚠ {trulyAtomicCount} existing atoms छन् — re-run गर्दा नयाँ atoms थपिन्छन् (existing हटाइँदैनन्)।
+                  {((rawExhaustiveCount ?? 0) > 0 || (trulyAtomicCount ?? 0) > 0) && (
+                    <p className="text-amber-400 text-[10px] leading-relaxed">
+                      ⚠{" "}
+                      {(rawExhaustiveCount ?? 0) > 0 && `${rawExhaustiveCount} raw + `}
+                      {(trulyAtomicCount ?? 0) > 0 && `${trulyAtomicCount} atomic `}
+                      atoms पहिलेदेखि छन् — re-run गर्दा नयाँ atoms थपिन्छन्, पुरानाहरू मिसिन्छन्।
+                      <span className="text-amber-600"> माथि "Clean Re-run" बाट पहिले हटाउनुहोस्।</span>
                     </p>
                   )}
                   <button
