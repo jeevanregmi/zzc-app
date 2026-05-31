@@ -130,9 +130,7 @@ export const onRequestPost = async (context: {
     const result = await Promise.race([
       callGemini({
         apiKey:    env.GEMINI_API_KEY!,
-        // gemini-2.0-flash: faster inference, lower latency for extraction tasks
-        // Do NOT use env.GEMINI_MODEL here — 2.5-flash is too slow for per-chunk calls
-        model:     "gemini-2.0-flash",
+        model:     env.GEMINI_MODEL ?? "gemini-2.5-flash",
         system:    "You are a precise civic intelligence extractor. Return ONLY valid JSON. Every record MUST have pageNumber (in the requested range) and textEvidence (verbatim quote). No markdown. Start with { end with }.",
         parts: [
           { file_data: { mime_type: "application/pdf", file_uri: body.fileUri } },
