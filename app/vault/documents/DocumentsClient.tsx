@@ -13,6 +13,7 @@ import Link from "next/link";
 import { useQueueItems } from "../../../hooks/vault/useQueueItems";
 import { deleteStorageFile } from "../../../lib/vault/storage";
 import { DocumentCard } from "../../../components/vault/documents/DocumentCard";
+import { CivicObjectWorkspace } from "../../../components/vault/documents/CivicObjectWorkspace";
 import { DocumentUploadModal } from "../../../components/vault/documents/DocumentUploadModal";
 import { DocumentViewer } from "../../../components/vault/documents/DocumentViewer";
 import { LearnBlock } from "../../../components/vault/LearnTip";
@@ -274,6 +275,7 @@ export default function DocumentsClient() {
   }, [highlightDocId, loading]);
 
   const [viewing,       setViewing]      = useState<IntelligenceDocument | null>(null);
+  const [workspaceDoc,  setWorkspaceDoc] = useState<IntelligenceDocument | null>(null);
   const [processingId,  setProcessingId] = useState<string | null>(null);
   const [generatingImageId, setGeneratingImageId] = useState<string | null>(null);
   const [bulkImageProgress, setBulkImageProgress] = useState<{ done: number; total: number } | null>(null);
@@ -1361,6 +1363,25 @@ export default function DocumentsClient() {
         />
       )}
 
+      {/* ── Civic Object Workspace modal ── */}
+      {workspaceDoc && user && (
+        <CivicObjectWorkspace
+          doc={workspaceDoc}
+          ownerId={user.uid}
+          onClose={() => setWorkspaceDoc(null)}
+          isProcessing={processingId === workspaceDoc.id}
+          onProcess={handleProcess}
+          onExtractIntel={handleRequestExtractIntel}
+          isExtractingIntel={extractingIntelId === workspaceDoc.id}
+          isMatchingIntel={matchingIntelId === workspaceDoc.id}
+          onExtractConstitution={handleExtractConstitution}
+          isExtractingConstitution={extractingConstitutionId === workspaceDoc.id}
+          onExtractAtomic={handleExtractAtomic}
+          isExtractingAtomic={extractingAtomicId === workspaceDoc.id}
+          atomicCostEstimate={atomicCostEstimate(workspaceDoc)}
+        />
+      )}
+
       {/* Re-extract cost guard modal */}
       {reExtractGuardDoc && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
@@ -1877,6 +1898,7 @@ export default function DocumentsClient() {
                         onView={setViewing}
                         onProcess={handleProcess}
                         onDelete={handleDelete}
+                        onOpenWorkspace={setWorkspaceDoc}
                         onGenerateQueue={handleGenerateQueueItems}
                         onResetStuck={handleResetStuck}
                         onExtractIntel={handleRequestExtractIntel}
@@ -2008,6 +2030,7 @@ export default function DocumentsClient() {
                 onView={setViewing}
                 onProcess={handleProcess}
                 onDelete={handleDelete}
+                onOpenWorkspace={setWorkspaceDoc}
                 onGenerateQueue={handleGenerateQueueItems}
                 onResetStuck={handleResetStuck}
                 onGenerateImage={handleGenerateImage}

@@ -348,6 +348,7 @@ interface Props {
   onView:            (doc: IntelligenceDocument) => void;
   onProcess:         (doc: IntelligenceDocument) => void;
   onDelete:          (doc: IntelligenceDocument) => void;
+  onOpenWorkspace?:  (doc: IntelligenceDocument) => void;
   onGenerateQueue?:  (doc: IntelligenceDocument) => void;
   onResetStuck?:     (doc: IntelligenceDocument) => void;
   onGenerateImage?:  (doc: IntelligenceDocument) => void;
@@ -399,7 +400,7 @@ function isConstitutionDoc(doc: IntelligenceDocument): boolean {
   );
 }
 
-export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onGenerateQueue, onResetStuck, onGenerateImage, isGeneratingImage = false, onExtractPoints, isExtractingPoints = false, pointCount = 0, onExtractPromises, isExtractingPromises = false, promiseCount = 0, onExtractIntel, isExtractingIntel = false, isMatchingIntel = false, intelCount = 0, relCount = 0, onExtractConstitution, isExtractingConstitution = false, constitutionBatch = 0, constitutionCount = 0, onExtractAtomic, isExtractingAtomic = false, atomicIntelCount = 0, atomicCostEstimate, atomicStatusMsg, onArchive, isArchiving = false }: Props) {
+export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProcess, onDelete, onOpenWorkspace, onGenerateQueue, onResetStuck, onGenerateImage, isGeneratingImage = false, onExtractPoints, isExtractingPoints = false, pointCount = 0, onExtractPromises, isExtractingPromises = false, promiseCount = 0, onExtractIntel, isExtractingIntel = false, isMatchingIntel = false, intelCount = 0, relCount = 0, onExtractConstitution, isExtractingConstitution = false, constitutionBatch = 0, constitutionCount = 0, onExtractAtomic, isExtractingAtomic = false, atomicIntelCount = 0, atomicCostEstimate, atomicStatusMsg, onArchive, isArchiving = false }: Props) {
   const [showFullNotes,      setShowFullNotes]      = useState(false);
   const [confirmAtomic,      setConfirmAtomic]      = useState(false);
   const displayStatus  = isProcessing ? "processing_ai" : doc.processingStatus;
@@ -942,6 +943,16 @@ export function DocumentCard({ doc, isProcessing, queueCount = 0, onView, onProc
         >
           💰 Economy Extract गर्नुहोस् — Nepal Economic Intelligence
         </Link>
+      )}
+
+      {/* ── Object Workspace — primary action ── */}
+      {onOpenWorkspace && (
+        <button
+          onClick={() => onOpenWorkspace(doc)}
+          className="w-full py-2.5 rounded-xl border border-sky-800/50 bg-sky-950/15 text-sky-300 text-xs font-medium hover:bg-sky-950/30 transition-colors"
+        >
+          Object Workspace खोल्नुहोस् →
+        </button>
       )}
 
       {/* Admin Teacher Panel — shown for approved docs */}
