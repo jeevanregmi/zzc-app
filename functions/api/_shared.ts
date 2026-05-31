@@ -253,6 +253,8 @@ export async function firestoreSet(
  * Batch write up to 500 documents in a single HTTP request.
  * ~200× faster than Promise.all(firestoreAdd...) — critical for staying
  * within Cloudflare Pages Function's 30s wall-clock limit.
+ *
+ * Each document gets a UUID so Firestore commit API receives valid full paths.
  */
 export async function firestoreBatchCommit(
   idToken: string,
@@ -260,15 +262,18 @@ export async function firestoreBatchCommit(
 ): Promise<void> {
   if (writes.length === 0) return;
 
-  const PROJECT   = "zeneration-z-chautari";
-  const endpoint  = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents:commit`;
+  const PROJECT  = "zeneration-z-chautari";
+  const endpoint = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents:commit`;
 
+  // Firestore commit API requires full document name including docId.
+  // We generate a UUID for each auto-ID document.
   const toWrite = (collectionPath: string, data: Record<string, unknown>) => {
     const fields: Record<string, FsValue> = {};
     for (const [k, v] of Object.entries(data)) fields[k] = toFsValue(v);
+    const docId = crypto.randomUUID();
     return {
       update: {
-        name: `projects/${PROJECT}/databases/(default)/documents/${collectionPath}`,
+        name: `projects/${PROJECT}/databases/(default)/documents/${collectionPath}/${docId}`,
         fields,
       },
     };

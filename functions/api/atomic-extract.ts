@@ -248,12 +248,12 @@ async function runAtomicBackground(
     const base64 = toBase64(buf);
     log("atomic-extract", "bg_pdf_fetched", { docId: body.docId, sizeMB: sizeMB.toFixed(2) });
 
-    // 25s Gemini timeout — ensures catch block runs before Cloudflare's 30s wall-clock kills the worker
+    // 20s Gemini timeout — leaves ~10s for batch write + error status before 30s wall-clock
     const geminiTimeout = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error(
-        "Gemini timeout (25s) — PDF ठूलो हुनसक्छ वा Cloudflare 30s wall-clock limit भयो। " +
+        "Gemini timeout (20s) — PDF ठूलो हुनसक्छ वा Cloudflare 30s wall-clock limit भयो। " +
         "सानो document (< 500KB) मा try गर्नुहोस्।"
-      )), 25_000)
+      )), 20_000)
     );
 
     const result = await Promise.race([
