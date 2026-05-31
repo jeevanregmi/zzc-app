@@ -290,7 +290,7 @@ export function CivicObjectWorkspace({
   // ── Full chunked extraction (Phase 2) ─────────────────────────────────────────
 
   async function handleFullExtraction() {
-    const CHUNK_PAGES = 10;
+    const CHUNK_PAGES = 5;
     const pageCount   = (doc as unknown as Record<string, unknown>).pageCount as number | undefined
       ?? Math.ceil(doc.fileSize / 15000); // ~15KB per scanned page
 
@@ -885,10 +885,10 @@ export function CivicObjectWorkspace({
                     <span className="text-sky-400 font-medium">
                       {Math.ceil(
                         (((doc as unknown as Record<string, unknown>).pageCount as number | undefined)
-                          ?? Math.ceil(doc.fileSize / 15000)) / 10
+                          ?? Math.ceil(doc.fileSize / 15000)) / 5
                       )} chunks
                     </span>{" "}
-                    (10 pages प्रत्येक) sequentially process हुन्छ।
+                    (5 pages प्रत्येक) sequentially process हुन्छ।
                     प्रत्येक chunk को atoms तुरुन्त save हुन्छन्।
                   </p>
                   {(trulyAtomicCount ?? 0) > 0 && (
