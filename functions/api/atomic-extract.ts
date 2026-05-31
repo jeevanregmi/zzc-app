@@ -203,13 +203,9 @@ function validateAndFilter(records: AtomicRecord[]): AtomicRecord[] {
   return dedup(valid);
 }
 
-// Text mode: pageNumber may be null — only requires textEvidence + title
+// Text mode: only requires title + titleNepali (textEvidence auto-filled from summaryNepali)
 function validateAndFilterText(records: AtomicRecord[]): AtomicRecord[] {
-  const valid = records.filter(r => {
-    if (!r.textEvidence || r.textEvidence.trim().length < 10) return false;
-    if (!r.title || !r.titleNepali) return false;
-    return true;
-  });
+  const valid = records.filter(r => !!(r.title && r.titleNepali));
   return dedup(valid);
 }
 
@@ -498,14 +494,14 @@ async function runAtomicFromText(
 
     const validated = validateAndFilterText(rawRecords);
     if (validated.length === 0) {
-      return clientError("AI returned no valid records (missing textEvidence)", 422, "NO_VALID_ATOMIC_RECORDS");
+      return clientError("AI returned no valid records (no title/titleNepali)", 422, "NO_VALID_ATOMIC_RECORDS");
     }
 
     const atomicRecords = validated.map(r => ({
       ...r,
       extractionTier: "atomic" as const,
       domain,
-      textEvidence: r.textEvidence.slice(0, 400),
+      textEvidence: (r.textEvidence || r.summaryNepali || "").slice(0, 400),
       confidence:   Math.min(1, Math.max(0, r.confidence ?? 0.7)),
     }));
 
