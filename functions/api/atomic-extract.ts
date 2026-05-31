@@ -80,10 +80,13 @@ export function estimateCost(pageCount: number): number {
 }
 
 function toBase64(buffer: ArrayBuffer): string {
-  // TextDecoder("latin1") is a native operation — avoids JS-loop CPU cost
-  // that could exhaust Cloudflare's CPU budget for large PDFs.
-  const binaryString = new TextDecoder("latin1").decode(buffer);
-  return btoa(binaryString);
+  const bytes = new Uint8Array(buffer);
+  const CHUNK = 32768; // safe spread limit
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(binary);
 }
 
 function buildAtomicPrompt(body: AtomicRequest): string {
