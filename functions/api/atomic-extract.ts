@@ -80,13 +80,10 @@ export function estimateCost(pageCount: number): number {
 }
 
 function toBase64(buffer: ArrayBuffer): string {
-  const bytes  = new Uint8Array(buffer);
-  let binary   = "";
-  const chunk  = 8192;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(binary);
+  // TextDecoder("latin1") is a native operation — avoids JS-loop CPU cost
+  // that could exhaust Cloudflare's CPU budget for large PDFs.
+  const binaryString = new TextDecoder("latin1").decode(buffer);
+  return btoa(binaryString);
 }
 
 function buildAtomicPrompt(body: AtomicRequest): string {
@@ -415,16 +412,25 @@ async function runAtomicSync(
   }
 
   try {
-    const result = await callGemini({
-      apiKey:    env.GEMINI_API_KEY!,
-      model:     env.GEMINI_MODEL,
-      system:    "You are a precision atomic intelligence extractor. Return ONLY valid JSON. Every record MUST have pageNumber and textEvidence. No markdown. No code fences. Start with { end with }.",
-      parts:     [
-        { inline_data: { mime_type: "application/pdf", data: base64 } },
-        { text: prompt },
-      ],
-      maxTokens: 8192,
-    });
+    // 20s timeout — ensures we return within Cloudflare's 30s wall-clock limit
+    const geminiTimeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(
+        "Gemini timeout (20s) — PDF ठूलो हुनसक्छ। सानो document (< 500KB) मा try गर्नुहोस्।"
+      )), 20_000)
+    );
+    const result = await Promise.race([
+      callGemini({
+        apiKey:    env.GEMINI_API_KEY!,
+        model:     env.GEMINI_MODEL,
+        system:    "You are a precision atomic intelligence extractor. Return ONLY valid JSON. Every record MUST have pageNumber and textEvidence. No markdown. No code fences. Start with { end with }.",
+        parts:     [
+          { inline_data: { mime_type: "application/pdf", data: base64 } },
+          { text: prompt },
+        ],
+        maxTokens: 8192,
+      }),
+      geminiTimeout,
+    ]);
 
     let responseText = result.text.trim()
       .replace(/^```(?:json)?\s*/i, "")
@@ -567,18 +573,10 @@ export const onRequestPost = async (context: PagesContext): Promise<Response> =>
     mode:     idToken ? "background" : "sync",
   });
 
-  if (idToken) {
-    // ── Background mode ──────────────────────────────────────────────────────
-    // Return immediately (no 524), process in waitUntil.
-    // Frontend polls atomic_extraction_jobs/{docId} via onSnapshot.
-    context.waitUntil(runAtomicBackground(body, idToken, env, prompt, domain));
-
-    return new Response(
-      JSON.stringify({ ok: true, status: "processing", docId: body.docId }),
-      { headers: CORS },
-    );
-  }
-
-  // ── Sync mode (no token) — old behaviour, returns records directly ─────────
+  // ── Sync mode — blocks up to 22s (20s Gemini + overhead), returns records ──
+  // waitUntil background mode was unreliable (worker killed before status write).
+  // Sync mode matches all other extraction functions and is within Cloudflare's
+  // 30s wall-clock limit.
+  void idToken; // idToken accepted but no longer used for mode selection
   return runAtomicSync(body, env, prompt, domain);
 };

@@ -957,9 +957,9 @@ export default function DocumentsClient() {
       setExtractingAtomicId(null);
       setAtomicJobMsg(prev => ({
         ...prev,
-        [docId]: "❌ ५ मिनेट भयो — Cloudflare worker timeout। PDF धेरै ठूलो हुन सक्छ। Firestore मा atomic_extraction_jobs check गर्नुहोस् — status 'processing' छ भने job fail भयो।",
+        [docId]: "❌ ३० सेकेन्ड भयो — server ले response दिएन। PDF धेरै ठूलो हुन सक्छ वा network issue। Retry गर्नुहोस्।",
       }));
-    }, 5 * 60 * 1000);
+    }, 30_000);
 
     const unsub = onSnapshot(
       firestoreDoc(db, "atomic_extraction_jobs", docId),
