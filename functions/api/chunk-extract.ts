@@ -123,14 +123,16 @@ export const onRequestPost = async (context: {
   try {
     const timeout = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error(
-        `Chunk ${body.chunkIndex + 1} timeout (25s) — pages ${body.startPage}-${body.endPage}`
-      )), 25_000)
+        `Chunk ${body.chunkIndex + 1} timeout (27s) — pages ${body.startPage}-${body.endPage}`
+      )), 27_000)
     );
 
     const result = await Promise.race([
       callGemini({
         apiKey:    env.GEMINI_API_KEY!,
-        model:     env.GEMINI_MODEL,
+        // gemini-2.0-flash: faster inference, lower latency for extraction tasks
+        // Do NOT use env.GEMINI_MODEL here — 2.5-flash is too slow for per-chunk calls
+        model:     "gemini-2.0-flash",
         system:    "You are a precise civic intelligence extractor. Return ONLY valid JSON. Every record MUST have pageNumber (in the requested range) and textEvidence (verbatim quote). No markdown. Start with { end with }.",
         parts: [
           { file_data: { mime_type: "application/pdf", file_uri: body.fileUri } },
