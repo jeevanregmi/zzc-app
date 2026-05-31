@@ -117,22 +117,62 @@ export function CivicObjectWorkspace({
   const [atomicCount, setAtomicCount] = useState<number | null>(null);
   const [loading,     setLoading]     = useState(true);
 
-  const [confirmAtomic, setConfirmAtomic] = useState(false);
+  const [confirmAtomic,  setConfirmAtomic]  = useState(false);
+  // localAtomicMsg: immediate feedback, set synchronously on button click.
+  // Does NOT depend on parent re-render or prop propagation.
+  // effectiveAtomicMsg below uses parent's atomicJobMsg if available (authoritative).
+  const [localAtomicMsg, setLocalAtomicMsg] = useState<string>("");
 
-  // Close confirm dialog as soon as job starts — prevents stale confirm blocking view
+  // 5-second safety net: if local shows "⏳" but parent never responds, warn
+  useEffect(() => {
+    if (!localAtomicMsg.startsWith("⏳")) return;
+    const t = setTimeout(() => {
+      setLocalAtomicMsg(prev =>
+        prev.startsWith("⏳")
+          ? "⚠ ५ सेकेन्ड भयो — backend ले response दिएन। Retry गर्नुहोस् वा page reload गर्नुहोस्।"
+          : prev
+      );
+    }, 5000);
+    return () => clearTimeout(t);
+  }, [localAtomicMsg]);
+
+  // Reset local msg when confirm opens (fresh attempt)
+  useEffect(() => { if (confirmAtomic) setLocalAtomicMsg(""); }, [confirmAtomic]);
+
+  // Close confirm dialog as soon as parent job starts
   const prevExtractingRef = useRef(isExtractingAtomic);
   useEffect(() => {
-    if (!prevExtractingRef.current && isExtractingAtomic) {
-      setConfirmAtomic(false);
-    }
+    if (!prevExtractingRef.current && isExtractingAtomic) setConfirmAtomic(false);
     prevExtractingRef.current = isExtractingAtomic;
   }, [isExtractingAtomic]);
 
-  const isConst   = isConstitutionDoc(doc);
+  // Parent's atomicJobMsg is authoritative; local is the immediate fallback
+  const effectiveAtomicMsg = atomicJobMsg || localAtomicMsg;
+
+  function handleAtomicConfirm() {
+    setConfirmAtomic(false);
+
+    if (!onExtractAtomic) {
+      setLocalAtomicMsg("❌ Atomic extraction handler जोडिएको छैन — page reload गर्नुहोस्।");
+      return;
+    }
+
+    setLocalAtomicMsg("⏳ Atomic extraction शुरु हुँदैछ…");
+
+    try {
+      onExtractAtomic(doc);
+    } catch (err) {
+      setLocalAtomicMsg(
+        `❌ Handler error: ${err instanceof Error ? err.message : String(err)}`.slice(0, 150)
+      );
+    }
+  }
+
+  const isConst    = isConstitutionDoc(doc);
   const isApproved = doc.adminApprovalStatus === "approved";
   const hasAI      = doc.processingStatus === "ai_ready";
 
-  // externalAtomicCount overrides local count when the parent reports a fresh value
+  // externalAtomicCount overrides local count when parent reports a fresh value
   const effectiveAtomicCount = externalAtomicCount ?? atomicCount ?? 0;
 
   // Load counts on mount
@@ -437,7 +477,7 @@ export function CivicObjectWorkspace({
               </div>
               <div className="flex gap-2">
                 <button
-                  onClick={() => { setConfirmAtomic(false); onExtractAtomic?.(doc); }}
+                  onClick={handleAtomicConfirm}
                   className="flex-1 text-xs font-bold py-2 rounded-xl bg-violet-700 hover:bg-violet-600 text-white transition-colors"
                 >
                   हो, चलाउनुहोस्
@@ -452,19 +492,24 @@ export function CivicObjectWorkspace({
             </div>
           )}
 
-          {/* ── Atomic job status message ── */}
-          {atomicJobMsg && (
+          {/* ── Atomic job status message (local or parent) ── */}
+          {effectiveAtomicMsg && (
             <div className={`rounded-xl border px-4 py-3 flex items-start gap-3 text-xs leading-relaxed ${
-              atomicJobMsg.startsWith("✅")
+              effectiveAtomicMsg.startsWith("✅")
                 ? "border-emerald-800/40 bg-emerald-950/10 text-emerald-300"
-                : atomicJobMsg.startsWith("❌")
+                : effectiveAtomicMsg.startsWith("❌")
                 ? "border-red-800/40 bg-red-950/10 text-red-300"
+                : effectiveAtomicMsg.startsWith("⚠")
+                ? "border-amber-700/60 bg-amber-950/20 text-amber-300"
                 : "border-amber-800/40 bg-amber-950/10 text-amber-300 animate-pulse"
             }`}>
-              <span className="shrink-0 mt-0.5">
-                {atomicJobMsg.startsWith("✅") ? "✅" : atomicJobMsg.startsWith("❌") ? "❌" : "⚛"}
+              <span className="text-base shrink-0">
+                {effectiveAtomicMsg.startsWith("✅") ? "✅"
+                 : effectiveAtomicMsg.startsWith("❌") ? "❌"
+                 : effectiveAtomicMsg.startsWith("⚠") ? "⚠"
+                 : "⚛"}
               </span>
-              <span>{atomicJobMsg.replace(/^[✅❌⏳⚛⚠]\s*/, "")}</span>
+              <span className="leading-relaxed">{effectiveAtomicMsg.replace(/^[✅❌⏳⚛⚠]\s*/, "")}</span>
             </div>
           )}
 
