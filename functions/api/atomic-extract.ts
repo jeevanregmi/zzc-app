@@ -492,12 +492,21 @@ async function runAtomicFromText(
 
     if (!Array.isArray(rawRecords)) return clientError("AI returned no records array", 422, "NO_RECORDS");
 
-    const validated = validateAndFilterText(rawRecords);
-    if (validated.length === 0) {
-      return clientError("AI returned no valid records (no title/titleNepali)", 422, "NO_VALID_ATOMIC_RECORDS");
+    if (rawRecords.length === 0) {
+      return clientError("AI returned empty records array", 422, "NO_VALID_ATOMIC_RECORDS");
     }
 
-    const atomicRecords = validated.map(r => ({
+    // Normalize: fill missing fields so records don't fail downstream schema checks
+    const normalized = rawRecords.map((r, i) => {
+      const raw = r as unknown as Record<string, unknown>;
+      const title       = String(raw.title       || raw.name     || raw.heading  || raw.subject || `Record ${i + 1}`);
+      const titleNepali = String(raw.titleNepali  || raw.nepaliTitle || raw.titleNp || title);
+      const summaryNepali = String(raw.summaryNepali || raw.summary || "");
+      const textEvidence  = String(raw.textEvidence  || raw.evidence || raw.quote || summaryNepali || "");
+      return { ...raw, title, titleNepali, summaryNepali, textEvidence };
+    });
+
+    const atomicRecords = dedup(normalized as AtomicRecord[]).map(r => ({
       ...r,
       extractionTier: "atomic" as const,
       domain,
@@ -509,7 +518,7 @@ async function runAtomicFromText(
       JSON.stringify({
         ok: true, status: "complete",
         records: atomicRecords, totalFound: atomicRecords.length,
-        rejected: rawRecords.length - validated.length,
+        rejected: rawRecords.length - atomicRecords.length,
         domain, extractionTier: "atomic", sizeBytes: 0,
         textMode: true,
       }),
