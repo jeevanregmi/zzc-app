@@ -1379,6 +1379,8 @@ export default function DocumentsClient() {
           onExtractAtomic={handleExtractAtomic}
           isExtractingAtomic={extractingAtomicId === workspaceDoc.id}
           atomicCostEstimate={atomicCostEstimate(workspaceDoc)}
+          atomicJobMsg={atomicJobMsg[workspaceDoc.id]}
+          externalAtomicCount={atomicCountByDoc[workspaceDoc.id]}
         />
       )}
 

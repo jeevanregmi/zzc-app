@@ -5,7 +5,7 @@
 // Phase 1: read-only status + extraction triggers.
 // Phase 3+: full extraction inside workspace, deprecate scattered DocumentCard buttons.
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   collection, query, where, limit, getDocs,
 } from "firebase/firestore";
@@ -30,6 +30,9 @@ export interface CivicObjectWorkspaceProps {
   onExtractAtomic?:           (doc: IntelligenceDocument) => void;
   isExtractingAtomic?:        boolean;
   atomicCostEstimate?:        string;
+  // Live job state from DocumentsClient — refreshes workspace without remount
+  atomicJobMsg?:        string;   // "⏳ शुरु…" / "✅ 45 records" / "❌ error"
+  externalAtomicCount?: number;   // updated by DocumentsClient after completion
 }
 
 const safe = <T,>(p: Promise<T>, fb: T): Promise<T> =>
@@ -104,6 +107,8 @@ export function CivicObjectWorkspace({
   onExtractAtomic,
   isExtractingAtomic = false,
   atomicCostEstimate,
+  atomicJobMsg,
+  externalAtomicCount,
 }: CivicObjectWorkspaceProps) {
 
   const [intelCount,  setIntelCount]  = useState<number | null>(null);
@@ -114,9 +119,21 @@ export function CivicObjectWorkspace({
 
   const [confirmAtomic, setConfirmAtomic] = useState(false);
 
+  // Close confirm dialog as soon as job starts — prevents stale confirm blocking view
+  const prevExtractingRef = useRef(isExtractingAtomic);
+  useEffect(() => {
+    if (!prevExtractingRef.current && isExtractingAtomic) {
+      setConfirmAtomic(false);
+    }
+    prevExtractingRef.current = isExtractingAtomic;
+  }, [isExtractingAtomic]);
+
   const isConst   = isConstitutionDoc(doc);
   const isApproved = doc.adminApprovalStatus === "approved";
   const hasAI      = doc.processingStatus === "ai_ready";
+
+  // externalAtomicCount overrides local count when the parent reports a fresh value
+  const effectiveAtomicCount = externalAtomicCount ?? atomicCount ?? 0;
 
   // Load counts on mount
   useEffect(() => {
@@ -236,16 +253,16 @@ export function CivicObjectWorkspace({
       label:   "Atomic Deep Extract",
       labelNe: "Atomic (Page-traced)",
       status:  isExtractingAtomic ? "running"
-               : (atomicCount ?? 0) > 0 ? "done"
+               : effectiveAtomicCount > 0 ? "done"
                : isApproved && doc.sourceType === "official" && !isConst ? "available"
                : "blocked",
-      count:   atomicCount ?? undefined,
-      note:    isExtractingAtomic ? "Page-by-page scan हुँदैछ…"
-               : (atomicCount ?? 0) > 0 ? `${atomicCount} atomic records · page + verbatim traced`
+      count:   effectiveAtomicCount > 0 ? effectiveAtomicCount : undefined,
+      note:    isExtractingAtomic ? "Page-by-page scan हुँदैछ… (background job चलिरहेको छ)"
+               : effectiveAtomicCount > 0 ? `${effectiveAtomicCount} atomic records · page + verbatim traced`
                : doc.sourceType !== "official" ? "Official documents मात्र"
                : "प्रत्येक तथ्य page number + verbatim quote सहित",
       action:  isApproved && doc.sourceType === "official" && !isConst
-               && (atomicCount ?? 0) === 0 && !isExtractingAtomic
+               && effectiveAtomicCount === 0 && !isExtractingAtomic && !atomicJobMsg
                ? () => setConfirmAtomic(true) : undefined,
       actionLabel: "⚛ Atomic Extract गर्नुहोस्",
     },
@@ -408,7 +425,7 @@ export function CivicObjectWorkspace({
           </div>
 
           {/* ── Atomic confirm dialog ── */}
-          {confirmAtomic && (
+          {confirmAtomic && !isExtractingAtomic && (
             <div className="rounded-xl border border-violet-700 bg-violet-950/50 px-4 py-4 space-y-3">
               <p className="text-violet-200 text-xs font-bold">⚛ Atomic Intelligence — पक्का गर्नुहोस्</p>
               <div className="space-y-1 text-[11px] text-violet-400/80 leading-relaxed">
@@ -432,6 +449,22 @@ export function CivicObjectWorkspace({
                   रद्द गर्नुहोस्
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* ── Atomic job status message ── */}
+          {atomicJobMsg && (
+            <div className={`rounded-xl border px-4 py-3 flex items-start gap-3 text-xs leading-relaxed ${
+              atomicJobMsg.startsWith("✅")
+                ? "border-emerald-800/40 bg-emerald-950/10 text-emerald-300"
+                : atomicJobMsg.startsWith("❌")
+                ? "border-red-800/40 bg-red-950/10 text-red-300"
+                : "border-amber-800/40 bg-amber-950/10 text-amber-300 animate-pulse"
+            }`}>
+              <span className="shrink-0 mt-0.5">
+                {atomicJobMsg.startsWith("✅") ? "✅" : atomicJobMsg.startsWith("❌") ? "❌" : "⚛"}
+              </span>
+              <span>{atomicJobMsg.replace(/^[✅❌⏳⚛⚠]\s*/, "")}</span>
             </div>
           )}
 
