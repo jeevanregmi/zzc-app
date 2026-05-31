@@ -8,6 +8,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   collection, query, where, limit, getDocs,
+  updateDoc, addDoc, deleteDoc, doc as firestoreDoc,
 } from "firebase/firestore";
 import { db } from "../../../app/firebase";
 import type { IntelligenceDocument } from "../../../lib/types/documents";
@@ -111,11 +112,18 @@ export function CivicObjectWorkspace({
   externalAtomicCount,
 }: CivicObjectWorkspaceProps) {
 
-  const [intelCount,  setIntelCount]  = useState<number | null>(null);
-  const [relCount,    setRelCount]    = useState<number | null>(null);
-  const [constCount,  setConstCount]  = useState<number | null>(null);
-  const [atomicCount, setAtomicCount] = useState<number | null>(null);
-  const [loading,     setLoading]     = useState(true);
+  const [intelCount,       setIntelCount]       = useState<number | null>(null);
+  const [relCount,         setRelCount]         = useState<number | null>(null);
+  const [constCount,       setConstCount]       = useState<number | null>(null);
+  const [atomicCount,      setAtomicCount]      = useState<number | null>(null);
+  const [fallbackCount,    setFallbackCount]    = useState<number | null>(null);
+  const [trulyAtomicCount, setTrulyAtomicCount] = useState<number | null>(null);
+  const [loading,          setLoading]          = useState(true);
+
+  // Cleanup state — quarantine/delete fallback atoms
+  type CleanupState = "idle" | "confirming_quarantine" | "confirming_delete" | "running" | "done";
+  const [cleanupState,  setCleanupState]  = useState<CleanupState>("idle");
+  const [cleanupResult, setCleanupResult] = useState<string>("");
 
   const [confirmAtomic,  setConfirmAtomic]  = useState(false);
   // localAtomicMsg: immediate feedback, set synchronously on button click.
@@ -177,6 +185,93 @@ export function CivicObjectWorkspace({
     }
   }
 
+  // ── Fallback atom cleanup helpers ─────────────────────────────────────────────
+
+  async function loadFallbackDocs() {
+    const snap = await getDocs(query(
+      collection(db, "janta_intelligence"),
+      where("ownerId",     "==", ownerId),
+      where("sourceDocId", "==", doc.id),
+      limit(500),
+    ));
+    return snap.docs.filter(d => {
+      const data = d.data() as Record<string, unknown>;
+      if (data.extractionTier === "fallback") return true;
+      if (data.verificationStatus === "fallback_ai_summary") return true;
+      if (data.extractionTier === "atomic") {
+        const pn = data.pageNumber as number | null | undefined;
+        if (pn === null || pn === undefined || pn < 1) return true;
+      }
+      return false;
+    });
+  }
+
+  async function writeFallbackCleanupLog(actionType: "quarantine_fallback_atoms" | "delete_fallback_atoms" | "keep_fallback_atoms", affectedCount: number) {
+    await addDoc(collection(db, "document_cleanup_logs"), {
+      actionType,
+      documentId:    doc.id,
+      documentTitle: doc.title,
+      affectedCount,
+      runBy:         ownerId,
+      runAt:         new Date().toISOString(),
+      notes:         actionType === "quarantine_fallback_atoms"
+        ? "Quarantined synthesis fallback atoms — publishToJanta:false, internal draft only"
+        : actionType === "delete_fallback_atoms"
+        ? "Hard deleted fallback atoms — document ready for full extraction"
+        : "Founder chose to keep fallback atoms as internal draft",
+    }).catch(() => {});
+  }
+
+  async function handleQuarantineFallback() {
+    setCleanupState("running");
+    try {
+      const fallbackDocs = await loadFallbackDocs();
+      await Promise.all(fallbackDocs.map(d =>
+        updateDoc(firestoreDoc(db, "janta_intelligence", d.id), {
+          publishToJanta:     false,
+          publicReady:        false,
+          verificationStatus: "fallback_ai_summary",
+          extractionTier:     "fallback",
+          confidence:         0.4,
+          reviewStatus:       "internal_draft",
+          warning:            "AI summary बाट बनेको — full extraction आवश्यक छ",
+        })
+      ));
+      await writeFallbackCleanupLog("quarantine_fallback_atoms", fallbackDocs.length);
+      setFallbackCount(fallbackDocs.length);
+      setTrulyAtomicCount(0);
+      setAtomicCount(0);
+      setCleanupResult(`${fallbackDocs.length} fallback atoms quarantined — internal draft मात्र, public होइन।`);
+      setCleanupState("done");
+    } catch (err) {
+      setCleanupResult(`Quarantine failed: ${err instanceof Error ? err.message : String(err)}`);
+      setCleanupState("idle");
+    }
+  }
+
+  async function handleDeleteFallback() {
+    setCleanupState("running");
+    try {
+      const fallbackDocs = await loadFallbackDocs();
+      await Promise.all(fallbackDocs.map(d => deleteDoc(firestoreDoc(db, "janta_intelligence", d.id))));
+      await writeFallbackCleanupLog("delete_fallback_atoms", fallbackDocs.length);
+      setFallbackCount(0);
+      setAtomicCount(0);
+      setTrulyAtomicCount(0);
+      setCleanupResult(`${fallbackDocs.length} fallback atoms deleted — document अब full extraction को लागि ready छ।`);
+      setCleanupState("done");
+    } catch (err) {
+      setCleanupResult(`Delete failed: ${err instanceof Error ? err.message : String(err)}`);
+      setCleanupState("idle");
+    }
+  }
+
+  async function handleKeepFallback() {
+    await writeFallbackCleanupLog("keep_fallback_atoms", fallbackCount ?? 0);
+    setCleanupState("done");
+    setCleanupResult(`Fallback atoms internal draft मा राखियो — full extraction अझै आवश्यक छ।`);
+  }
+
   const isConst    = isConstitutionDoc(doc);
   const isApproved = doc.adminApprovalStatus === "approved";
   const hasAI      = doc.processingStatus === "ai_ready";
@@ -211,12 +306,30 @@ export function CivicObjectWorkspace({
 
       const iSnap = intelSnap ?? { docs: [] };
       const total = iSnap.docs.length;
-      const atomic = iSnap.docs.filter(d => {
+
+      // Detect fallback atoms:
+      // - explicitly marked new-style (extractionTier:"fallback" or verificationStatus:"fallback_ai_summary")
+      // - old-style: saved as "atomic" but pageNumber is null/0 (synthesis fallback before fix)
+      const isFallbackRecord = (data: Record<string, unknown>): boolean => {
+        if (data.extractionTier === "fallback") return true;
+        if (data.verificationStatus === "fallback_ai_summary") return true;
+        if (data.extractionTier === "atomic") {
+          const pn = data.pageNumber as number | null | undefined;
+          if (pn === null || pn === undefined || pn < 1) return true;
+        }
+        return false;
+      };
+
+      const fallback    = iSnap.docs.filter(d => isFallbackRecord(d.data() as Record<string, unknown>)).length;
+      const trulyAtomic = iSnap.docs.filter(d => {
         const data = d.data() as Record<string, unknown>;
-        return data.extractionTier === "atomic" || (data.traceability as Record<string,unknown>)?.pageNumber;
+        return data.extractionTier === "atomic" && !isFallbackRecord(data);
       }).length;
-      setIntelCount(total - atomic);
-      setAtomicCount(atomic);
+
+      setFallbackCount(fallback);
+      setTrulyAtomicCount(trulyAtomic);
+      setIntelCount(total - fallback - trulyAtomic);
+      setAtomicCount(trulyAtomic);
       setRelCount(relSnap?.docs.length ?? 0);
       setConstCount(constSnap?.docs.length ?? 0);
       setLoading(false);
@@ -302,12 +415,14 @@ export function CivicObjectWorkspace({
       label:   "Atomic Deep Extract",
       labelNe: "Atomic (Page-traced)",
       status:  isExtractingAtomic ? "running"
-               : effectiveAtomicCount > 0 ? "done"
+               : (trulyAtomicCount ?? 0) > 0 ? "done"
+               : (fallbackCount ?? 0) > 0 ? "available"
                : isApproved && doc.sourceType === "official" && !isConst ? "available"
                : "blocked",
-      count:   effectiveAtomicCount > 0 ? effectiveAtomicCount : undefined,
-      note:    isExtractingAtomic ? "Page-by-page scan हुँदैछ… (background job चलिरहेको छ)"
-               : effectiveAtomicCount > 0 ? `${effectiveAtomicCount} atomic records · page + verbatim traced`
+      count:   (trulyAtomicCount ?? 0) > 0 ? (trulyAtomicCount ?? 0) : undefined,
+      note:    isExtractingAtomic ? "Page-by-page scan हुँदैछ…"
+               : (trulyAtomicCount ?? 0) > 0 ? `${trulyAtomicCount} page-traced atoms · verbatim source`
+               : (fallbackCount ?? 0) > 0 ? `⚠ ${fallbackCount} fallback draft मात्र — page-traced होइन। Full extraction आवश्यक।`
                : doc.sourceType !== "official" ? "Official documents मात्र"
                : "प्रत्येक तथ्य page number + verbatim quote सहित",
       action:  isApproved && doc.sourceType === "official" && !isConst
@@ -403,6 +518,180 @@ export function CivicObjectWorkspace({
 
         {/* ── Scrollable body ── */}
         <div className="overflow-y-auto flex-1 px-5 py-4 space-y-5">
+
+          {/* ── Phase 1: Coverage Map ── */}
+          {!loading && (
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 space-y-3">
+              <p className="text-zinc-500 text-[10px] uppercase tracking-wide">Coverage — यो document को extraction अवस्था</p>
+
+              {/* Honest status banner */}
+              {(trulyAtomicCount ?? 0) === 0 ? (
+                <div className="flex items-start gap-2 text-xs">
+                  <span className="text-amber-500 shrink-0">⚠</span>
+                  <p className="text-amber-400 font-semibold leading-snug">
+                    यो document fully extracted छैन।
+                    {(fallbackCount ?? 0) > 0
+                      ? ` अहिले ${fallbackCount} fallback draft मात्र छ — public होइन।`
+                      : " Full page-traced extraction अझै भएको छैन।"}
+                  </p>
+                </div>
+              ) : (
+                <div className="flex items-start gap-2 text-xs">
+                  <span className="text-emerald-500 shrink-0">✓</span>
+                  <p className="text-emerald-400 font-semibold">{trulyAtomicCount} page-traced atoms — source-backed।</p>
+                </div>
+              )}
+
+              {/* Metric grid */}
+              <div className="grid grid-cols-3 gap-1.5 text-center">
+                {[
+                  { label: "Page-traced", count: trulyAtomicCount ?? 0, color: (trulyAtomicCount ?? 0) > 0 ? "emerald" : "zinc" },
+                  { label: "Fallback draft", count: fallbackCount ?? 0,    color: (fallbackCount ?? 0) > 0 ? "amber" : "zinc" },
+                  { label: "Intel records",  count: intelCount ?? 0,       color: (intelCount ?? 0) > 0 ? "sky" : "zinc" },
+                  { label: "Relationships",  count: relCount ?? 0,         color: (relCount ?? 0) > 0 ? "violet" : "zinc" },
+                  { label: "Constitution",   count: constCount ?? 0,       color: (constCount ?? 0) > 0 ? "emerald" : "zinc" },
+                  { label: "Public-ready",   count: (trulyAtomicCount ?? 0) > 0 ? (trulyAtomicCount ?? 0) : 0,
+                    color: (trulyAtomicCount ?? 0) > 0 ? "emerald" : "zinc" },
+                ].map(m => (
+                  <div key={m.label} className={`rounded-lg border px-2 py-1.5 ${
+                    m.color === "emerald" ? "border-emerald-800/40 bg-emerald-950/10" :
+                    m.color === "amber"   ? "border-amber-800/40 bg-amber-950/10" :
+                    m.color === "sky"     ? "border-sky-800/40 bg-sky-950/10" :
+                    m.color === "violet"  ? "border-violet-800/40 bg-violet-950/10" :
+                    "border-zinc-800/30 bg-zinc-900/10"
+                  }`}>
+                    <p className={`text-sm font-black ${
+                      m.color === "emerald" ? "text-emerald-400" :
+                      m.color === "amber"   ? "text-amber-400" :
+                      m.color === "sky"     ? "text-sky-400" :
+                      m.color === "violet"  ? "text-violet-400" :
+                      "text-zinc-600"
+                    }`}>{m.count}</p>
+                    <p className="text-[9px] text-zinc-600 mt-0.5 leading-tight">{m.label}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Next extraction step */}
+              {(trulyAtomicCount ?? 0) === 0 && (
+                <p className="text-zinc-600 text-[10px] leading-relaxed">
+                  <span className="text-zinc-400 font-semibold">अर्को step:</span> Full extraction —
+                  chunked Gemini processing (Phase 2 pipeline) — scanned PDF को लागि आवश्यक।
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ── Fallback atom cleanup banner ── */}
+          {!loading && (fallbackCount ?? 0) > 0 && cleanupState !== "done" && (
+            <div className="rounded-xl border border-amber-800/50 bg-amber-950/15 px-4 py-3 space-y-3">
+              <div className="flex items-start gap-2">
+                <span className="text-amber-400 text-base shrink-0">⚠</span>
+                <div>
+                  <p className="text-amber-300 text-xs font-bold">
+                    {fallbackCount} fallback atoms भेटिए — public होइनन्
+                  </p>
+                  <p className="text-amber-500/80 text-[10px] mt-0.5 leading-relaxed">
+                    यी atoms AI summary बाट बनेका हुन् — page-traced होइनन्।
+                    ZZC को public intelligence को लागि acceptable छैन।
+                    Quarantine (internal draft), Delete, वा Keep गर्नुहोस्।
+                  </p>
+                </div>
+              </div>
+
+              {cleanupState === "idle" && (
+                <div className="flex flex-col gap-1.5">
+                  <button
+                    onClick={() => setCleanupState("confirming_quarantine")}
+                    className="w-full text-xs py-2 rounded-xl bg-amber-900/40 border border-amber-700/60 text-amber-200 hover:bg-amber-900/60 transition-colors font-semibold"
+                  >
+                    🔒 Quarantine गर्नुहोस् (Recommended) — internal draft, public नहोस्
+                  </button>
+                  <button
+                    onClick={() => setCleanupState("confirming_delete")}
+                    className="w-full text-xs py-2 rounded-xl bg-red-950/30 border border-red-800/50 text-red-300 hover:bg-red-950/50 transition-colors"
+                  >
+                    🗑 Delete गर्नुहोस् — सबै fallback atoms हटाउनुहोस्
+                  </button>
+                  <button
+                    onClick={handleKeepFallback}
+                    className="w-full text-xs py-1.5 rounded-xl border border-zinc-700 text-zinc-500 hover:text-zinc-300 transition-colors"
+                  >
+                    Internal draft राख्नुहोस् (अहिलेलाई छोड्नुहोस्)
+                  </button>
+                </div>
+              )}
+
+              {cleanupState === "confirming_quarantine" && (
+                <div className="space-y-2">
+                  <p className="text-amber-200 text-[11px] font-semibold">Quarantine गर्दा के हुन्छ?</p>
+                  <div className="space-y-0.5 text-[10px] text-amber-500/80 leading-relaxed">
+                    <p>• publishToJanta → false (public feed बाट हटाइन्छ)</p>
+                    <p>• extractionTier → "fallback" (clearly labeled)</p>
+                    <p>• verificationStatus → "fallback_ai_summary"</p>
+                    <p>• confidence → 0.4 (draft quality)</p>
+                    <p>• Atoms Firestore मा रहन्छन् — internal reference को लागि</p>
+                    <p>• Cleanup log लेखिन्छ</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleQuarantineFallback}
+                      className="flex-1 text-xs py-2 rounded-xl bg-amber-800/50 border border-amber-700 text-amber-100 font-bold hover:bg-amber-800/70 transition-colors"
+                    >
+                      हो, Quarantine गर्नुहोस्
+                    </button>
+                    <button
+                      onClick={() => setCleanupState("idle")}
+                      className="flex-1 text-xs py-2 rounded-xl border border-zinc-700 text-zinc-500 hover:text-zinc-300 transition-colors"
+                    >
+                      रद्द
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {cleanupState === "confirming_delete" && (
+                <div className="space-y-2">
+                  <p className="text-red-300 text-[11px] font-semibold">
+                    ⚠ {fallbackCount} fallback atoms permanently delete हुनेछन्
+                  </p>
+                  <div className="space-y-0.5 text-[10px] text-red-400/70 leading-relaxed">
+                    <p>• केवल fallback atoms delete हुन्छन् (extractionTier: fallback वा pageNumber: null)</p>
+                    <p>• Page-traced real atoms कहिल्यै delete हुँदैनन्</p>
+                    <p>• Cleanup log लेखिन्छ</p>
+                    <p>• Document अब full extraction को लागि ready हुन्छ</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleDeleteFallback}
+                      className="flex-1 text-xs py-2 rounded-xl bg-red-900/50 border border-red-700 text-red-200 font-bold hover:bg-red-900/70 transition-colors"
+                    >
+                      हो, Delete गर्नुहोस्
+                    </button>
+                    <button
+                      onClick={() => setCleanupState("idle")}
+                      className="flex-1 text-xs py-2 rounded-xl border border-zinc-700 text-zinc-500 hover:text-zinc-300 transition-colors"
+                    >
+                      रद्द
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {cleanupState === "running" && (
+                <p className="text-amber-400 text-xs animate-pulse text-center py-2">Processing…</p>
+              )}
+            </div>
+          )}
+
+          {/* ── Cleanup result ── */}
+          {cleanupState === "done" && cleanupResult && (
+            <div className="rounded-xl border border-emerald-800/40 bg-emerald-950/10 px-4 py-3">
+              <p className="text-emerald-300 text-xs font-semibold">✓ Cleanup सम्पन्न</p>
+              <p className="text-emerald-500/80 text-[10px] mt-1">{cleanupResult}</p>
+              <p className="text-zinc-600 text-[10px] mt-1.5">Next: Phase 2 — full chunked extraction pipeline।</p>
+            </div>
+          )}
 
           {/* ── AI Summary ── */}
           {doc.aiSummary && (
