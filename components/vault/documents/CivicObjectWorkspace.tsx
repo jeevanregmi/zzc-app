@@ -112,13 +112,14 @@ export function CivicObjectWorkspace({
   externalAtomicCount,
 }: CivicObjectWorkspaceProps) {
 
-  const [intelCount,       setIntelCount]       = useState<number | null>(null);
-  const [relCount,         setRelCount]         = useState<number | null>(null);
-  const [constCount,       setConstCount]       = useState<number | null>(null);
-  const [atomicCount,      setAtomicCount]      = useState<number | null>(null);
-  const [fallbackCount,    setFallbackCount]    = useState<number | null>(null);
-  const [trulyAtomicCount, setTrulyAtomicCount] = useState<number | null>(null);
-  const [loading,          setLoading]          = useState(true);
+  const [intelCount,          setIntelCount]          = useState<number | null>(null);
+  const [relCount,            setRelCount]            = useState<number | null>(null);
+  const [constCount,          setConstCount]          = useState<number | null>(null);
+  const [atomicCount,         setAtomicCount]         = useState<number | null>(null);
+  const [fallbackCount,       setFallbackCount]       = useState<number | null>(null);
+  const [trulyAtomicCount,    setTrulyAtomicCount]    = useState<number | null>(null);
+  const [rawExhaustiveCount,  setRawExhaustiveCount]  = useState<number | null>(null);
+  const [loading,             setLoading]             = useState(true);
 
   // Cleanup state — quarantine/delete fallback atoms
   type CleanupState = "idle" | "confirming_quarantine" | "confirming_delete" | "running" | "done";
@@ -128,17 +129,19 @@ export function CivicObjectWorkspace({
   // Full chunked extraction state (Phase 2)
   type FullExtrState = "idle" | "uploading" | "extracting" | "complete" | "error";
   interface ChunkStatus {
-    index:   number;
-    start:   number;
-    end:     number;
-    status:  "pending" | "running" | "done" | "error";
-    records: number;
-    error?:  string;
+    index:      number;
+    start:      number;
+    end:        number;
+    status:     "pending" | "running" | "done" | "error";
+    records:    number;       // raw atoms saved to Firestore
+    paragraphs: number;       // paragraphs returned by Gemini
+    error?:     string;
   }
-  const [fullExtrState,    setFullExtrState]    = useState<FullExtrState>("idle");
-  const [fullExtrChunks,   setFullExtrChunks]   = useState<ChunkStatus[]>([]);
-  const [fullExtrAtoms,    setFullExtrAtoms]     = useState<number>(0);
-  const [fullExtrError,    setFullExtrError]     = useState<string>("");
+  const [fullExtrState,      setFullExtrState]      = useState<FullExtrState>("idle");
+  const [fullExtrChunks,     setFullExtrChunks]     = useState<ChunkStatus[]>([]);
+  const [fullExtrAtoms,      setFullExtrAtoms]       = useState<number>(0);
+  const [fullExtrParagraphs, setFullExtrParagraphs] = useState<number>(0);
+  const [fullExtrError,      setFullExtrError]       = useState<string>("");
 
   const [confirmAtomic,  setConfirmAtomic]  = useState(false);
   // localAtomicMsg: immediate feedback, set synchronously on button click.
@@ -299,10 +302,11 @@ export function CivicObjectWorkspace({
     for (let p = 1; p <= pageCount; p += CHUNK_PAGES) {
       const start = p;
       const end   = Math.min(p + CHUNK_PAGES - 1, pageCount);
-      chunks.push({ index: chunks.length, start, end, status: "pending", records: 0 });
+      chunks.push({ index: chunks.length, start, end, status: "pending", records: 0, paragraphs: 0 });
     }
     setFullExtrChunks(chunks);
     setFullExtrAtoms(0);
+    setFullExtrParagraphs(0);
     setFullExtrError("");
     setFullExtrState("uploading");
 
@@ -342,16 +346,14 @@ export function CivicObjectWorkspace({
     let totalAtoms   = 0;
 
     const MAX_RETRIES = 2;
+    let totalParagraphs = 0;
 
     for (const chunk of chunks) {
-      let success = false;
+      let success   = false;
       let lastError = "";
 
       for (let attempt = 0; attempt <= MAX_RETRIES && !success; attempt++) {
-        // Brief pause before retry (not on first attempt)
-        if (attempt > 0) {
-          await new Promise(r => setTimeout(r, 3000));
-        }
+        if (attempt > 0) await new Promise(r => setTimeout(r, 3000));
 
         setFullExtrChunks(prev => prev.map(c =>
           c.index === chunk.index
@@ -373,14 +375,16 @@ export function CivicObjectWorkspace({
               ownerId,
               docTitle:    doc.title,
               sourceYear,
-              domain,
             }),
           });
           const data = await res.json() as {
-            ok:        boolean;
-            records?:  Record<string, unknown>[];
-            error?:    string;
-            validFound?: number;
+            ok:              boolean;
+            pages?:          Array<{
+              pageNumber:  number;
+              paragraphs:  Array<{ text: string; summaryNepali: string; type: string; orderIndex: number }>;
+            }>;
+            error?:          string;
+            totalParagraphs?: number;
           };
 
           if (!data.ok) {
@@ -388,42 +392,55 @@ export function CivicObjectWorkspace({
             continue;
           }
 
-          const records = data.records ?? [];
+          const pages = data.pages ?? [];
+          let chunkParas = 0;
+          let chunkAtoms = 0;
 
-          if (records.length > 0) {
-            await Promise.all(records.map(r =>
-              addDoc(collection(db, "janta_intelligence"), {
-                summaryNepali:   "",
-                measurable:      true,
-                timeline:        null,
-                budgetAmount:    null,
-                geoScope:        "national",
-                governmentLevel: "federal",
-                tags:            [],
-                affectedGroups:  [],
-                affectedSectors: [],
-                department:      null,
-                ...r,
-                ownerId,
-                sourceDocId:          doc.id,
-                sourceDocTitle:       doc.title,
-                implementationStatus: "announced",
-                verificationStatus:   "ai_extracted",
-                extractionTier:       "atomic",
-                publishToJanta:       true,
-                published:            true,
-                extractionChunk:      chunk.index,
-                chunkPageRange:       `${chunk.start}-${chunk.end}`,
-                createdAt:            now,
-                updatedAt:            now,
-              })
-            ));
+          // Save each paragraph as a raw exhaustive atom — no filtering
+          const savePromises: Promise<unknown>[] = [];
+          for (const page of pages) {
+            for (const para of page.paragraphs) {
+              if (!para.text?.trim()) continue;
+              savePromises.push(
+                addDoc(collection(db, "janta_intelligence"), {
+                  ownerId,
+                  sourceDocId:          doc.id,
+                  sourceDocTitle:       doc.title,
+                  pageNumber:           page.pageNumber,
+                  paragraphIndex:       para.orderIndex,
+                  originalText:         para.text,
+                  summaryNepali:        para.summaryNepali,
+                  type:                 para.type,
+                  title:                para.text.slice(0, 70).trimEnd() + (para.text.length > 70 ? "…" : ""),
+                  sector:               "other",
+                  fiscalYear:           sourceYear,
+                  extractionTier:       "raw_exhaustive",
+                  publishToJanta:       false,
+                  published:            false,
+                  publicReady:          false,
+                  founderReviewStatus:  "needs_review",
+                  verificationStatus:   "raw_extracted",
+                  domainClassification: null,
+                  extractionChunk:      chunk.index,
+                  chunkPageRange:       `${chunk.start}-${chunk.end}`,
+                  createdAt:            now,
+                  updatedAt:            now,
+                })
+              );
+              chunkParas++;
+              chunkAtoms++;
+            }
           }
+          await Promise.all(savePromises);
 
-          totalAtoms += records.length;
+          totalAtoms     += chunkAtoms;
+          totalParagraphs += chunkParas;
           setFullExtrAtoms(totalAtoms);
+          setFullExtrParagraphs(totalParagraphs);
           setFullExtrChunks(prev => prev.map(c =>
-            c.index === chunk.index ? { ...c, status: "done", records: records.length, error: undefined } : c
+            c.index === chunk.index
+              ? { ...c, status: "done", records: chunkAtoms, paragraphs: chunkParas, error: undefined }
+              : c
           ));
           success = true;
 
@@ -440,9 +457,9 @@ export function CivicObjectWorkspace({
     }
 
     // Update workspace counts
-    setTrulyAtomicCount(totalAtoms);
-    setAtomicCount(totalAtoms);
-    setFallbackCount(0); // full extraction supersedes fallback draft
+    setRawExhaustiveCount(totalAtoms);
+    setAtomicCount(0);
+    setTrulyAtomicCount(0);
     setFullExtrState("complete");
 
     // Write extraction summary log
@@ -494,12 +511,10 @@ export function CivicObjectWorkspace({
       const iSnap = intelSnap ?? { docs: [] };
       const total = iSnap.docs.length;
 
-      // Detect fallback atoms:
-      // - explicitly marked new-style (extractionTier:"fallback" or verificationStatus:"fallback_ai_summary")
-      // - old-style: saved as "atomic" but pageNumber is null/0 (synthesis fallback before fix)
       const isFallbackRecord = (data: Record<string, unknown>): boolean => {
         if (data.extractionTier === "fallback") return true;
         if (data.verificationStatus === "fallback_ai_summary") return true;
+        // old-style: saved as "atomic" but no valid pageNumber (synthesis era)
         if (data.extractionTier === "atomic") {
           const pn = data.pageNumber as number | null | undefined;
           if (pn === null || pn === undefined || pn < 1) return true;
@@ -507,15 +522,17 @@ export function CivicObjectWorkspace({
         return false;
       };
 
-      const fallback    = iSnap.docs.filter(d => isFallbackRecord(d.data() as Record<string, unknown>)).length;
-      const trulyAtomic = iSnap.docs.filter(d => {
+      const fallback      = iSnap.docs.filter(d => isFallbackRecord(d.data() as Record<string, unknown>)).length;
+      const rawExhaustive = iSnap.docs.filter(d => (d.data() as Record<string, unknown>).extractionTier === "raw_exhaustive").length;
+      const trulyAtomic   = iSnap.docs.filter(d => {
         const data = d.data() as Record<string, unknown>;
         return data.extractionTier === "atomic" && !isFallbackRecord(data);
       }).length;
 
       setFallbackCount(fallback);
+      setRawExhaustiveCount(rawExhaustive);
       setTrulyAtomicCount(trulyAtomic);
-      setIntelCount(total - fallback - trulyAtomic);
+      setIntelCount(total - fallback - rawExhaustive - trulyAtomic);
       setAtomicCount(trulyAtomic);
       setRelCount(relSnap?.docs.length ?? 0);
       setConstCount(constSnap?.docs.length ?? 0);
@@ -712,31 +729,40 @@ export function CivicObjectWorkspace({
               <p className="text-zinc-500 text-[10px] uppercase tracking-wide">Coverage — यो document को extraction अवस्था</p>
 
               {/* Honest status banner */}
-              {(trulyAtomicCount ?? 0) === 0 ? (
+              {(rawExhaustiveCount ?? 0) > 0 ? (
+                <div className="flex items-start gap-2 text-xs">
+                  <span className="text-sky-500 shrink-0">⚛</span>
+                  <p className="text-sky-300 font-semibold leading-snug">
+                    {rawExhaustiveCount} raw paragraphs captured — exhaustive extraction।
+                    {(trulyAtomicCount ?? 0) > 0 && ` · ${trulyAtomicCount} page-traced atoms पनि छन्।`}
+                    <span className="text-sky-600 font-normal"> Domain classification र founder approval बाँकी।</span>
+                  </p>
+                </div>
+              ) : (trulyAtomicCount ?? 0) > 0 ? (
+                <div className="flex items-start gap-2 text-xs">
+                  <span className="text-emerald-500 shrink-0">✓</span>
+                  <p className="text-emerald-400 font-semibold">{trulyAtomicCount} page-traced atoms — source-backed।</p>
+                </div>
+              ) : (
                 <div className="flex items-start gap-2 text-xs">
                   <span className="text-amber-500 shrink-0">⚠</span>
                   <p className="text-amber-400 font-semibold leading-snug">
                     यो document fully extracted छैन।
                     {(fallbackCount ?? 0) > 0
                       ? ` अहिले ${fallbackCount} fallback draft मात्र छ — public होइन।`
-                      : " Full page-traced extraction अझै भएको छैन।"}
+                      : " Full exhaustive extraction अझै भएको छैन।"}
                   </p>
-                </div>
-              ) : (
-                <div className="flex items-start gap-2 text-xs">
-                  <span className="text-emerald-500 shrink-0">✓</span>
-                  <p className="text-emerald-400 font-semibold">{trulyAtomicCount} page-traced atoms — source-backed।</p>
                 </div>
               )}
 
               {/* Metric grid */}
               <div className="grid grid-cols-3 gap-1.5 text-center">
                 {[
-                  { label: "Page-traced", count: trulyAtomicCount ?? 0, color: (trulyAtomicCount ?? 0) > 0 ? "emerald" : "zinc" },
-                  { label: "Fallback draft", count: fallbackCount ?? 0,    color: (fallbackCount ?? 0) > 0 ? "amber" : "zinc" },
-                  { label: "Intel records",  count: intelCount ?? 0,       color: (intelCount ?? 0) > 0 ? "sky" : "zinc" },
-                  { label: "Relationships",  count: relCount ?? 0,         color: (relCount ?? 0) > 0 ? "violet" : "zinc" },
-                  { label: "Constitution",   count: constCount ?? 0,       color: (constCount ?? 0) > 0 ? "emerald" : "zinc" },
+                  { label: "Raw paragraphs", count: rawExhaustiveCount ?? 0, color: (rawExhaustiveCount ?? 0) > 0 ? "sky" : "zinc" },
+                  { label: "Page-traced",    count: trulyAtomicCount ?? 0,   color: (trulyAtomicCount ?? 0) > 0 ? "emerald" : "zinc" },
+                  { label: "Fallback draft", count: fallbackCount ?? 0,      color: (fallbackCount ?? 0) > 0 ? "amber" : "zinc" },
+                  { label: "Intel records",  count: intelCount ?? 0,         color: (intelCount ?? 0) > 0 ? "sky" : "zinc" },
+                  { label: "Relationships",  count: relCount ?? 0,           color: (relCount ?? 0) > 0 ? "violet" : "zinc" },
                   { label: "Public-ready",   count: (trulyAtomicCount ?? 0) > 0 ? (trulyAtomicCount ?? 0) : 0,
                     color: (trulyAtomicCount ?? 0) > 0 ? "emerald" : "zinc" },
                 ].map(m => (
@@ -760,10 +786,17 @@ export function CivicObjectWorkspace({
               </div>
 
               {/* Next extraction step */}
-              {(trulyAtomicCount ?? 0) === 0 && (
+              {(rawExhaustiveCount ?? 0) === 0 && (trulyAtomicCount ?? 0) === 0 && (
                 <p className="text-zinc-600 text-[10px] leading-relaxed">
-                  <span className="text-zinc-400 font-semibold">अर्को step:</span> Full extraction —
-                  chunked Gemini processing (Phase 2 pipeline) — scanned PDF को लागि आवश्यक।
+                  <span className="text-zinc-400 font-semibold">अर्को step:</span> Full Exhaustive Extraction —
+                  हरेक paragraph capture हुन्छ। Budget को लागि ५००+ raw atoms अपेक्षित।
+                </p>
+              )}
+              {(rawExhaustiveCount ?? 0) > 0 && (trulyAtomicCount ?? 0) === 0 && (
+                <p className="text-zinc-600 text-[10px] leading-relaxed">
+                  <span className="text-zinc-400 font-semibold">अर्को step:</span> Phase 3 — Domain classification।
+                  Raw atoms → budget_allocation | policy | program | promise categories।
+                  Founder approval पछि public।
                 </p>
               )}
             </div>
@@ -937,7 +970,7 @@ export function CivicObjectWorkspace({
                     <span className="text-sky-300 font-semibold">
                       {fullExtrChunks.filter(c => c.status === "done" || c.status === "error").length} / {fullExtrChunks.length} chunks
                     </span>
-                    <span className="text-emerald-400 font-bold">{fullExtrAtoms} atoms saved</span>
+                    <span className="text-emerald-400 font-bold">{fullExtrParagraphs} paragraphs · {fullExtrAtoms} atoms</span>
                   </div>
                   {/* Progress bar */}
                   <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
@@ -949,20 +982,22 @@ export function CivicObjectWorkspace({
                       }}
                     />
                   </div>
-                  {/* Chunk mini-grid */}
+                  {/* Chunk mini-grid — shows paragraph count per chunk */}
                   <div className="flex flex-wrap gap-1">
                     {fullExtrChunks.map(c => (
                       <div
                         key={c.index}
-                        title={`Pages ${c.start}–${c.end}: ${c.status === "done" ? `${c.records} atoms` : c.status === "error" ? c.error : c.status}`}
-                        className={`h-4 rounded text-[9px] flex items-center justify-center min-w-[2rem] px-1 transition-all ${
+                        title={`Pages ${c.start}–${c.end}: ${c.status === "done" ? `${c.paragraphs} paragraphs / ${c.records} atoms` : c.status === "error" ? c.error : c.status}`}
+                        className={`h-5 rounded text-[9px] flex items-center justify-center min-w-[2.5rem] px-1 transition-all ${
                           c.status === "done"    ? "bg-emerald-900/60 border border-emerald-700/60 text-emerald-400" :
                           c.status === "error"   ? "bg-red-900/60 border border-red-700/60 text-red-400" :
                           c.status === "running" ? "bg-amber-900/60 border border-amber-700/60 text-amber-400 animate-pulse" :
                           "bg-zinc-800/40 border border-zinc-700/30 text-zinc-700"
                         }`}
                       >
-                        {c.status === "done" ? c.records : c.status === "error" ? "!" : c.status === "running" ? "⟳" : "·"}
+                        {c.status === "done"    ? `P${c.paragraphs}` :
+                         c.status === "error"   ? "!" :
+                         c.status === "running" ? "⟳" : "·"}
                       </div>
                     ))}
                   </div>
@@ -970,7 +1005,7 @@ export function CivicObjectWorkspace({
                   {fullExtrChunks.find(c => c.status === "running") && (
                     <p className="text-amber-500/70 text-[10px] animate-pulse">
                       Pages {fullExtrChunks.find(c => c.status === "running")?.start}–
-                      {fullExtrChunks.find(c => c.status === "running")?.end} process हुँदैछ…
+                      {fullExtrChunks.find(c => c.status === "running")?.end} — हरेक paragraph capture गर्दैछ…
                     </p>
                   )}
                   {/* Error chunks */}
@@ -992,12 +1027,13 @@ export function CivicObjectWorkspace({
                   <div className="flex items-center gap-2">
                     <span className="text-emerald-400 text-base">✓</span>
                     <div>
-                      <p className="text-emerald-300 text-xs font-bold">{fullExtrAtoms} page-traced atoms save भए</p>
+                      <p className="text-emerald-300 text-xs font-bold">{fullExtrParagraphs} paragraphs → {fullExtrAtoms} raw atoms saved</p>
                       <p className="text-emerald-600 text-[10px]">
                         {fullExtrChunks.filter(c => c.status === "done").length}/{fullExtrChunks.length} chunks सफल ·
                         {fullExtrChunks.filter(c => c.status === "error").length > 0
                           ? ` ${fullExtrChunks.filter(c => c.status === "error").length} chunks failed`
                           : " सबै chunks ठीक"}
+                        {" · extractionTier: raw_exhaustive · publicReady: false"}
                       </p>
                     </div>
                   </div>
@@ -1014,7 +1050,7 @@ export function CivicObjectWorkspace({
                     </div>
                   )}
                   <button
-                    onClick={() => { setFullExtrState("idle"); setFullExtrChunks([]); setFullExtrAtoms(0); }}
+                    onClick={() => { setFullExtrState("idle"); setFullExtrChunks([]); setFullExtrAtoms(0); setFullExtrParagraphs(0); }}
                     className="w-full text-[10px] py-1.5 rounded-xl border border-zinc-700/50 text-zinc-600 hover:text-zinc-400 transition-colors"
                   >
                     फेरि run गर्नुहोस् (re-extraction)
@@ -1033,7 +1069,7 @@ export function CivicObjectWorkspace({
                     </div>
                   </div>
                   <button
-                    onClick={() => { setFullExtrState("idle"); setFullExtrError(""); setFullExtrChunks([]); }}
+                    onClick={() => { setFullExtrState("idle"); setFullExtrError(""); setFullExtrChunks([]); setFullExtrParagraphs(0); setFullExtrAtoms(0); }}
                     className="w-full text-xs py-2 rounded-xl bg-sky-900/30 border border-sky-800/50 text-sky-300 hover:bg-sky-900/50 transition-colors"
                   >
                     फेरि try गर्नुहोस्

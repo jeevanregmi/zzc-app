@@ -700,6 +700,24 @@ service cloud.firestore {
       allow delete: if isOwner(resource.data.ownerId);
     }
 
+    // ── DOCUMENT INTELLIGENCE: raw paragraph capture (exhaustive extraction) ────
+    // document_pages: one record per page extracted from a vault document.
+    // Raw OCR/extraction metadata — never public.
+    match /document_pages/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+
+    // document_cleanup_logs: immutable audit trail for atom cleanup actions.
+    // Written when founder quarantines/deletes/keeps fallback atoms.
+    match /document_cleanup_logs/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update, delete: if false;  // immutable audit trail
+    }
+
     // ── Deny all other paths (catch-all) ─────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;

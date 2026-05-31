@@ -1,13 +1,16 @@
 /**
  * POST /api/chunk-extract
  *
- * Extracts civic intelligence atoms from a specific page range.
- * Uses Gemini Files API (file_uri from /api/gemini-file-upload) — no PDF re-upload.
- * Each call = one chunk = one Cloudflare request, safely within 30s.
+ * EXHAUSTIVE paragraph-level extraction from a specific page range.
+ * Philosophy: every paragraph → one raw atom. No filtering. No importance threshold.
+ * "Extract important items" is wrong. "Convert every paragraph" is correct.
+ *
+ * Uses Gemini Files API (file_uri) — no PDF re-upload per chunk.
+ * Raw atoms are classified later (Phase 3). Public routing happens after founder approval.
  *
  * Body: { fileUri, startPage, endPage, chunkIndex, totalChunks,
- *         docId, ownerId, docTitle, sourceYear?, domain? }
- * Returns: { ok, records, chunkIndex, startPage, endPage, totalFound, validFound }
+ *         docId, ownerId, docTitle, sourceYear? }
+ * Returns: { ok, pages, chunkIndex, startPage, endPage, totalParagraphs }
  */
 
 import { callGemini } from "../../lib/ai/providers/gemini";
@@ -15,7 +18,7 @@ import { CORS, clientError, extractJson, log } from "./_shared";
 
 interface Env {
   GEMINI_API_KEY?: string;
-  GEMINI_MODEL?:   string;
+  GEMINI_MODEL?:  string;
 }
 
 interface ChunkRequest {
@@ -28,61 +31,66 @@ interface ChunkRequest {
   ownerId:     string;
   docTitle:    string;
   sourceYear?: string;
-  domain?:     string;
 }
 
-function buildChunkPrompt(req: ChunkRequest): string {
-  return `You are a civic intelligence extractor for ZZC (Nepal civic platform).
+export interface RawParagraph {
+  text:          string;
+  summaryNepali: string;
+  type:          string;
+  orderIndex:    number;
+}
+
+export interface RawPage {
+  pageNumber:  number;
+  paragraphs:  RawParagraph[];
+}
+
+function buildExhaustivePrompt(req: ChunkRequest): string {
+  return `You are a civic document intelligence extractor for ZZC Nepal — a public accountability platform.
 
 Document: "${req.docTitle}"
 Year: ${req.sourceYear ?? "unknown"}
 Processing: Chunk ${req.chunkIndex + 1} of ${req.totalChunks} — pages ${req.startPage} to ${req.endPage} ONLY.
 
-INSTRUCTION: Extract ONLY from pages ${req.startPage}–${req.endPage} of the attached PDF.
-Do not extract from other pages. If a page is blank or image-only, skip it.
+CORE RULE: Read EVERY paragraph, sentence, and line on EVERY page in this range.
 
-Extract EVERY specific, trackable item from those pages:
-- Budget allocations with amounts (NPR/रु.)
-- Named programs, projects, schemes with beneficiary counts
-- Policy changes with specific conditions
-- Targets with measurable figures (%, numbers, NPR)
-- Named institutions, committees, bodies, ministries
-- Employment/coverage/beneficiary figures
-- Tax changes, subsidies, incentives with rates
-- Implementation deadlines and timelines
-- Statistical data (GDP, inflation, growth rates)
-- Any new, continued, or discontinued policy
+DO NOT SKIP:
+- Introduction, preamble, background, narrative prose
+- Policy direction statements without numbers
+- Ministry/institution name mentions
+- Sector descriptions
+- Program names and descriptions
+- Any sentence that mentions citizens, benefits, or changes
 
-RECORD RULES:
-- pageNumber MUST be between ${req.startPage} and ${req.endPage}
-- textEvidence MUST be a verbatim quote from that exact page (max 400 chars)
-- Reject any record you cannot trace to a specific page in this range
-- Include every named item even if details are partial
+DO NOT APPLY any importance filter. Do NOT ask "is this important enough?"
+Every paragraph has civic meaning — even context-setting prose counts.
 
-Return ONLY this JSON (no markdown, no explanation):
+For EACH paragraph, extract:
+- text: verbatim text from the page (max 350 characters)
+- summaryNepali: one sentence — what does this mean for a citizen? (नागरिकको लागि)
+- type: choose ONE from: budget_allocation | policy | program | institution | tax | revenue | promise | employment | social | infrastructure | macroeconomic | narrative | legal | other
+- orderIndex: paragraph order on this page (0, 1, 2…)
+
+STRICT RULES:
+- pageNumber MUST be ${req.startPage} to ${req.endPage}
+- Every page must appear in output with at least one paragraph
+- Do NOT return empty paragraphs array for any page
+- If a page only has headings or page numbers, still capture the heading as a paragraph
+- Do NOT skip a page because it "looks like" a blank or transition page
+
+Return ONLY this JSON (no markdown, no explanation, start with {):
 {
-  "records": [
+  "pages": [
     {
-      "type": "budget_target|promise|project|institution|employment_target|social_program|reform|tax_policy|monetary_policy|other",
-      "title": "concise English (5-8 words)",
-      "titleNepali": "छोटो नेपाली शीर्षक",
-      "summaryNepali": "नागरिकले बुझ्ने १-२ वाक्य",
-      "sector": "education|health|agriculture|infrastructure|energy|finance|governance|employment|social|environment|digital|tourism|judiciary|other",
-      "ministry": "exact ministry/body from document",
-      "target": "exact figure or null",
-      "measurable": true,
-      "timeline": "deadline from document or null",
-      "budgetAmount": "रु. X करोड/अर्ब or null",
-      "fiscalYear": "${req.sourceYear ?? "unknown"}",
-      "geoScope": "national|provincial|district|municipality",
-      "governmentLevel": "federal|provincial|local",
-      "tags": ["tag1", "tag2"],
-      "confidence": 0.90,
-      "affectedGroups": ["group1"],
-      "affectedSectors": ["sector1"],
       "pageNumber": ${req.startPage},
-      "textEvidence": "verbatim quote from the page (max 400 chars)",
-      "paragraphIdx": 0
+      "paragraphs": [
+        {
+          "text": "verbatim text from the page",
+          "summaryNepali": "नागरिकको लागि सरल अर्थ",
+          "type": "narrative",
+          "orderIndex": 0
+        }
+      ]
     }
   ]
 }`;
@@ -113,12 +121,12 @@ export const onRequestPost = async (context: {
   }
 
   log("chunk-extract", "start", {
-    docId:  body.docId,
-    chunk:  `${body.chunkIndex + 1}/${body.totalChunks}`,
-    pages:  `${body.startPage}-${body.endPage}`,
+    docId: body.docId,
+    chunk: `${body.chunkIndex + 1}/${body.totalChunks}`,
+    pages: `${body.startPage}-${body.endPage}`,
   });
 
-  const prompt = buildChunkPrompt(body);
+  const prompt = buildExhaustivePrompt(body);
 
   try {
     const timeout = new Promise<never>((_, reject) =>
@@ -131,12 +139,12 @@ export const onRequestPost = async (context: {
       callGemini({
         apiKey:    env.GEMINI_API_KEY!,
         model:     env.GEMINI_MODEL ?? "gemini-2.5-flash",
-        system:    "You are a precise civic intelligence extractor. Return ONLY valid JSON. Every record MUST have pageNumber (in the requested range) and textEvidence (verbatim quote). No markdown. Start with { end with }.",
+        system:    "You are an exhaustive civic document paragraph extractor. Every paragraph on every page must appear in output. No empty pages. No filtering. Return ONLY valid JSON. Start with { end with }. No markdown.",
         parts: [
           { file_data: { mime_type: "application/pdf", file_uri: body.fileUri } },
           { text: prompt },
         ],
-        maxTokens: 4096,
+        maxTokens: 8192,
       }),
       timeout,
     ]);
@@ -154,35 +162,49 @@ export const onRequestPost = async (context: {
       );
     }
 
-    const data = parsed as { records?: unknown[] };
-    const rawRecords = Array.isArray(data.records) ? data.records : [];
+    const data    = parsed as { pages?: unknown[] };
+    const rawPages = Array.isArray(data.pages) ? data.pages : [];
 
-    // Filter: only keep records whose pageNumber falls within the requested range
-    const validRecords = rawRecords.filter(r => {
-      const rec = r as Record<string, unknown>;
-      const pn = rec.pageNumber as number | null | undefined;
-      if (pn === null || pn === undefined || pn < 1) return false;
-      return pn >= body.startPage && pn <= body.endPage;
-    });
+    // Validate and normalise pages; restrict to requested range
+    const validPages: RawPage[] = [];
+    let totalParagraphs = 0;
+
+    for (const p of rawPages) {
+      const page = p as Record<string, unknown>;
+      const pn   = Number(page.pageNumber);
+      if (!pn || pn < body.startPage || pn > body.endPage) continue;
+
+      const paragraphs: RawParagraph[] = Array.isArray(page.paragraphs)
+        ? (page.paragraphs as Record<string, unknown>[])
+            .filter(para => typeof para.text === "string" && (para.text as string).trim().length > 0)
+            .map((para, idx) => ({
+              text:          String(para.text ?? "").slice(0, 400),
+              summaryNepali: String(para.summaryNepali ?? "").slice(0, 300),
+              type:          String(para.type ?? "other"),
+              orderIndex:    typeof para.orderIndex === "number" ? para.orderIndex : idx,
+            }))
+        : [];
+
+      validPages.push({ pageNumber: pn, paragraphs });
+      totalParagraphs += paragraphs.length;
+    }
 
     log("chunk-extract", "done", {
-      docId:  body.docId,
-      chunk:  body.chunkIndex + 1,
-      raw:    rawRecords.length,
-      valid:  validRecords.length,
-      ms:     result.latencyMs,
+      docId:      body.docId,
+      chunk:      body.chunkIndex + 1,
+      pages:      validPages.length,
+      paragraphs: totalParagraphs,
+      ms:         result.latencyMs,
     });
 
     return new Response(
       JSON.stringify({
-        ok:         true,
-        records:    validRecords,
-        chunkIndex: body.chunkIndex,
-        startPage:  body.startPage,
-        endPage:    body.endPage,
-        totalFound: rawRecords.length,
-        validFound: validRecords.length,
-        domain:     body.domain ?? "janta",
+        ok:             true,
+        pages:          validPages,
+        chunkIndex:     body.chunkIndex,
+        startPage:      body.startPage,
+        endPage:        body.endPage,
+        totalParagraphs,
       }),
       { headers: CORS },
     );
