@@ -249,6 +249,46 @@ export async function firestoreSet(
   }
 }
 
+/**
+ * Batch write up to 500 documents in a single HTTP request.
+ * ~200× faster than Promise.all(firestoreAdd...) — critical for staying
+ * within Cloudflare Pages Function's 30s wall-clock limit.
+ */
+export async function firestoreBatchCommit(
+  idToken: string,
+  writes: Array<{ collectionPath: string; data: Record<string, unknown> }>,
+): Promise<void> {
+  if (writes.length === 0) return;
+
+  const PROJECT   = "zeneration-z-chautari";
+  const endpoint  = `https://firestore.googleapis.com/v1/projects/${PROJECT}/databases/(default)/documents:commit`;
+
+  const toWrite = (collectionPath: string, data: Record<string, unknown>) => {
+    const fields: Record<string, FsValue> = {};
+    for (const [k, v] of Object.entries(data)) fields[k] = toFsValue(v);
+    return {
+      update: {
+        name: `projects/${PROJECT}/databases/(default)/documents/${collectionPath}`,
+        fields,
+      },
+    };
+  };
+
+  // Firestore batch limit = 500 writes per commit
+  for (let i = 0; i < writes.length; i += 500) {
+    const chunk = writes.slice(i, i + 500).map(w => toWrite(w.collectionPath, w.data));
+    const res = await fetch(endpoint, {
+      method:  "POST",
+      headers: { Authorization: `Bearer ${idToken}`, "Content-Type": "application/json" },
+      body:    JSON.stringify({ writes: chunk }),
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`Firestore batch commit failed: ${res.status} ${txt.slice(0, 150)}`);
+    }
+  }
+}
+
 export function extractJson<T = unknown>(text: string): [T, null] | [null, string] {
   const t = text.trim();
 

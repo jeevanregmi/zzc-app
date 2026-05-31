@@ -23,7 +23,7 @@
  */
 
 import { callGemini, GeminiCallError } from "../../lib/ai/providers/gemini";
-import { CORS, extractJson, log, clientError, firestoreAdd, firestoreSet } from "./_shared";
+import { CORS, extractJson, log, clientError, firestoreAdd, firestoreSet, firestoreBatchCommit } from "./_shared";
 import type { R2Bucket } from "@cloudflare/workers-types";
 
 interface Env {
@@ -248,17 +248,27 @@ async function runAtomicBackground(
     const base64 = toBase64(buf);
     log("atomic-extract", "bg_pdf_fetched", { docId: body.docId, sizeMB: sizeMB.toFixed(2) });
 
-    // Call Gemini — 8192 tokens keeps response under ~40s for Cloudflare waitUntil
-    const result = await callGemini({
-      apiKey:    env.GEMINI_API_KEY!,
-      model:     env.GEMINI_MODEL,
-      system:    "You are a precision atomic intelligence extractor. Return ONLY valid JSON. Every record MUST have pageNumber and textEvidence. No markdown. No code fences. Start with { end with }.",
-      parts:     [
-        { inline_data: { mime_type: "application/pdf", data: base64 } },
-        { text: prompt },
-      ],
-      maxTokens: 8192,
-    });
+    // 25s Gemini timeout — ensures catch block runs before Cloudflare's 30s wall-clock kills the worker
+    const geminiTimeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(
+        "Gemini timeout (25s) — PDF ठूलो हुनसक्छ वा Cloudflare 30s wall-clock limit भयो। " +
+        "सानो document (< 500KB) मा try गर्नुहोस्।"
+      )), 25_000)
+    );
+
+    const result = await Promise.race([
+      callGemini({
+        apiKey:    env.GEMINI_API_KEY!,
+        model:     env.GEMINI_MODEL,
+        system:    "You are a precision atomic intelligence extractor. Return ONLY valid JSON. Every record MUST have pageNumber and textEvidence. No markdown. No code fences. Start with { end with }.",
+        parts:     [
+          { inline_data: { mime_type: "application/pdf", data: base64 } },
+          { text: prompt },
+        ],
+        maxTokens: 8192,
+      }),
+      geminiTimeout,
+    ]);
 
     let responseText = result.text.trim()
       .replace(/^```(?:json)?\s*/i, "")
@@ -297,9 +307,11 @@ async function runAtomicBackground(
       docId: body.docId, total: data.records.length, valid: validated.length, rejected,
     });
 
-    // Write records to janta_intelligence via Firestore REST
-    const savePromises = validated.map(r => {
-      const record: Record<string, unknown> = {
+    // Batch write all records in one HTTP request — ~200× faster than Promise.all(firestoreAdd...)
+    // Critical: keeps total wall-clock within Cloudflare's 30s limit
+    await firestoreBatchCommit(idToken, validated.map(r => ({
+      collectionPath: "janta_intelligence",
+      data: {
         timeline:             null,
         budgetAmount:         null,
         department:           null,
@@ -324,13 +336,11 @@ async function runAtomicBackground(
         published:            true,
         createdAt:            now,
         updatedAt:            now,
-      };
-      return firestoreAdd(idToken, "janta_intelligence", record);
-    });
-    await Promise.all(savePromises);
+      } as Record<string, unknown>,
+    })));
 
-    // Write audit log
-    await firestoreAdd(idToken, "atomic_extraction_logs", {
+    // Write audit log (non-blocking, failure does not affect job status)
+    firestoreAdd(idToken, "atomic_extraction_logs", {
       ownerId:          body.ownerId,
       docId:            body.docId,
       docTitle:         body.docTitle,
