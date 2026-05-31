@@ -405,17 +405,30 @@ async function runAtomicBackground(
 function buildTextPrompt(body: AtomicRequest): string {
   return `You are a civic intelligence extractor for ZZC (Nepal civic platform).
 
-Extract every specific, trackable fact from the document text below.
-pageNumber should be null (this is pre-extracted text, not a raw PDF).
-textEvidence must be a direct quote from the text provided (max 400 chars).
+The text below is a pre-extracted AI summary of a government document — not a raw PDF.
+Your job: extract EVERY distinct item into a separate record.
 
 Document: "${body.docTitle}"
 Type: ${body.docType ?? "official government document"}
 Year: ${body.sourceYear ?? "unknown"}
 
-Extract: budget allocations, policy changes, targets with numbers, institutions,
-deadlines, employment figures, tax changes, subsidies, programs with beneficiaries.
-SKIP vague aspirations and general statements.
+EXTRACT EVERYTHING — do not skip anything:
+- Named programs, schemes, projects (even without exact budget figures)
+- Budget allocations (with or without exact amounts)
+- Policy changes and reforms
+- Employment/beneficiary targets
+- Tax changes, subsidies, incentives
+- Named institutions, committees, bodies
+- Sector priorities and investment areas
+- Deadlines and implementation timelines
+
+RULES:
+- Create a record for EVERY distinct named item — even if details are partial
+- pageNumber must be null (this is pre-extracted text)
+- textEvidence = direct quote from the text below (any phrase mentioning the item)
+- If textEvidence is unavailable, use summaryNepali as evidence
+- Minimum 10 records. If you see fewer items, break composite items into sub-records.
+- Return at LEAST one record per major sector mentioned.
 
 Return ONLY this JSON (no markdown, no explanation):
 {
@@ -426,8 +439,8 @@ Return ONLY this JSON (no markdown, no explanation):
       "titleNepali": "छोटो नेपाली शीर्षक",
       "summaryNepali": "नागरिकले बुझ्ने १-२ वाक्य",
       "sector": "education|health|agriculture|infrastructure|energy|finance|governance|employment|social|environment|other",
-      "ministry": "ministry name from document",
-      "target": "exact figure or null",
+      "ministry": "ministry name or 'Government of Nepal'",
+      "target": "figure/metric or null",
       "measurable": true,
       "timeline": "deadline or null",
       "budgetAmount": "रु. X करोड or null",
@@ -462,7 +475,7 @@ async function runAtomicFromText(
       callGemini({
         apiKey:    env.GEMINI_API_KEY!,
         model:     env.GEMINI_MODEL,
-        system:    "Return ONLY valid JSON. No markdown. No code fences. Start with { end with }.",
+        system:    "You extract civic intelligence records. Return ONLY valid JSON with a non-empty records array. Every named program, policy, sector, institution, or budget item must become a record. No markdown. No code fences. Start with { end with }.",
         parts:     [{ text: `${textPrompt}\n\n═══ DOCUMENT TEXT ═══\n\n${textContent.slice(0, 30000)}` }],
         maxTokens: 4096,
       }),
