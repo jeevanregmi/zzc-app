@@ -1102,10 +1102,12 @@ export default function DocumentsClient() {
         return; // keep extractingAtomicId = doc.id during polling
       }
 
-      // Sync fallback — records returned directly
+      // Sync — records returned directly
       if (!data.records?.length) throw new Error("No records returned");
 
+      const isFallback = !!(data as Record<string,unknown>).isFallback;
       const now = new Date().toISOString();
+
       await Promise.all(data.records.map(r =>
         addDoc(collection(db, "janta_intelligence"), {
           summaryNepali:   "",
@@ -1123,20 +1125,24 @@ export default function DocumentsClient() {
           sourceDocId:          doc.id,
           sourceDocTitle:       doc.title,
           implementationStatus: "announced",
-          verificationStatus:   "ai_extracted",
-          extractionTier:       "atomic",
-          publishToJanta:       true,
-          published:            true,
+          // Fallback atoms: NOT public, clearly labeled, require full extraction later
+          verificationStatus:   isFallback ? "fallback_ai_summary" : "ai_extracted",
+          extractionTier:       isFallback ? "fallback" : "atomic",
+          publishToJanta:       isFallback ? false : true,
+          published:            isFallback ? false : true,
           createdAt:            now,
           updatedAt:            now,
         })
       ));
 
       const atomicCount = data.records.length;
-      setAtomicCountByDoc(prev => ({ ...prev, [doc.id]: atomicCount }));
-      updateIntelligenceDoc(doc.id, {
-        extractionTier: "atomic",
-      } as unknown as Partial<IntelligenceDocument>).catch(() => {});
+      // Only count toward atomicCountByDoc if NOT fallback (fallback is internal draft)
+      if (!isFallback) {
+        setAtomicCountByDoc(prev => ({ ...prev, [doc.id]: atomicCount }));
+        updateIntelligenceDoc(doc.id, {
+          extractionTier: "atomic",
+        } as unknown as Partial<IntelligenceDocument>).catch(() => {});
+      }
 
       addDoc(collection(db, "atomic_extraction_logs"), {
         ownerId:          user.uid,
@@ -1144,10 +1150,8 @@ export default function DocumentsClient() {
         docTitle:         doc.title,
         recordsSaved:     atomicCount,
         recordsRejected:  data.rejected ?? 0,
-        estimatedCostUSD: Math.max(0.10, Math.ceil(
-          ((doc as unknown as Record<string,unknown>).pageCount as number | undefined
-            ?? Math.ceil(doc.fileSize / 2500)) / 100
-        ) * 0.15),
+        isFallback,
+        extractionMode:   isFallback ? "synthesis_fallback" : "atomic_pdf",
         pageCount:        ((doc as unknown as Record<string,unknown>).pageCount as number | undefined) ?? null,
         fileSizeBytes:    doc.fileSize,
         govFolder:        doc.govFolder ?? null,
@@ -1157,7 +1161,9 @@ export default function DocumentsClient() {
 
       setAtomicJobMsg(prev => ({
         ...prev,
-        [doc.id]: `✅ ${atomicCount} atomic records saved (${data.rejected ?? 0} rejected)`,
+        [doc.id]: isFallback
+          ? `⚠ ${atomicCount} draft atoms (AI summary बाट — public होइन। Full extraction आवश्यक छ।)`
+          : `✅ ${atomicCount} atomic records saved (${data.rejected ?? 0} rejected)`,
       }));
 
     } catch (err) {

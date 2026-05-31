@@ -516,24 +516,29 @@ async function runAtomicFromText(
       if (sources.length > 0) {
         log("atomic-extract", "text_synthesized_fallback", { docId: body.docId, count: sources.length });
         rawRecordsRaw = sources.map((text, i) => ({
-          type:            i < (body.policyChanges?.length ?? 0) ? "reform" : "other",
-          title:           `Budget Item ${i + 1}`,
-          titleNepali:     text.slice(0, 60).trimEnd(),
-          summaryNepali:   text,
-          textEvidence:    text.slice(0, 400),
-          sector:          "other",
-          ministry:        "Government of Nepal",
-          confidence:      0.6,
-          pageNumber:      null,
-          geoScope:        "national",
-          governmentLevel: "federal",
-          tags:            [],
-          affectedGroups:  [],
-          affectedSectors: [],
-          measurable:      false,
-          timeline:        null,
-          budgetAmount:    null,
-          fiscalYear:      body.sourceYear ?? null,
+          type:               i < (body.policyChanges?.length ?? 0) ? "reform" : "other",
+          title:              `Draft Item ${i + 1}`,
+          titleNepali:        text.slice(0, 60).trimEnd(),
+          summaryNepali:      text,
+          textEvidence:       text.slice(0, 400),
+          sector:             "other",
+          ministry:           "Government of Nepal",
+          confidence:         0.4,
+          pageNumber:         null,
+          geoScope:           "national",
+          governmentLevel:    "federal",
+          tags:               ["fallback_draft"],
+          affectedGroups:     [],
+          affectedSectors:    [],
+          measurable:         false,
+          timeline:           null,
+          budgetAmount:       null,
+          fiscalYear:         body.sourceYear ?? null,
+          // NOT public — synthesis fallback is internal draft only
+          publishToJanta:     false,
+          published:          false,
+          verificationStatus: "fallback_ai_summary",
+          extractionTier:     "fallback",
         }));
       }
     }
@@ -560,13 +565,19 @@ async function runAtomicFromText(
       confidence:   Math.min(1, Math.max(0, r.confidence ?? 0.7)),
     }));
 
+    const isFallback = atomicRecords.some(r => (r as unknown as Record<string,unknown>).verificationStatus === "fallback_ai_summary");
     return new Response(
       JSON.stringify({
-        ok: true, status: "complete",
-        records: atomicRecords, totalFound: atomicRecords.length,
-        rejected: rawRecordsRaw.length - atomicRecords.length,
-        domain, extractionTier: "atomic", sizeBytes: 0,
-        textMode: true,
+        ok:             true,
+        status:         "complete",
+        records:        atomicRecords,
+        totalFound:     atomicRecords.length,
+        rejected:       rawRecordsRaw.length - atomicRecords.length,
+        domain,
+        extractionTier: isFallback ? "fallback" : "atomic",
+        sizeBytes:      0,
+        textMode:       true,
+        isFallback,
       }),
       { headers: CORS },
     );
