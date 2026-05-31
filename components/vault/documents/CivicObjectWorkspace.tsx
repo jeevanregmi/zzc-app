@@ -125,6 +125,21 @@ export function CivicObjectWorkspace({
   const [cleanupState,  setCleanupState]  = useState<CleanupState>("idle");
   const [cleanupResult, setCleanupResult] = useState<string>("");
 
+  // Full chunked extraction state (Phase 2)
+  type FullExtrState = "idle" | "uploading" | "extracting" | "complete" | "error";
+  interface ChunkStatus {
+    index:   number;
+    start:   number;
+    end:     number;
+    status:  "pending" | "running" | "done" | "error";
+    records: number;
+    error?:  string;
+  }
+  const [fullExtrState,    setFullExtrState]    = useState<FullExtrState>("idle");
+  const [fullExtrChunks,   setFullExtrChunks]   = useState<ChunkStatus[]>([]);
+  const [fullExtrAtoms,    setFullExtrAtoms]     = useState<number>(0);
+  const [fullExtrError,    setFullExtrError]     = useState<string>("");
+
   const [confirmAtomic,  setConfirmAtomic]  = useState(false);
   // localAtomicMsg: immediate feedback, set synchronously on button click.
   // Does NOT depend on parent re-render or prop propagation.
@@ -270,6 +285,165 @@ export function CivicObjectWorkspace({
     await writeFallbackCleanupLog("keep_fallback_atoms", fallbackCount ?? 0);
     setCleanupState("done");
     setCleanupResult(`Fallback atoms internal draft मा राखियो — full extraction अझै आवश्यक छ।`);
+  }
+
+  // ── Full chunked extraction (Phase 2) ─────────────────────────────────────────
+
+  async function handleFullExtraction() {
+    const CHUNK_PAGES = 10;
+    const pageCount   = (doc as unknown as Record<string, unknown>).pageCount as number | undefined
+      ?? Math.ceil(doc.fileSize / 15000); // ~15KB per scanned page
+
+    // Build chunk plan
+    const chunks: ChunkStatus[] = [];
+    for (let p = 1; p <= pageCount; p += CHUNK_PAGES) {
+      const start = p;
+      const end   = Math.min(p + CHUNK_PAGES - 1, pageCount);
+      chunks.push({ index: chunks.length, start, end, status: "pending", records: 0 });
+    }
+    setFullExtrChunks(chunks);
+    setFullExtrAtoms(0);
+    setFullExtrError("");
+    setFullExtrState("uploading");
+
+    // Step 1 — Upload PDF to Gemini Files API
+    let fileUri = "";
+    try {
+      const upRes = await fetch("/api/gemini-file-upload", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          docId:       doc.id,
+          ownerId,
+          downloadUrl: doc.downloadUrl,
+          mimeType:    doc.mimeType,
+          docTitle:    doc.title,
+        }),
+      });
+      const upData = await upRes.json() as { ok: boolean; fileUri?: string; error?: string };
+      if (!upData.ok || !upData.fileUri) {
+        setFullExtrError(upData.error ?? "PDF upload to Gemini Files API failed");
+        setFullExtrState("error");
+        return;
+      }
+      fileUri = upData.fileUri;
+    } catch (err) {
+      setFullExtrError(`Upload error: ${err instanceof Error ? err.message : String(err)}`);
+      setFullExtrState("error");
+      return;
+    }
+
+    // Step 2 — Process each chunk sequentially
+    setFullExtrState("extracting");
+    const domain     = doc.category === "finance" ? "finance" : "janta";
+    const sourceYear = ((doc as unknown as Record<string, unknown>).docYear as number | undefined)?.toString()
+      ?? new Date(doc.uploadedAt).getFullYear().toString();
+    const now        = new Date().toISOString();
+    let totalAtoms   = 0;
+
+    for (const chunk of chunks) {
+      setFullExtrChunks(prev => prev.map(c =>
+        c.index === chunk.index ? { ...c, status: "running" } : c
+      ));
+
+      try {
+        const res = await fetch("/api/chunk-extract", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json" },
+          body:    JSON.stringify({
+            fileUri,
+            startPage:   chunk.start,
+            endPage:     chunk.end,
+            chunkIndex:  chunk.index,
+            totalChunks: chunks.length,
+            docId:       doc.id,
+            ownerId,
+            docTitle:    doc.title,
+            sourceYear,
+            domain,
+          }),
+        });
+        const data = await res.json() as {
+          ok:        boolean;
+          records?:  Record<string, unknown>[];
+          error?:    string;
+          validFound?: number;
+        };
+
+        if (!data.ok) {
+          setFullExtrChunks(prev => prev.map(c =>
+            c.index === chunk.index
+              ? { ...c, status: "error", error: (data.error ?? "Chunk failed").slice(0, 80) }
+              : c
+          ));
+          continue;
+        }
+
+        const records = data.records ?? [];
+
+        // Save atoms to Firestore immediately after each chunk
+        if (records.length > 0) {
+          await Promise.all(records.map(r =>
+            addDoc(collection(db, "janta_intelligence"), {
+              summaryNepali:   "",
+              measurable:      true,
+              timeline:        null,
+              budgetAmount:    null,
+              geoScope:        "national",
+              governmentLevel: "federal",
+              tags:            [],
+              affectedGroups:  [],
+              affectedSectors: [],
+              department:      null,
+              ...r,
+              ownerId,
+              sourceDocId:          doc.id,
+              sourceDocTitle:       doc.title,
+              implementationStatus: "announced",
+              verificationStatus:   "ai_extracted",
+              extractionTier:       "atomic",
+              publishToJanta:       true,
+              published:            true,
+              extractionChunk:      chunk.index,
+              chunkPageRange:       `${chunk.start}-${chunk.end}`,
+              createdAt:            now,
+              updatedAt:            now,
+            })
+          ));
+        }
+
+        totalAtoms += records.length;
+        setFullExtrAtoms(totalAtoms);
+        setFullExtrChunks(prev => prev.map(c =>
+          c.index === chunk.index ? { ...c, status: "done", records: records.length } : c
+        ));
+
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setFullExtrChunks(prev => prev.map(c =>
+          c.index === chunk.index ? { ...c, status: "error", error: msg.slice(0, 80) } : c
+        ));
+      }
+    }
+
+    // Update workspace counts
+    setTrulyAtomicCount(totalAtoms);
+    setAtomicCount(totalAtoms);
+    setFallbackCount(0); // full extraction supersedes fallback draft
+    setFullExtrState("complete");
+
+    // Write extraction summary log
+    addDoc(collection(db, "document_cleanup_logs"), {
+      actionType:    "full_chunked_extraction",
+      documentId:    doc.id,
+      documentTitle: doc.title,
+      affectedCount: totalAtoms,
+      runBy:         ownerId,
+      runAt:         new Date().toISOString(),
+      chunkCount:    chunks.length,
+      pageCount,
+      notes:         `Full chunked extraction via Gemini Files API — ${totalAtoms} page-traced atoms`,
+    }).catch(() => {});
   }
 
   const isConst    = isConstitutionDoc(doc);
@@ -690,6 +864,169 @@ export function CivicObjectWorkspace({
               <p className="text-emerald-300 text-xs font-semibold">✓ Cleanup सम्पन्न</p>
               <p className="text-emerald-500/80 text-[10px] mt-1">{cleanupResult}</p>
               <p className="text-zinc-600 text-[10px] mt-1.5">Next: Phase 2 — full chunked extraction pipeline।</p>
+            </div>
+          )}
+
+          {/* ── Phase 2: Full Chunked Extraction Panel ── */}
+          {!loading && isApproved && !isConst && (
+            <div className="rounded-xl border border-sky-900/40 bg-sky-950/10 px-4 py-3 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sky-400 text-[10px] uppercase tracking-wide">Full Document Extraction</p>
+                {fullExtrState === "complete" && (
+                  <span className="text-[10px] text-emerald-400 border border-emerald-800/50 bg-emerald-950/20 rounded-full px-2 py-0.5">✓ सम्पन्न</span>
+                )}
+              </div>
+
+              {/* Idle — show start button */}
+              {fullExtrState === "idle" && (
+                <div className="space-y-2">
+                  <p className="text-zinc-500 text-[10px] leading-relaxed">
+                    PDF एक पटक Gemini Files API मा upload हुन्छ, त्यसपछि{" "}
+                    <span className="text-sky-400 font-medium">
+                      {Math.ceil(
+                        (((doc as unknown as Record<string, unknown>).pageCount as number | undefined)
+                          ?? Math.ceil(doc.fileSize / 15000)) / 10
+                      )} chunks
+                    </span>{" "}
+                    (10 pages प्रत्येक) sequentially process हुन्छ।
+                    प्रत्येक chunk को atoms तुरुन्त save हुन्छन्।
+                  </p>
+                  {(trulyAtomicCount ?? 0) > 0 && (
+                    <p className="text-amber-500/70 text-[10px]">
+                      ⚠ {trulyAtomicCount} existing atoms छन् — re-run गर्दा नयाँ atoms थपिन्छन् (existing हटाइँदैनन्)।
+                    </p>
+                  )}
+                  <button
+                    onClick={() => void handleFullExtraction()}
+                    className="w-full text-xs py-2.5 rounded-xl bg-sky-900/40 border border-sky-700/60 text-sky-200 hover:bg-sky-900/60 transition-colors font-semibold"
+                  >
+                    📄 Full Document Extraction चलाउनुहोस्
+                  </button>
+                </div>
+              )}
+
+              {/* Uploading */}
+              {fullExtrState === "uploading" && (
+                <div className="flex items-center gap-3 py-2">
+                  <div className="w-5 h-5 border-2 border-sky-500/40 border-t-sky-400 rounded-full animate-spin shrink-0" />
+                  <div>
+                    <p className="text-sky-300 text-xs font-semibold">PDF upload हुँदैछ…</p>
+                    <p className="text-sky-600 text-[10px]">Gemini Files API — एकपटक upload, सबै chunks मा reuse</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Extracting */}
+              {fullExtrState === "extracting" && (
+                <div className="space-y-2.5">
+                  {/* Summary bar */}
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-sky-300 font-semibold">
+                      {fullExtrChunks.filter(c => c.status === "done" || c.status === "error").length} / {fullExtrChunks.length} chunks
+                    </span>
+                    <span className="text-emerald-400 font-bold">{fullExtrAtoms} atoms saved</span>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-sky-500 transition-all duration-300 rounded-full"
+                      style={{
+                        width: `${fullExtrChunks.length === 0 ? 0
+                          : (fullExtrChunks.filter(c => c.status === "done" || c.status === "error").length / fullExtrChunks.length) * 100}%`
+                      }}
+                    />
+                  </div>
+                  {/* Chunk mini-grid */}
+                  <div className="flex flex-wrap gap-1">
+                    {fullExtrChunks.map(c => (
+                      <div
+                        key={c.index}
+                        title={`Pages ${c.start}–${c.end}: ${c.status === "done" ? `${c.records} atoms` : c.status === "error" ? c.error : c.status}`}
+                        className={`h-4 rounded text-[9px] flex items-center justify-center min-w-[2rem] px-1 transition-all ${
+                          c.status === "done"    ? "bg-emerald-900/60 border border-emerald-700/60 text-emerald-400" :
+                          c.status === "error"   ? "bg-red-900/60 border border-red-700/60 text-red-400" :
+                          c.status === "running" ? "bg-amber-900/60 border border-amber-700/60 text-amber-400 animate-pulse" :
+                          "bg-zinc-800/40 border border-zinc-700/30 text-zinc-700"
+                        }`}
+                      >
+                        {c.status === "done" ? c.records : c.status === "error" ? "!" : c.status === "running" ? "⟳" : "·"}
+                      </div>
+                    ))}
+                  </div>
+                  {/* Running chunk info */}
+                  {fullExtrChunks.find(c => c.status === "running") && (
+                    <p className="text-amber-500/70 text-[10px] animate-pulse">
+                      Pages {fullExtrChunks.find(c => c.status === "running")?.start}–
+                      {fullExtrChunks.find(c => c.status === "running")?.end} process हुँदैछ…
+                    </p>
+                  )}
+                  {/* Error chunks */}
+                  {fullExtrChunks.filter(c => c.status === "error").length > 0 && (
+                    <div className="space-y-0.5">
+                      {fullExtrChunks.filter(c => c.status === "error").map(c => (
+                        <p key={c.index} className="text-red-400/70 text-[10px]">
+                          ✗ Chunk {c.index + 1} (pages {c.start}–{c.end}): {c.error ?? "failed"}
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Complete */}
+              {fullExtrState === "complete" && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-emerald-400 text-base">✓</span>
+                    <div>
+                      <p className="text-emerald-300 text-xs font-bold">{fullExtrAtoms} page-traced atoms save भए</p>
+                      <p className="text-emerald-600 text-[10px]">
+                        {fullExtrChunks.filter(c => c.status === "done").length}/{fullExtrChunks.length} chunks सफल ·
+                        {fullExtrChunks.filter(c => c.status === "error").length > 0
+                          ? ` ${fullExtrChunks.filter(c => c.status === "error").length} chunks failed`
+                          : " सबै chunks ठीक"}
+                      </p>
+                    </div>
+                  </div>
+                  {/* Failed chunk summary */}
+                  {fullExtrChunks.filter(c => c.status === "error").length > 0 && (
+                    <div className="rounded-lg border border-red-900/40 bg-red-950/10 px-3 py-2 space-y-0.5">
+                      <p className="text-red-400 text-[10px] font-semibold">Failed chunks:</p>
+                      {fullExtrChunks.filter(c => c.status === "error").map(c => (
+                        <p key={c.index} className="text-red-500/70 text-[10px]">
+                          Pages {c.start}–{c.end}: {c.error ?? "unknown error"}
+                        </p>
+                      ))}
+                      <p className="text-zinc-600 text-[10px] mt-1">Re-extraction: Extraction फेरि चलाउनुहोस् — failed pages मात्र re-process गर्न Manual chunk retry coming in Phase 3।</p>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => { setFullExtrState("idle"); setFullExtrChunks([]); setFullExtrAtoms(0); }}
+                    className="w-full text-[10px] py-1.5 rounded-xl border border-zinc-700/50 text-zinc-600 hover:text-zinc-400 transition-colors"
+                  >
+                    फेरि run गर्नुहोस् (re-extraction)
+                  </button>
+                </div>
+              )}
+
+              {/* Error */}
+              {fullExtrState === "error" && (
+                <div className="space-y-2">
+                  <div className="flex items-start gap-2">
+                    <span className="text-red-400 shrink-0">❌</span>
+                    <div>
+                      <p className="text-red-300 text-xs font-bold">Extraction failed</p>
+                      <p className="text-red-500/80 text-[10px] mt-0.5 leading-relaxed">{fullExtrError}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => { setFullExtrState("idle"); setFullExtrError(""); setFullExtrChunks([]); }}
+                    className="w-full text-xs py-2 rounded-xl bg-sky-900/30 border border-sky-800/50 text-sky-300 hover:bg-sky-900/50 transition-colors"
+                  >
+                    फेरि try गर्नुहोस्
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

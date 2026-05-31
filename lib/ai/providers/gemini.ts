@@ -38,6 +38,7 @@ export class GeminiCallError extends Error {
 export interface GeminiPart {
   text?:        string;
   inline_data?: { mime_type: string; data: string };
+  file_data?:   { mime_type: string; file_uri: string }; // Gemini Files API
 }
 
 export interface GeminiCallResult {
