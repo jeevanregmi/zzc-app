@@ -8,7 +8,7 @@
 import { useState, useEffect, useRef } from "react";
 import {
   collection, query, where, limit, getDocs,
-  updateDoc, addDoc, deleteDoc, doc as firestoreDoc,
+  updateDoc, addDoc, deleteDoc, setDoc, doc as firestoreDoc,
 } from "firebase/firestore";
 import { db } from "../../../app/firebase";
 import type { IntelligenceDocument } from "../../../lib/types/documents";
@@ -93,6 +93,53 @@ const PUBLIC_ROUTES = [
   { id: "health",       label: "Branch Health",         href: "/vault/constitution/health", icon: "🩺" },
 ];
 
+// ── Extraction job types + helpers (module-level) ──────────────────────────────
+
+interface ChunkStatus {
+  index:      number;
+  start:      number;
+  end:        number;
+  status:     "pending" | "running" | "done" | "error";
+  records:    number;
+  paragraphs: number;
+  error?:     string;
+}
+
+interface ChunkJobStatus {
+  status:     string;
+  atomCount:  number;
+  error?:     string;
+  retryCount: number;
+}
+
+interface JobRecord {
+  jobId:           string;
+  expectedPages:   number;
+  chunkSize:       number;
+  totalChunks:     number;
+  status:          "running" | "paused" | "partial_complete" | "complete" | "failed" | "cancelled";
+  totalAtomsSaved: number;
+  startedAt:       string;
+  updatedAt:       string;
+  chunkStatuses:   Record<string, ChunkJobStatus>;
+}
+
+const CHUNK_PAGES = 3;
+
+function buildChunkPlan(totalPages: number): ChunkStatus[] {
+  const plan: ChunkStatus[] = [];
+  for (let p = 1; p <= totalPages; p += CHUNK_PAGES) {
+    plan.push({
+      index: plan.length,
+      start: p,
+      end:   Math.min(p + CHUNK_PAGES - 1, totalPages),
+      status: "pending",
+      records: 0, paragraphs: 0,
+    });
+  }
+  return plan;
+}
+
 // ── Root component ─────────────────────────────────────────────────────────────
 
 export function CivicObjectWorkspace({
@@ -130,20 +177,15 @@ export function CivicObjectWorkspace({
 
   // Full chunked extraction state (Phase 2)
   type FullExtrState = "idle" | "uploading" | "extracting" | "complete" | "error";
-  interface ChunkStatus {
-    index:      number;
-    start:      number;
-    end:        number;
-    status:     "pending" | "running" | "done" | "error";
-    records:    number;       // raw atoms saved to Firestore
-    paragraphs: number;       // paragraphs returned by Gemini
-    error?:     string;
-  }
   const [fullExtrState,      setFullExtrState]      = useState<FullExtrState>("idle");
   const [fullExtrChunks,     setFullExtrChunks]     = useState<ChunkStatus[]>([]);
   const [fullExtrAtoms,      setFullExtrAtoms]       = useState<number>(0);
   const [fullExtrParagraphs, setFullExtrParagraphs] = useState<number>(0);
   const [fullExtrError,      setFullExtrError]       = useState<string>("");
+
+  // Persistent extraction job (enables resume after reload/network failure)
+  const [savedJob,     setSavedJob]     = useState<JobRecord | null>(null);
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
 
   // Source Coverage Verification
   const [detectedPageCount,    setDetectedPageCount]    = useState<number | null>(
@@ -341,6 +383,14 @@ export function CivicObjectWorkspace({
       setFullExtrChunks([]);
       setFullExtrAtoms(0);
       setFullExtrParagraphs(0);
+      // Mark any previous job as cancelled
+      if (savedJob) {
+        updateDoc(firestoreDoc(db, "document_extraction_jobs", savedJob.jobId), {
+          status: "cancelled", updatedAt: new Date().toISOString(),
+        }).catch(() => {});
+        setSavedJob(null);
+      }
+      setCurrentJobId(null);
       setCleanRerunResult(`${toDelete.length} extraction atoms हटाइयो — Intel records सुरक्षित। Fresh extraction को लागि ready।`);
       setCleanRerunState("done");
     } catch (err) {
@@ -389,11 +439,166 @@ export function CivicObjectWorkspace({
     }
   }
 
-  // ── Full chunked extraction (Phase 2) ─────────────────────────────────────────
+  // ── Shared chunk processing loop (used by fresh extraction + resume) ─────────
+
+  async function runChunks(
+    chunksToProcess: ChunkStatus[],
+    allChunks:       ChunkStatus[],
+    fileUri:         string,
+    jobId:           string,
+    startingAtoms:   number,
+  ): Promise<{ totalAtoms: number; failedCount: number }> {
+    const sourceYear = ((doc as unknown as Record<string, unknown>).docYear as number | undefined)?.toString()
+      ?? new Date(doc.uploadedAt).getFullYear().toString();
+    const now         = new Date().toISOString();
+    const MAX_RETRIES = 2;
+    let totalAtoms  = startingAtoms;
+    let failedCount = 0;
+
+    setFullExtrState("extracting");
+
+    for (const chunk of chunksToProcess) {
+      let success   = false;
+      let lastError = "";
+
+      for (let attempt = 0; attempt <= MAX_RETRIES && !success; attempt++) {
+        if (attempt > 0) await new Promise(r => setTimeout(r, 3000));
+
+        setFullExtrChunks(prev => prev.map(c =>
+          c.index === chunk.index
+            ? { ...c, status: "running", error: attempt > 0 ? `retry ${attempt}/${MAX_RETRIES}…` : undefined }
+            : c
+        ));
+
+        // Update Firestore: chunk in progress
+        updateDoc(firestoreDoc(db, "document_extraction_jobs", jobId), {
+          [`chunkStatuses.${chunk.index}`]: { status: "processing", atomCount: 0, retryCount: attempt },
+          updatedAt: new Date().toISOString(),
+        }).catch(() => {});
+
+        try {
+          const res = await fetch("/api/chunk-extract", {
+            method:  "POST",
+            headers: { "Content-Type": "application/json" },
+            body:    JSON.stringify({
+              fileUri,
+              startPage:   chunk.start,
+              endPage:     chunk.end,
+              chunkIndex:  chunk.index,
+              totalChunks: allChunks.length,
+              docId:       doc.id,
+              ownerId,
+              docTitle:    doc.title,
+              sourceYear,
+            }),
+          });
+
+          const data = await res.json() as {
+            ok:     boolean;
+            pages?: Array<{
+              pageNumber: number;
+              paragraphs: Array<{
+                text: string; summaryNepali: string; type: string; orderIndex: number;
+                sectionTitle?: string; heading?: string; subheading?: string; isHeading?: boolean;
+              }>;
+            }>;
+            error?: string;
+          };
+
+          if (!data.ok) { lastError = (data.error ?? "Chunk failed").slice(0, 120); continue; }
+
+          const pages = data.pages ?? [];
+          const savePromises: Promise<unknown>[] = [];
+          let chunkAtoms = 0;
+
+          for (const page of pages) {
+            for (const para of page.paragraphs) {
+              if (!para.text?.trim()) continue;
+              // Deterministic ID prevents duplicate atoms on retry
+              const atomKey = `${doc.id}_ck${chunk.index}_p${para.orderIndex}`;
+              savePromises.push(
+                setDoc(firestoreDoc(db, "janta_intelligence", atomKey), {
+                  ownerId,
+                  sourceDocId:          doc.id,
+                  sourceDocTitle:       doc.title,
+                  pageNumber:           page.pageNumber,
+                  paragraphIndex:       para.orderIndex,
+                  originalText:         para.text,
+                  summaryNepali:        para.summaryNepali,
+                  type:                 para.type,
+                  title:                para.text.slice(0, 70).trimEnd() + (para.text.length > 70 ? "…" : ""),
+                  sector:               "other",
+                  fiscalYear:           sourceYear,
+                  sectionTitle:         para.sectionTitle ?? "",
+                  heading:              para.heading      ?? "",
+                  subheading:           para.subheading   ?? "",
+                  isHeading:            para.isHeading    ?? false,
+                  extractionTier:       "raw_exhaustive",
+                  publishToJanta:       false,
+                  published:            false,
+                  publicReady:          false,
+                  founderReviewStatus:  "needs_review",
+                  verificationStatus:   "raw_extracted",
+                  domainClassification: null,
+                  extractionChunk:      chunk.index,
+                  chunkPageRange:       `${chunk.start}-${chunk.end}`,
+                  extractionJobId:      jobId,
+                  deterministicKey:     atomKey,
+                  createdAt:            now,
+                  updatedAt:            now,
+                })
+              );
+              chunkAtoms++;
+            }
+          }
+          await Promise.all(savePromises);
+
+          totalAtoms += chunkAtoms;
+          setFullExtrAtoms(totalAtoms);
+          setFullExtrParagraphs(totalAtoms);
+          setFullExtrChunks(prev => prev.map(c =>
+            c.index === chunk.index
+              ? { ...c, status: "done", records: chunkAtoms, paragraphs: chunkAtoms, error: undefined }
+              : c
+          ));
+
+          // Update Firestore: chunk complete
+          updateDoc(firestoreDoc(db, "document_extraction_jobs", jobId), {
+            [`chunkStatuses.${chunk.index}`]: {
+              status: "done", atomCount: chunkAtoms, retryCount: attempt,
+              completedAt: new Date().toISOString(),
+            },
+            totalAtomsSaved: totalAtoms,
+            updatedAt:       new Date().toISOString(),
+          }).catch(() => {});
+
+          success = true;
+        } catch (err) {
+          lastError = (err instanceof Error ? err.message : String(err)).slice(0, 120);
+        }
+      }
+
+      if (!success) {
+        failedCount++;
+        setFullExtrChunks(prev => prev.map(c =>
+          c.index === chunk.index ? { ...c, status: "error", error: lastError } : c
+        ));
+        updateDoc(firestoreDoc(db, "document_extraction_jobs", jobId), {
+          [`chunkStatuses.${chunk.index}`]: {
+            status: "failed", atomCount: 0, error: lastError, retryCount: MAX_RETRIES,
+            completedAt: new Date().toISOString(),
+          },
+          updatedAt: new Date().toISOString(),
+        }).catch(() => {});
+      }
+    }
+
+    return { totalAtoms, failedCount };
+  }
+
+  // ── Full chunked extraction (Phase 2 — fresh start) ───────────────────────────
 
   async function handleFullExtraction() {
-    const CHUNK_PAGES = 3;
-
     setFullExtrAtoms(0);
     setFullExtrParagraphs(0);
     setFullExtrError("");
@@ -415,8 +620,7 @@ export function CivicObjectWorkspace({
         }),
       });
       const upData = await upRes.json() as {
-        ok: boolean; fileUri?: string; error?: string;
-        pageCount?: number; sizeBytes?: number;
+        ok: boolean; fileUri?: string; error?: string; pageCount?: number;
       };
       if (!upData.ok || !upData.fileUri) {
         setFullExtrError(upData.error ?? "PDF upload to Gemini Files API failed");
@@ -426,11 +630,9 @@ export function CivicObjectWorkspace({
       fileUri = upData.fileUri;
       setStoredFileUri(fileUri);
 
-      // Use detected page count from binary scan; fall back to manual override or size estimate
       const detectedPages = upData.pageCount ?? 0;
       if (detectedPages > 0) {
         setDetectedPageCount(detectedPages);
-        // Save detected page count back to vault_documents for next session
         void updateDoc(firestoreDoc(db, "vault_documents", doc.id), {
           detectedPageCount: detectedPages,
         }).catch(() => {});
@@ -446,160 +648,155 @@ export function CivicObjectWorkspace({
       return;
     }
 
-    // Build chunk plan now that we have the real page count
-    const chunks: ChunkStatus[] = [];
-    for (let p = 1; p <= resolvedPageCount; p += CHUNK_PAGES) {
-      const start = p;
-      const end   = Math.min(p + CHUNK_PAGES - 1, resolvedPageCount);
-      chunks.push({ index: chunks.length, start, end, status: "pending", records: 0, paragraphs: 0 });
-    }
-    setFullExtrChunks(chunks);
+    // Step 2 — Build chunk plan and create job document
+    const allChunks = buildChunkPlan(resolvedPageCount);
+    setFullExtrChunks(allChunks);
 
-    // Step 2 — Process each chunk sequentially
-    setFullExtrState("extracting");
-    const domain     = doc.category === "finance" ? "finance" : "janta";
-    const sourceYear = ((doc as unknown as Record<string, unknown>).docYear as number | undefined)?.toString()
-      ?? new Date(doc.uploadedAt).getFullYear().toString();
-    const now        = new Date().toISOString();
-    let totalAtoms   = 0;
+    let jobId = `local_${Date.now()}`;
+    try {
+      const jobRef = await addDoc(collection(db, "document_extraction_jobs"), {
+        sourceDocId:    doc.id,
+        ownerId,
+        expectedPages:  resolvedPageCount,
+        chunkSize:      CHUNK_PAGES,
+        totalChunks:    allChunks.length,
+        status:         "running",
+        extractionMode: "full_chunked_raw_exhaustive",
+        startedAt:      new Date().toISOString(),
+        updatedAt:      new Date().toISOString(),
+        totalAtomsSaved: 0,
+        chunkStatuses:  {},
+        modelUsed:      "gemini-2.5-flash",
+        fileUri,
+      });
+      jobId = jobRef.id;
+      setCurrentJobId(jobId);
+    } catch { /* continue without Firestore job if write fails */ }
 
-    const MAX_RETRIES = 2;
-    let totalParagraphs = 0;
+    // Step 3 — Process all chunks
+    const { totalAtoms, failedCount } = await runChunks(allChunks, allChunks, fileUri, jobId, 0);
 
-    for (const chunk of chunks) {
-      let success   = false;
-      let lastError = "";
-
-      for (let attempt = 0; attempt <= MAX_RETRIES && !success; attempt++) {
-        if (attempt > 0) await new Promise(r => setTimeout(r, 3000));
-
-        setFullExtrChunks(prev => prev.map(c =>
-          c.index === chunk.index
-            ? { ...c, status: "running", error: attempt > 0 ? `retry ${attempt}/${MAX_RETRIES}…` : undefined }
-            : c
-        ));
-
-        try {
-          const res = await fetch("/api/chunk-extract", {
-            method:  "POST",
-            headers: { "Content-Type": "application/json" },
-            body:    JSON.stringify({
-              fileUri,
-              startPage:   chunk.start,
-              endPage:     chunk.end,
-              chunkIndex:  chunk.index,
-              totalChunks: chunks.length,
-              docId:       doc.id,
-              ownerId,
-              docTitle:    doc.title,
-              sourceYear,
-            }),
-          });
-          const data = await res.json() as {
-            ok:              boolean;
-            pages?:          Array<{
-              pageNumber:  number;
-              paragraphs:  Array<{
-                text: string; summaryNepali: string; type: string; orderIndex: number;
-                sectionTitle?: string; heading?: string; subheading?: string; isHeading?: boolean;
-              }>;
-            }>;
-            error?:          string;
-            totalParagraphs?: number;
-          };
-
-          if (!data.ok) {
-            lastError = (data.error ?? "Chunk failed").slice(0, 120);
-            continue;
-          }
-
-          const pages = data.pages ?? [];
-          let chunkParas = 0;
-          let chunkAtoms = 0;
-
-          // Save each paragraph as a raw exhaustive atom — no filtering
-          const savePromises: Promise<unknown>[] = [];
-          for (const page of pages) {
-            for (const para of page.paragraphs) {
-              if (!para.text?.trim()) continue;
-              savePromises.push(
-                addDoc(collection(db, "janta_intelligence"), {
-                  ownerId,
-                  sourceDocId:          doc.id,
-                  sourceDocTitle:       doc.title,
-                  pageNumber:           page.pageNumber,
-                  paragraphIndex:       para.orderIndex,
-                  originalText:         para.text,
-                  summaryNepali:        para.summaryNepali,
-                  type:                 para.type,
-                  title:                para.text.slice(0, 70).trimEnd() + (para.text.length > 70 ? "…" : ""),
-                  sector:               "other",
-                  fiscalYear:           sourceYear,
-                  // Document structure — preserved from Gemini extraction
-                  sectionTitle:         para.sectionTitle  ?? "",
-                  heading:              para.heading       ?? "",
-                  subheading:           para.subheading    ?? "",
-                  isHeading:            para.isHeading     ?? false,
-                  extractionTier:       "raw_exhaustive",
-                  publishToJanta:       false,
-                  published:            false,
-                  publicReady:          false,
-                  founderReviewStatus:  "needs_review",
-                  verificationStatus:   "raw_extracted",
-                  domainClassification: null,
-                  extractionChunk:      chunk.index,
-                  chunkPageRange:       `${chunk.start}-${chunk.end}`,
-                  createdAt:            now,
-                  updatedAt:            now,
-                })
-              );
-              chunkParas++;
-              chunkAtoms++;
-            }
-          }
-          await Promise.all(savePromises);
-
-          totalAtoms     += chunkAtoms;
-          totalParagraphs += chunkParas;
-          setFullExtrAtoms(totalAtoms);
-          setFullExtrParagraphs(totalParagraphs);
-          setFullExtrChunks(prev => prev.map(c =>
-            c.index === chunk.index
-              ? { ...c, status: "done", records: chunkAtoms, paragraphs: chunkParas, error: undefined }
-              : c
-          ));
-          success = true;
-
-        } catch (err) {
-          lastError = (err instanceof Error ? err.message : String(err)).slice(0, 120);
-        }
-      }
-
-      if (!success) {
-        setFullExtrChunks(prev => prev.map(c =>
-          c.index === chunk.index ? { ...c, status: "error", error: lastError } : c
-        ));
-      }
-    }
-
-    // Update workspace counts
+    // Step 4 — Finalize
     setRawExhaustiveCount(totalAtoms);
     setAtomicCount(0);
     setTrulyAtomicCount(0);
     setFullExtrState("complete");
 
-    // Write extraction summary log
-    addDoc(collection(db, "document_cleanup_logs"), {
-      actionType:    "full_chunked_extraction",
-      documentId:    doc.id,
-      documentTitle: doc.title,
-      affectedCount: totalAtoms,
-      runBy:         ownerId,
-      runAt:         new Date().toISOString(),
-      chunkCount:    chunks.length,
-      pageCount:     resolvedPageCount,
-      notes:         `Full chunked extraction via Gemini Files API — ${totalAtoms} raw exhaustive atoms · ${resolvedPageCount} pages`,
+    const finalStatus = failedCount > 0 ? "partial_complete" : "complete";
+    if (!jobId.startsWith("local_")) {
+      updateDoc(firestoreDoc(db, "document_extraction_jobs", jobId), {
+        status:          finalStatus,
+        completedAt:     new Date().toISOString(),
+        totalAtomsSaved: totalAtoms,
+        updatedAt:       new Date().toISOString(),
+      }).catch(() => {});
+    }
+
+    if (failedCount > 0) {
+      setSavedJob({
+        jobId,
+        expectedPages:   resolvedPageCount,
+        chunkSize:       CHUNK_PAGES,
+        totalChunks:     allChunks.length,
+        status:          "partial_complete",
+        totalAtomsSaved: totalAtoms,
+        startedAt:       new Date().toISOString(),
+        updatedAt:       new Date().toISOString(),
+        chunkStatuses:   {}, // already persisted chunk-by-chunk in Firestore
+      });
+    }
+  }
+
+  // ── Resume / Retry failed chunks ──────────────────────────────────────────────
+
+  async function handleResume(retryFailedOnly: boolean) {
+    if (!savedJob) return;
+
+    const allChunks = buildChunkPlan(savedJob.expectedPages);
+
+    // Restore display chunk grid from saved Firestore state
+    const displayChunks: ChunkStatus[] = allChunks.map(c => {
+      const cs = savedJob.chunkStatuses[String(c.index)];
+      if (!cs) return c;
+      if (cs.status === "done")
+        return { ...c, status: "done"  as const, records: cs.atomCount, paragraphs: cs.atomCount };
+      return { ...c, status: "error" as const, error: cs.error ?? "failed" };
+    });
+    setFullExtrChunks(displayChunks);
+    setFullExtrAtoms(savedJob.totalAtomsSaved);
+    setFullExtrParagraphs(savedJob.totalAtomsSaved);
+    setFullExtrError("");
+
+    // Decide which chunks to re-process
+    const chunksToProcess = allChunks.filter(c => {
+      const cs = savedJob.chunkStatuses[String(c.index)];
+      if (!cs) return true; // never touched
+      if (cs.status === "done") return false;
+      if (retryFailedOnly) return cs.status === "failed" || cs.status === "processing";
+      return cs.status !== "done";
+    });
+
+    if (chunksToProcess.length === 0) { setFullExtrState("complete"); return; }
+
+    // Re-upload PDF (Gemini URI expires in 48h — always get fresh)
+    setFullExtrState("uploading");
+    let fileUri = "";
+    try {
+      const upRes = await fetch("/api/gemini-file-upload", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          docId:       doc.id,
+          ownerId,
+          downloadUrl: doc.downloadUrl,
+          mimeType:    doc.mimeType,
+          docTitle:    doc.title,
+        }),
+      });
+      const upData = await upRes.json() as { ok: boolean; fileUri?: string; error?: string };
+      if (!upData.ok || !upData.fileUri) {
+        setFullExtrError(upData.error ?? "PDF re-upload failed");
+        setFullExtrState("error");
+        return;
+      }
+      fileUri = upData.fileUri;
+      setStoredFileUri(fileUri);
+    } catch (err) {
+      setFullExtrError(`Upload error: ${err instanceof Error ? err.message : String(err)}`);
+      setFullExtrState("error");
+      return;
+    }
+
+    // Mark resuming chunks as pending in display
+    setFullExtrChunks(prev => prev.map(c =>
+      chunksToProcess.some(r => r.index === c.index)
+        ? { ...c, status: "pending", error: undefined }
+        : c
+    ));
+
+    const jobId = savedJob.jobId;
+    setCurrentJobId(jobId);
+    updateDoc(firestoreDoc(db, "document_extraction_jobs", jobId), {
+      status: "running", updatedAt: new Date().toISOString(),
     }).catch(() => {});
+
+    const { totalAtoms, failedCount } = await runChunks(
+      chunksToProcess, allChunks, fileUri, jobId, savedJob.totalAtomsSaved,
+    );
+
+    setRawExhaustiveCount(totalAtoms);
+    setFullExtrState("complete");
+
+    const finalStatus = failedCount > 0 ? "partial_complete" : "complete";
+    updateDoc(firestoreDoc(db, "document_extraction_jobs", jobId), {
+      status: finalStatus, completedAt: new Date().toISOString(),
+      totalAtomsSaved: totalAtoms, updatedAt: new Date().toISOString(),
+    }).catch(() => {});
+
+    setSavedJob(prev => prev
+      ? { ...prev, status: finalStatus, totalAtomsSaved: totalAtoms }
+      : null
+    );
   }
 
   const isConst    = isConstitutionDoc(doc);
@@ -669,6 +866,41 @@ export function CivicObjectWorkspace({
     };
     void run();
   }, [ownerId, doc.id]);
+
+  // Load most recent extraction job (enables resume after reload / network failure)
+  useEffect(() => {
+    if (!ownerId || !doc.id) return;
+    void (async () => {
+      const snap = await safe(getDocs(query(
+        collection(db, "document_extraction_jobs"),
+        where("ownerId",     "==", ownerId),
+        where("sourceDocId", "==", doc.id),
+        limit(5),
+      )), null);
+      if (!snap || snap.empty) return;
+      const sorted = [...snap.docs].sort((a, b) => {
+        const aAt = (a.data() as Record<string, unknown>).startedAt as string ?? "";
+        const bAt = (b.data() as Record<string, unknown>).startedAt as string ?? "";
+        return bAt.localeCompare(aAt);
+      });
+      const latest = sorted[0];
+      const d = latest.data() as Record<string, unknown>;
+      const job: JobRecord = {
+        jobId:           latest.id,
+        expectedPages:   (d.expectedPages as number) ?? 0,
+        chunkSize:       (d.chunkSize    as number) ?? CHUNK_PAGES,
+        totalChunks:     (d.totalChunks  as number) ?? 0,
+        status:          (d.status       as JobRecord["status"]) ?? "failed",
+        totalAtomsSaved: (d.totalAtomsSaved as number) ?? 0,
+        startedAt:       (d.startedAt    as string) ?? "",
+        updatedAt:       (d.updatedAt    as string) ?? "",
+        chunkStatuses:   (d.chunkStatuses as Record<string, ChunkJobStatus>) ?? {},
+      };
+      if (job.status !== "complete" && job.status !== "cancelled") {
+        setSavedJob(job);
+      }
+    })();
+  }, [doc.id, ownerId]);
 
   // Build pipeline steps
   const steps: PipelineStep[] = [
@@ -1180,6 +1412,68 @@ export function CivicObjectWorkspace({
               <p className="text-emerald-500/80 text-[10px] mt-1">{cleanRerunResult}</p>
             </div>
           )}
+
+          {/* ── Recovery Banner — previous incomplete job ── */}
+          {savedJob && fullExtrState === "idle" && (() => {
+            const doneCount    = Object.values(savedJob.chunkStatuses).filter(c => c.status === "done").length;
+            const failedCount  = Object.values(savedJob.chunkStatuses).filter(c => c.status === "failed" || c.status === "processing").length;
+            const pendingCount = savedJob.totalChunks - Object.keys(savedJob.chunkStatuses).length;
+            return (
+              <div className="rounded-xl border border-sky-900/50 bg-sky-950/15 px-4 py-3 space-y-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sky-400">⟳</span>
+                    <p className="text-sky-300 text-xs font-bold">पिछला extraction — resume गर्न सकिन्छ</p>
+                  </div>
+                  <p className="text-[10px] mt-1 leading-relaxed">
+                    <span className="text-emerald-400 font-bold">{savedJob.totalAtomsSaved} atoms सुरक्षित छन्।</span>
+                    {failedCount  > 0 && <span className="text-red-400">  {" · "}{failedCount} chunks failed।</span>}
+                    {pendingCount > 0 && <span className="text-zinc-500">  {" · "}{pendingCount} untouched।</span>}
+                    {" · "}{doneCount}/{savedJob.totalChunks} done।
+                  </p>
+                </div>
+                {/* Mini chunk grid showing saved state */}
+                <div className="flex flex-wrap gap-0.5">
+                  {Array.from({ length: savedJob.totalChunks }, (_, i) => {
+                    const cs = savedJob.chunkStatuses[String(i)];
+                    return (
+                      <div
+                        key={i}
+                        title={cs ? `Chunk ${i + 1}: ${cs.status} · ${cs.atomCount ?? 0} atoms` : `Chunk ${i + 1}: pending`}
+                        className={`h-4 min-w-[1.5rem] rounded text-[8px] flex items-center justify-center px-0.5 transition-none ${
+                          !cs                                              ? "bg-zinc-800/40 border border-zinc-700/30 text-zinc-700"
+                          : cs.status === "done"                         ? "bg-emerald-900/60 border border-emerald-700/60 text-emerald-400"
+                          : cs.status === "failed" || cs.status === "processing" ? "bg-red-900/60 border border-red-700/60 text-red-400"
+                          : "bg-zinc-800/40 border border-zinc-700/30 text-zinc-600"
+                        }`}
+                      >
+                        {!cs ? "·" : cs.status === "done" ? String(cs.atomCount ?? 0) : "!"}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => void handleResume(false)}
+                    className="flex-1 text-xs py-2 rounded-xl bg-sky-900/40 border border-sky-700/60 text-sky-200 hover:bg-sky-900/60 transition-colors font-semibold"
+                  >
+                    ▶ Resume — failed + pending
+                  </button>
+                  {failedCount > 0 && (
+                    <button
+                      onClick={() => void handleResume(true)}
+                      className="flex-1 text-xs py-2 rounded-xl bg-red-900/30 border border-red-800/50 text-red-300 hover:bg-red-900/50 transition-colors font-semibold"
+                    >
+                      ↺ Retry failed only ({failedCount})
+                    </button>
+                  )}
+                </div>
+                <p className="text-zinc-700 text-[10px]">
+                  Resume = PDF re-upload → failed/pending chunks मात्र। Clean Re-run = zero बाट।
+                </p>
+              </div>
+            );
+          })()}
 
           {/* ── Phase 2: Full Chunked Extraction Panel ── */}
           {!loading && isApproved && !isConst && (

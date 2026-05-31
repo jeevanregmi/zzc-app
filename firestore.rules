@@ -718,6 +718,16 @@ service cloud.firestore {
       allow update, delete: if false;  // immutable audit trail
     }
 
+    // ── DOCUMENT INTELLIGENCE: resumable extraction job tracker ─────────────
+    // One job per extraction run. chunkStatuses updated after each chunk.
+    // Enables resume/retry without re-processing completed chunks.
+    match /document_extraction_jobs/{docId} {
+      allow read:   if isOwner(resource.data.ownerId);
+      allow create: if isCreatingAsOwner();
+      allow update: if isOwner(resource.data.ownerId) && ownerUnchanged();
+      allow delete: if isOwner(resource.data.ownerId);
+    }
+
     // ── Deny all other paths (catch-all) ─────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
