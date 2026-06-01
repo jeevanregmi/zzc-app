@@ -58,6 +58,9 @@ interface Props {
 export function KnowledgeExtractionViewer({ docId, ownerId, jobSummary }: Props) {
   const [atoms,          setAtoms]          = useState<RawAtom[]>([]);
   const [loading,        setLoading]        = useState(true);
+  const [viewMode,       setViewMode]       = useState<"list" | "review">("list");
+  const [reviewPageIdx,  setReviewPageIdx]  = useState(0);
+  const [jumpInput,      setJumpInput]      = useState("");
   const [expandedChunks, setExpandedChunks] = useState<Set<number>>(new Set());
   const [filter,         setFilter]         = useState<FilterType>("all");
   const [searchText,     setSearchText]     = useState("");
@@ -128,6 +131,19 @@ export function KnowledgeExtractionViewer({ docId, ownerId, jobSummary }: Props)
       .map(([idx, group]) => ({ idx, atoms: group, pageRange: group[0]?.chunkPageRange ?? "" }))
       .sort((a, b) => a.idx - b.idx);
   }, [atoms]);
+
+  // All unique page numbers that have at least one atom
+  const allPages = useMemo(
+    () => [...new Set(atoms.map(a => a.pageNumber).filter(p => p > 0))].sort((a, b) => a - b),
+    [atoms],
+  );
+
+  // Atoms for the currently-selected review page
+  const reviewPageNum = allPages[reviewPageIdx] ?? 0;
+  const reviewPageAtoms = useMemo(
+    () => atoms.filter(a => a.pageNumber === reviewPageNum).sort((a, b) => a.paragraphIndex - b.paragraphIndex),
+    [atoms, reviewPageNum],
+  );
 
   const stats = useMemo(() => {
     const pageSet = new Set(atoms.map(a => a.pageNumber).filter(p => p > 0));
@@ -259,14 +275,76 @@ export function KnowledgeExtractionViewer({ docId, ownerId, jobSummary }: Props)
     .map(g => ({ ...g, atoms: g.atoms.filter(a => filteredIds.has(a.id)) }))
     .filter(g => g.atoms.length > 0);
 
+  // Jump to specific page in review mode
+  function handleJumpToPage() {
+    const n = parseInt(jumpInput, 10);
+    if (!n) return;
+    const idx = allPages.indexOf(n);
+    if (idx >= 0) { setReviewPageIdx(idx); setJumpInput(""); }
+    else {
+      // Find closest page
+      const closest = allPages.reduce((best, p) => Math.abs(p - n) < Math.abs(best - n) ? p : best, allPages[0]);
+      setReviewPageIdx(allPages.indexOf(closest));
+      setJumpInput("");
+    }
+  }
+
   return (
     <div className="rounded-xl border border-zinc-800/50 bg-zinc-900/5 px-4 py-3 space-y-3">
+      {/* ── Header + View Mode Tabs ── */}
       <div className="flex items-center justify-between gap-2">
         <p className="text-zinc-400 text-[10px] uppercase tracking-wide">
           निकालिएको ज्ञान / Extracted Knowledge
         </p>
-        <span className="text-sky-400 text-[10px] font-bold">{atoms.length} atoms</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-sky-400 text-[10px] font-bold mr-1">{atoms.length} paragraphs</span>
+          <button
+            onClick={() => setViewMode("list")}
+            className={`text-[9px] px-2 py-1 rounded border transition-colors ${
+              viewMode === "list"
+                ? "border-sky-700 bg-sky-900/40 text-sky-300"
+                : "border-zinc-700 text-zinc-500 hover:text-zinc-300"
+            }`}
+          >
+            📋 List
+          </button>
+          <button
+            onClick={() => setViewMode("review")}
+            className={`text-[9px] px-2 py-1 rounded border transition-colors ${
+              viewMode === "review"
+                ? "border-violet-700 bg-violet-900/40 text-violet-300"
+                : "border-zinc-700 text-zinc-500 hover:text-zinc-300"
+            }`}
+          >
+            📖 Page Review
+          </button>
+        </div>
       </div>
+
+      {/* ── PAGE REVIEW MODE ── */}
+      {viewMode === "review" && (
+        <PageReviewMode
+          allPages={allPages}
+          pageIdx={reviewPageIdx}
+          pageAtoms={reviewPageAtoms}
+          marks={marks}
+          jumpInput={jumpInput}
+          onSetJumpInput={setJumpInput}
+          onJump={handleJumpToPage}
+          onPrev={() => setReviewPageIdx(i => Math.max(0, i - 1))}
+          onNext={() => setReviewPageIdx(i => Math.min(allPages.length - 1, i + 1))}
+          onMark={markAtom}
+          onDelete={id => setConfirmDelete(id)}
+          onConfirmDelete={deleteAtom}
+          onCancelDelete={() => setConfirmDelete(null)}
+          confirmDelete={confirmDelete}
+          deleting={deleting}
+          jobSummary={jobSummary}
+        />
+      )}
+
+      {/* ── LIST MODE ── */}
+      {viewMode === "list" && (<>
 
       {/* ── Coverage Quality ── */}
       <div className="rounded-lg border border-zinc-800/40 bg-zinc-900/30 px-3 py-2 space-y-2">
@@ -402,9 +480,199 @@ export function KnowledgeExtractionViewer({ docId, ownerId, jobSummary }: Props)
 
       {/* ── Footer note ── */}
       <p className="text-zinc-700 text-[9px] leading-relaxed">
-        Phase 3 — Domain classification अगाडि यहाँ founder inspection आवश्यक।
-        Mark wrong atoms delete गर्नुहोस्। Important atoms पछि public routing को लागि priority पाउनेछन्।
+        Domain classification अगाडि यहाँ founder inspection आवश्यक।
+        Wrong marks — delete गर्नुहोस्। Important marks — public routing मा priority।
       </p>
+      </>) /* end list mode */}
+    </div>
+  );
+}
+
+// ── Page Review Mode ──────────────────────────────────────────────────────────
+
+interface PageReviewProps {
+  allPages:       number[];
+  pageIdx:        number;
+  pageAtoms:      RawAtom[];
+  marks:          Record<string, string>;
+  jumpInput:      string;
+  onSetJumpInput: (v: string) => void;
+  onJump:         () => void;
+  onPrev:         () => void;
+  onNext:         () => void;
+  onMark:         (id: string, mark: string) => void;
+  onDelete:       (id: string) => void;
+  onConfirmDelete:(id: string) => Promise<void>;
+  onCancelDelete: () => void;
+  confirmDelete:  string | null;
+  deleting:       Set<string>;
+  jobSummary:     ExtractionJobSummary | null;
+}
+
+function PageReviewMode({
+  allPages, pageIdx, pageAtoms, marks, jumpInput,
+  onSetJumpInput, onJump, onPrev, onNext,
+  onMark, onDelete, onConfirmDelete, onCancelDelete,
+  confirmDelete, deleting, jobSummary,
+}: PageReviewProps) {
+  const pageNum    = allPages[pageIdx] ?? 0;
+  const totalPages = allPages.length;
+
+  // Detect gaps in paragraph sequence
+  const maxIdx  = pageAtoms.length > 0 ? Math.max(...pageAtoms.map(a => a.paragraphIndex)) : -1;
+  const atomMap = new Map(pageAtoms.map(a => [a.paragraphIndex, a]));
+  const slots   = Array.from({ length: maxIdx + 1 }, (_, i) => ({ idx: i, atom: atomMap.get(i) ?? null }));
+
+  // First atom's heading context
+  const headingCtx = pageAtoms[0];
+  const chunkRange = pageAtoms[0]?.chunkPageRange ?? "";
+
+  // Is this page in a failed chunk?
+  let pageStatus: "done" | "failed" | "unknown" = "unknown";
+  if (jobSummary?.chunkStatuses && pageAtoms.length > 0) {
+    const ci = String(pageAtoms[0].extractionChunk);
+    const cs = jobSummary.chunkStatuses[ci];
+    if (cs) pageStatus = cs.status === "done" ? "done" : "failed";
+  }
+
+  return (
+    <div className="space-y-3">
+      {/* Navigation bar */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <button
+          onClick={onPrev}
+          disabled={pageIdx === 0}
+          className="text-[10px] px-2.5 py-1.5 rounded-lg border border-zinc-700 text-zinc-400 hover:text-zinc-200 disabled:opacity-30 transition-colors"
+        >← Prev</button>
+
+        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+          <span className="text-zinc-300 text-xs font-bold">Page {pageNum}</span>
+          <span className="text-zinc-600 text-[10px]">of {allPages[allPages.length - 1]}</span>
+          {!!chunkRange && (
+            <span className="text-zinc-700 text-[9px]">· pages {chunkRange}</span>
+          )}
+          {pageStatus === "failed" && (
+            <span className="text-red-400 text-[9px] border border-red-800/50 bg-red-950/20 px-1.5 py-0.5 rounded">
+              failed — retry आवश्यक
+            </span>
+          )}
+        </div>
+
+        <button
+          onClick={onNext}
+          disabled={pageIdx >= totalPages - 1}
+          className="text-[10px] px-2.5 py-1.5 rounded-lg border border-zinc-700 text-zinc-400 hover:text-zinc-200 disabled:opacity-30 transition-colors"
+        >Next →</button>
+
+        {/* Jump to page */}
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            value={jumpInput}
+            onChange={e => onSetJumpInput(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && onJump()}
+            placeholder="Go to page"
+            className="w-20 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-[10px] text-zinc-300 placeholder:text-zinc-600 focus:outline-none focus:border-sky-700"
+          />
+          <button
+            onClick={onJump}
+            className="text-[9px] px-2 py-1 rounded border border-zinc-700 text-zinc-500 hover:text-zinc-300 transition-colors"
+          >Go</button>
+        </div>
+      </div>
+
+      {/* Page progress indicator */}
+      <div className="text-[10px] text-zinc-600">
+        Page {pageIdx + 1} of {totalPages} pages with content ·{" "}
+        <span className="text-sky-400 font-semibold">{pageAtoms.length} paragraphs</span>
+        {headingCtx?.sectionTitle && (
+          <span className="text-zinc-500"> · {headingCtx.sectionTitle}</span>
+        )}
+        {headingCtx?.heading && (
+          <span className="text-zinc-600"> › {headingCtx.heading}</span>
+        )}
+      </div>
+
+      {/* Zero-atom warning */}
+      {pageAtoms.length === 0 && (
+        <div className="rounded-lg border border-amber-800/40 bg-amber-950/20 px-3 py-2.5">
+          <p className="text-amber-300 text-xs font-semibold">⚠ यो page बाट कुनै paragraph capture भएन</p>
+          <p className="text-amber-600 text-[10px] mt-0.5">
+            यो page failed chunk मा पर्न सक्छ। माथिको Recovery panel बाट "Failed pages retry" गर्नुस्।
+          </p>
+        </div>
+      )}
+
+      {/* Side-by-side paragraph ↔ atom view */}
+      {slots.length > 0 && (
+        <div className="space-y-2">
+          {slots.map(({ idx, atom }) => (
+            <div key={idx} className={`rounded-lg border overflow-hidden ${
+              !atom ? "border-amber-800/30 bg-amber-950/10" : "border-zinc-800/40 bg-zinc-900/10"
+            }`}>
+              {atom ? (
+                <div className="grid grid-cols-2 gap-0 divide-x divide-zinc-800/40">
+                  {/* Left: original paragraph */}
+                  <div className="px-3 py-2.5 space-y-1.5">
+                    <p className="text-[8px] font-mono text-zinc-600">
+                      P{pageNum}.{idx}
+                      {atom.isHeading && <span className="ml-1 text-violet-500">HEADING</span>}
+                    </p>
+                    {(atom.sectionTitle || atom.heading) && (
+                      <p className="text-[9px] text-zinc-500 leading-snug">
+                        {atom.sectionTitle}{atom.sectionTitle && atom.heading ? " › " : ""}{atom.heading}
+                        {atom.heading && atom.subheading ? ` › ${atom.subheading}` : ""}
+                      </p>
+                    )}
+                    <p className="text-zinc-300 text-[10px] leading-relaxed">{atom.originalText}</p>
+                  </div>
+
+                  {/* Right: AI atom */}
+                  <div className="px-3 py-2.5 space-y-1.5">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <span className="text-[8px] border border-zinc-700/40 text-zinc-500 px-1.5 py-0.5 rounded">{atom.type}</span>
+                      {!!marks[atom.id] && (
+                        <span className={`text-[8px] font-bold uppercase ${
+                          marks[atom.id] === "correct"   ? "text-emerald-400" :
+                          marks[atom.id] === "important" ? "text-amber-400" :
+                          marks[atom.id] === "wrong"     ? "text-red-400" : "text-violet-400"
+                        }`}>{marks[atom.id]}</span>
+                      )}
+                    </div>
+                    {!!atom.summaryNepali && (
+                      <p className="text-sky-600 text-[9px] italic leading-snug">{atom.summaryNepali}</p>
+                    )}
+                    {/* Action buttons */}
+                    {confirmDelete === atom.id ? (
+                      <div className="flex gap-1.5">
+                        <button onClick={() => void onConfirmDelete(atom.id)} className="text-[9px] px-2 py-0.5 rounded bg-red-900/40 border border-red-700/60 text-red-200 font-semibold">हो</button>
+                        <button onClick={onCancelDelete} className="text-[9px] px-2 py-0.5 rounded border border-zinc-700 text-zinc-500">रद्द</button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1">
+                        <Btn label="✓" title="Correct"   active={marks[atom.id] === "correct"}   color="emerald" onClick={() => onMark(atom.id, "correct")} />
+                        <Btn label="★" title="Important" active={marks[atom.id] === "important"} color="amber"   onClick={() => onMark(atom.id, "important")} />
+                        <Btn label="✗" title="Wrong"     active={marks[atom.id] === "wrong"}     color="red"     onClick={() => onMark(atom.id, "wrong")} />
+                        <button
+                          title="Delete"
+                          disabled={deleting.has(atom.id)}
+                          onClick={() => onDelete(atom.id)}
+                          className="text-[9px] w-6 h-5 rounded border border-zinc-700 text-zinc-600 hover:text-red-400 transition-colors ml-auto disabled:opacity-40"
+                        >{deleting.has(atom.id) ? "…" : "🗑"}</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="px-3 py-2 flex items-center gap-2">
+                  <span className="text-[8px] font-mono text-zinc-600">P{pageNum}.{idx}</span>
+                  <span className="text-amber-400 text-[9px]">⚠ यो paragraph बाट atom बनेको छैन — possible gap</span>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-name: Deploy to Cloudflare Pages
+name: Deploy to Cloudflare Pages + Firebase
 
 on:
   push:
@@ -31,3 +31,16 @@ jobs:
         run: npx wrangler pages deploy out --project-name zeneration-z-chautari --commit-dirty=true --commit-message="deploy $(date +%Y%m%d-%H%M%S)"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+      # Deploy Firestore security rules on every push to main.
+      # One-time setup: run `firebase login:ci` on your machine, copy the token,
+      # add it to GitHub Settings → Secrets → Actions → FIREBASE_TOKEN.
+      - name: Deploy Firebase Firestore rules
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: |
+          if [ -n "$FIREBASE_TOKEN" ]; then
+            npx firebase-tools deploy --only firestore:rules --token "$FIREBASE_TOKEN" --project zeneration-z-chautari
+          else
+            echo "FIREBASE_TOKEN not configured — skipping. Run 'npm run deploy:rules' locally when rules change."
+          fi

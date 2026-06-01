@@ -1451,17 +1451,13 @@ export function CivicObjectWorkspace({
             </div>
           )}
 
-          {/* ── Extraction Recovery Panel (permanent — always shows latest job) ── */}
+          {/* ── Extraction Recovery Panel ── */}
           {!loading && isApproved && !isConst && (() => {
             if (!savedJob) {
               return (
-                <div className="rounded-xl border border-zinc-800/30 bg-zinc-900/10 px-4 py-3 space-y-1">
-                  <p className="text-zinc-500 text-[10px] uppercase tracking-wide">Extraction Recovery</p>
-                  <p className="text-zinc-600 text-[10px]">No previous extraction job found — पहिले कुनै extraction भएको छैन।</p>
-                  <p className="text-zinc-700 text-[9px] font-mono">
-                    docId: {doc.id.slice(0, 16)}… · Firestore: null · localStorage:{" "}
-                    {(() => { try { return localStorage.getItem(`zzc_extraction_job_${doc.id}`) ? "found ✓" : "null"; } catch { return "err"; } })()}
-                  </p>
+                <div className="rounded-xl border border-zinc-800/30 bg-zinc-900/10 px-4 py-3">
+                  <p className="text-zinc-500 text-[10px] uppercase tracking-wide mb-1">पिछला Extraction</p>
+                  <p className="text-zinc-600 text-[10px]">पहिले कुनै extraction भएको छैन — नयाँ extraction सुरु गर्नुहोस्।</p>
                 </div>
               );
             }
@@ -1472,41 +1468,42 @@ export function CivicObjectWorkspace({
             const isComplete   = savedJob.status === "complete";
             const isPartial    = savedJob.status === "partial_complete" || savedJob.status === "running" || savedJob.status === "failed";
 
+            const statusLabel =
+              isComplete   ? "✓ Extraction सम्पन्न" :
+              isCancelled  ? "पहिलेको extraction हटाइयो" :
+              savedJob.status === "running"          ? "Extraction चलिरहेछ…" :
+              "Extraction अधूरो — pages बाँकी छन्";
+
             return (
               <div className={`rounded-xl border px-4 py-3 space-y-2.5 ${
-                isComplete  ? "border-emerald-800/40 bg-emerald-950/10"
+                isComplete   ? "border-emerald-800/40 bg-emerald-950/10"
                 : isCancelled ? "border-zinc-700/40 bg-zinc-900/10"
                 : isPartial   ? "border-sky-900/50 bg-sky-950/15"
                 : "border-zinc-700/40 bg-zinc-900/10"
               }`}>
-                {/* Debug row */}
-                <p className="text-zinc-700 text-[9px] font-mono">
-                  docId: {doc.id.slice(0, 16)}… · source: localStorage+Firestore · status: {savedJob.status}
-                </p>
-
-                {/* Header row */}
+                {/* Status header */}
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-zinc-500 text-[10px] uppercase tracking-wide">Extraction Recovery</p>
+                  <p className="text-zinc-500 text-[10px] uppercase tracking-wide">पिछला Extraction</p>
                   <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
                     isComplete   ? "text-emerald-400 border-emerald-800/50 bg-emerald-950/20"
                     : isCancelled ? "text-zinc-500 border-zinc-700 bg-zinc-800/30"
                     : "text-sky-400 border-sky-800/50 bg-sky-950/20"
                   }`}>
-                    {savedJob.status.replace("_", " ")}
+                    {statusLabel}
                   </span>
                 </div>
 
-                {/* Job stats grid */}
-                <div className="grid grid-cols-3 gap-x-3 gap-y-1 text-[9px]">
-                  <div><span className="text-zinc-600">Total chunks</span><span className="text-zinc-300 float-right font-bold">{savedJob.totalChunks}</span></div>
-                  <div><span className="text-zinc-600">Done</span><span className="text-emerald-400 float-right font-bold">{doneCount}</span></div>
-                  <div><span className="text-zinc-600">Failed</span><span className={`float-right font-bold ${failedCount > 0 ? "text-red-400" : "text-zinc-600"}`}>{failedCount}</span></div>
-                  <div><span className="text-zinc-600">Pending</span><span className="text-zinc-500 float-right font-bold">{pendingCount}</span></div>
-                  <div><span className="text-zinc-600">Atoms saved</span><span className="text-sky-400 float-right font-bold">{savedJob.totalAtomsSaved}</span></div>
-                  <div><span className="text-zinc-600">Expected pages</span><span className="text-zinc-400 float-right font-bold">{savedJob.expectedPages}</span></div>
+                {/* Progress grid */}
+                <div className="grid grid-cols-3 gap-x-3 gap-y-1 text-[10px]">
+                  <div className="flex justify-between"><span className="text-zinc-600">कुल pages</span><span className="text-zinc-300 font-bold">{savedJob.expectedPages}</span></div>
+                  <div className="flex justify-between"><span className="text-zinc-600">सफल groups</span><span className="text-emerald-400 font-bold">{doneCount}</span></div>
+                  <div className="flex justify-between"><span className="text-zinc-600">Failed groups</span><span className={`font-bold ${failedCount > 0 ? "text-red-400" : "text-zinc-600"}`}>{failedCount}</span></div>
+                  <div className="flex justify-between"><span className="text-zinc-600">बाँकी groups</span><span className="text-zinc-500 font-bold">{pendingCount}</span></div>
+                  <div className="flex justify-between"><span className="text-zinc-600">Paragraphs saved</span><span className="text-sky-400 font-bold">{savedJob.totalAtomsSaved}</span></div>
+                  <div className="flex justify-between"><span className="text-zinc-600">Total groups</span><span className="text-zinc-400 font-bold">{savedJob.totalChunks}</span></div>
                 </div>
 
-                {/* Mini chunk grid */}
+                {/* Page group progress grid */}
                 {savedJob.totalChunks > 0 && (
                   <div className="flex flex-wrap gap-0.5">
                     {Array.from({ length: savedJob.totalChunks }, (_, i) => {
@@ -1514,7 +1511,11 @@ export function CivicObjectWorkspace({
                       return (
                         <div
                           key={i}
-                          title={cs ? `Chunk ${i + 1}: ${cs.status} · ${cs.atomCount ?? 0} atoms` : `Chunk ${i + 1}: pending`}
+                          title={
+                            !cs            ? `Group ${i + 1}: बाँकी` :
+                            cs.status === "done"   ? `Group ${i + 1}: ${cs.atomCount ?? 0} paragraphs saved` :
+                            `Group ${i + 1}: failed — retry गर्नुस्`
+                          }
                           className={`h-4 min-w-[1.5rem] rounded text-[8px] flex items-center justify-center px-0.5 ${
                             !cs                                                     ? "bg-zinc-800/40 border border-zinc-700/30 text-zinc-700"
                             : cs.status === "done"                                 ? "bg-emerald-900/60 border border-emerald-700/60 text-emerald-400"
@@ -1529,46 +1530,42 @@ export function CivicObjectWorkspace({
                   </div>
                 )}
 
-                {/* Messages and actions by status */}
+                {/* Status messages */}
                 {isCancelled && (
                   <p className="text-zinc-600 text-[10px]">
-                    ✓ Previous extraction cleared — Clean Re-run गरियो।
-                    {savedJob.totalAtomsSaved > 0
-                      ? ` ${savedJob.totalAtomsSaved} atoms delete भए।`
-                      : " Fresh extraction चलाउन तयार।"}
+                    पहिलेको extraction हटाइयो। Fresh extraction चलाउन तयार।
                   </p>
                 )}
                 {isComplete && (
                   <p className="text-emerald-500/80 text-[10px]">
-                    ✓ Extraction complete — {savedJob.totalAtomsSaved} atoms saved · {doneCount}/{savedJob.totalChunks} chunks।
+                    ✓ {savedJob.totalAtomsSaved} paragraphs capture भए · {doneCount}/{savedJob.totalChunks} page groups सफल।
                   </p>
                 )}
                 {isPartial && fullExtrState === "idle" && (
                   <>
                     <p className="text-sky-300 text-[10px] font-semibold leading-relaxed">
-                      <span className="text-emerald-400">{savedJob.totalAtomsSaved} atoms सुरक्षित छन्।</span>
-                      {failedCount > 0 && <span className="text-red-400"> · {failedCount} chunks failed।</span>}
-                      {pendingCount > 0 && <span className="text-zinc-500"> · {pendingCount} untouched।</span>}
-                      {" "}Zero बाट सुरु नगर्नुस् — resume गर्नुस्।
+                      <span className="text-emerald-400 font-bold">{savedJob.totalAtomsSaved} paragraphs सुरक्षित छन्।</span>
+                      {failedCount  > 0 && <span className="text-red-400"> · {failedCount} groups failed।</span>}
+                      {pendingCount > 0 && <span className="text-zinc-500"> · {pendingCount} groups बाँकी।</span>}
                     </p>
                     <div className="flex gap-2">
                       <button
                         onClick={() => void handleResume(false)}
                         className="flex-1 text-xs py-2 rounded-xl bg-sky-900/40 border border-sky-700/60 text-sky-200 hover:bg-sky-900/60 transition-colors font-semibold"
                       >
-                        ▶ Resume — failed + pending
+                        ▶ बाँकी pages continue गर्नुस्
                       </button>
                       {failedCount > 0 && (
                         <button
                           onClick={() => void handleResume(true)}
                           className="flex-1 text-xs py-2 rounded-xl bg-red-900/30 border border-red-800/50 text-red-300 hover:bg-red-900/50 transition-colors font-semibold"
                         >
-                          ↺ Retry failed ({failedCount})
+                          ↺ Failed pages retry गर्नुस् ({failedCount})
                         </button>
                       )}
                     </div>
                     <p className="text-zinc-700 text-[10px]">
-                      Resume = PDF re-upload → failed/pending chunks मात्र process। Atoms duplicate हुँदैन (deterministic ID)।
+                      Retry गर्दा पहिले save भएका paragraphs duplicate हुँदैनन् — safely continue।
                     </p>
                   </>
                 )}
@@ -1592,13 +1589,13 @@ export function CivicObjectWorkspace({
                   {/* Page count info + manual override */}
                   <div className="rounded-lg border border-zinc-800/50 bg-zinc-900/30 px-3 py-2 space-y-1.5">
                     <div className="flex items-center justify-between text-[10px]">
-                      <span className="text-zinc-500">PDF pages (detected):</span>
+                      <span className="text-zinc-500">Auto-detected pages:</span>
                       <span className={`font-bold ${detectedPageCount ? "text-sky-400" : "text-zinc-600"}`}>
-                        {detectedPageCount ? `${detectedPageCount} pages` : "अज्ञात (size estimate)"}
+                        {detectedPageCount ? `${detectedPageCount} pages` : "Unknown — enter manually below"}
                       </span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <label className="text-zinc-600 text-[10px] shrink-0">Founder override:</label>
+                      <label className="text-zinc-600 text-[10px] shrink-0">Correct page count:</label>
                       <input
                         type="number"
                         value={founderExpectedPages}
