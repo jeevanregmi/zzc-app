@@ -14,6 +14,7 @@ import { db } from "../../../app/firebase";
 import type { IntelligenceDocument } from "../../../lib/types/documents";
 import Link from "next/link";
 import { RecordLayerViewer, type ActiveLayer } from "./RecordLayerViewer";
+import { KnowledgeExtractionViewer } from "./KnowledgeExtractionViewer";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -1754,6 +1755,19 @@ export function CivicObjectWorkspace({
           )}
 
           {/* ── Source Coverage Verification ── */}
+          {/* ── Knowledge Extraction Viewer ── */}
+          {!loading && isApproved && !isConst && (rawExhaustiveCount ?? 0) > 0 && (
+            <KnowledgeExtractionViewer
+              docId={doc.id}
+              ownerId={ownerId}
+              jobSummary={savedJob ? {
+                totalChunks:   savedJob.totalChunks,
+                expectedPages: savedJob.expectedPages,
+                chunkStatuses: savedJob.chunkStatuses,
+              } : null}
+            />
+          )}
+
           {!loading && isApproved && !isConst && (
             <div className="rounded-xl border border-zinc-800/40 bg-zinc-900/10 px-4 py-3 space-y-2">
               <p className="text-zinc-500 text-[10px] uppercase tracking-wide">Source Coverage / स्रोत कभरेज</p>
