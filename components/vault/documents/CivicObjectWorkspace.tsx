@@ -164,7 +164,8 @@ export function CivicObjectWorkspace({
   const [relCount,            setRelCount]            = useState<number | null>(null);
   const [constCount,          setConstCount]          = useState<number | null>(null);
   const [atomicCount,         setAtomicCount]         = useState<number | null>(null);
-  const [fallbackCount,       setFallbackCount]       = useState<number | null>(null);
+  const [fallbackCount,         setFallbackCount]         = useState<number | null>(null);
+  const [dangerousFallbackCount,setDangerousFallbackCount] = useState<number | null>(null);
   const [trulyAtomicCount,    setTrulyAtomicCount]    = useState<number | null>(null);
   const [rawExhaustiveCount,  setRawExhaustiveCount]  = useState<number | null>(null);
   const [loading,             setLoading]             = useState(true);
@@ -191,7 +192,9 @@ export function CivicObjectWorkspace({
   const [detectedPageCount,    setDetectedPageCount]    = useState<number | null>(
     ((doc as unknown as Record<string, unknown>).detectedPageCount as number | undefined) ?? null
   );
-  const [founderExpectedPages, setFounderExpectedPages] = useState<string>("");
+  const [founderExpectedPages, setFounderExpectedPages] = useState<string>(
+    String(((doc as unknown as Record<string, unknown>).expectedPageCount as number | undefined) ?? "")
+  );
   const [storedFileUri,        setStoredFileUri]        = useState<string>("");
 
   // Clean re-run (delete old extraction atoms, keep intel records)
@@ -383,12 +386,12 @@ export function CivicObjectWorkspace({
       setFullExtrChunks([]);
       setFullExtrAtoms(0);
       setFullExtrParagraphs(0);
-      // Mark any previous job as cancelled
+      // Mark any previous job as cancelled (keep state visible for history)
       if (savedJob) {
         updateDoc(firestoreDoc(db, "document_extraction_jobs", savedJob.jobId), {
           status: "cancelled", updatedAt: new Date().toISOString(),
         }).catch(() => {});
-        setSavedJob(null);
+        setSavedJob(prev => prev ? { ...prev, status: "cancelled" } : null);
       }
       setCurrentJobId(null);
       setCleanRerunResult(`${toDelete.length} extraction atoms हटाइयो — Intel records सुरक्षित। Fresh extraction को लागि ready।`);
@@ -848,7 +851,12 @@ export function CivicObjectWorkspace({
         return false;
       };
 
-      const fallback      = iSnap.docs.filter(d => isFallbackRecord(d.data() as Record<string, unknown>)).length;
+      const fallback         = iSnap.docs.filter(d => isFallbackRecord(d.data() as Record<string, unknown>)).length;
+      // Dangerous = fallback AND still publicly visible (not yet quarantined)
+      const dangerousFallback = iSnap.docs.filter(d => {
+        const data = d.data() as Record<string, unknown>;
+        return isFallbackRecord(data) && (data.publishToJanta === true || data.publicReady === true);
+      }).length;
       const rawExhaustive = iSnap.docs.filter(d => (d.data() as Record<string, unknown>).extractionTier === "raw_exhaustive").length;
       const trulyAtomic   = iSnap.docs.filter(d => {
         const data = d.data() as Record<string, unknown>;
@@ -856,6 +864,7 @@ export function CivicObjectWorkspace({
       }).length;
 
       setFallbackCount(fallback);
+      setDangerousFallbackCount(dangerousFallback);
       setRawExhaustiveCount(rawExhaustive);
       setTrulyAtomicCount(trulyAtomic);
       setIntelCount(total - fallback - rawExhaustive - trulyAtomic);
@@ -896,9 +905,7 @@ export function CivicObjectWorkspace({
         updatedAt:       (d.updatedAt    as string) ?? "",
         chunkStatuses:   (d.chunkStatuses as Record<string, ChunkJobStatus>) ?? {},
       };
-      if (job.status !== "complete" && job.status !== "cancelled") {
-        setSavedJob(job);
-      }
+      setSavedJob(job); // always load — panel decides what to show per status
     })();
   }, [doc.id, ownerId]);
 
@@ -1242,8 +1249,8 @@ export function CivicObjectWorkspace({
             </div>
           )}
 
-          {/* ── Fallback atom cleanup banner ── */}
-          {!loading && (fallbackCount ?? 0) > 0 && cleanupState !== "done" && (
+          {/* ── Fallback atom cleanup banner — only if publicly dangerous fallbacks exist ── */}
+          {!loading && (dangerousFallbackCount ?? 0) > 0 && cleanupState !== "done" && (
             <div className="rounded-xl border border-amber-800/50 bg-amber-950/15 px-4 py-3 space-y-3">
               <div className="flex items-start gap-2">
                 <span className="text-amber-400 text-base shrink-0">⚠</span>
@@ -1413,64 +1420,118 @@ export function CivicObjectWorkspace({
             </div>
           )}
 
-          {/* ── Recovery Banner — previous incomplete job ── */}
-          {savedJob && fullExtrState === "idle" && (() => {
+          {/* ── Extraction Recovery Panel (permanent — always shows latest job) ── */}
+          {!loading && isApproved && !isConst && (() => {
+            if (!savedJob) {
+              return (
+                <div className="rounded-xl border border-zinc-800/30 bg-zinc-900/10 px-4 py-3">
+                  <p className="text-zinc-500 text-[10px] uppercase tracking-wide mb-1">Extraction Recovery</p>
+                  <p className="text-zinc-600 text-[10px]">No previous extraction job found — पहिले कुनै extraction भएको छैन।</p>
+                </div>
+              );
+            }
             const doneCount    = Object.values(savedJob.chunkStatuses).filter(c => c.status === "done").length;
             const failedCount  = Object.values(savedJob.chunkStatuses).filter(c => c.status === "failed" || c.status === "processing").length;
             const pendingCount = savedJob.totalChunks - Object.keys(savedJob.chunkStatuses).length;
+            const isCancelled  = savedJob.status === "cancelled";
+            const isComplete   = savedJob.status === "complete";
+            const isPartial    = savedJob.status === "partial_complete" || savedJob.status === "running" || savedJob.status === "failed";
+
             return (
-              <div className="rounded-xl border border-sky-900/50 bg-sky-950/15 px-4 py-3 space-y-3">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sky-400">⟳</span>
-                    <p className="text-sky-300 text-xs font-bold">पिछला extraction — resume गर्न सकिन्छ</p>
+              <div className={`rounded-xl border px-4 py-3 space-y-2.5 ${
+                isComplete  ? "border-emerald-800/40 bg-emerald-950/10"
+                : isCancelled ? "border-zinc-700/40 bg-zinc-900/10"
+                : isPartial   ? "border-sky-900/50 bg-sky-950/15"
+                : "border-zinc-700/40 bg-zinc-900/10"
+              }`}>
+                {/* Header row */}
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-zinc-500 text-[10px] uppercase tracking-wide">Extraction Recovery</p>
+                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                    isComplete   ? "text-emerald-400 border-emerald-800/50 bg-emerald-950/20"
+                    : isCancelled ? "text-zinc-500 border-zinc-700 bg-zinc-800/30"
+                    : "text-sky-400 border-sky-800/50 bg-sky-950/20"
+                  }`}>
+                    {savedJob.status.replace("_", " ")}
+                  </span>
+                </div>
+
+                {/* Job stats grid */}
+                <div className="grid grid-cols-3 gap-x-3 gap-y-1 text-[9px]">
+                  <div><span className="text-zinc-600">Total chunks</span><span className="text-zinc-300 float-right font-bold">{savedJob.totalChunks}</span></div>
+                  <div><span className="text-zinc-600">Done</span><span className="text-emerald-400 float-right font-bold">{doneCount}</span></div>
+                  <div><span className="text-zinc-600">Failed</span><span className={`float-right font-bold ${failedCount > 0 ? "text-red-400" : "text-zinc-600"}`}>{failedCount}</span></div>
+                  <div><span className="text-zinc-600">Pending</span><span className="text-zinc-500 float-right font-bold">{pendingCount}</span></div>
+                  <div><span className="text-zinc-600">Atoms saved</span><span className="text-sky-400 float-right font-bold">{savedJob.totalAtomsSaved}</span></div>
+                  <div><span className="text-zinc-600">Expected pages</span><span className="text-zinc-400 float-right font-bold">{savedJob.expectedPages}</span></div>
+                </div>
+
+                {/* Mini chunk grid */}
+                {savedJob.totalChunks > 0 && (
+                  <div className="flex flex-wrap gap-0.5">
+                    {Array.from({ length: savedJob.totalChunks }, (_, i) => {
+                      const cs = savedJob.chunkStatuses[String(i)];
+                      return (
+                        <div
+                          key={i}
+                          title={cs ? `Chunk ${i + 1}: ${cs.status} · ${cs.atomCount ?? 0} atoms` : `Chunk ${i + 1}: pending`}
+                          className={`h-4 min-w-[1.5rem] rounded text-[8px] flex items-center justify-center px-0.5 ${
+                            !cs                                                     ? "bg-zinc-800/40 border border-zinc-700/30 text-zinc-700"
+                            : cs.status === "done"                                 ? "bg-emerald-900/60 border border-emerald-700/60 text-emerald-400"
+                            : cs.status === "failed" || cs.status === "processing" ? "bg-red-900/60 border border-red-700/60 text-red-400"
+                            : "bg-zinc-800/40 border border-zinc-700/30 text-zinc-600"
+                          }`}
+                        >
+                          {!cs ? "·" : cs.status === "done" ? String(cs.atomCount ?? 0) : "!"}
+                        </div>
+                      );
+                    })}
                   </div>
-                  <p className="text-[10px] mt-1 leading-relaxed">
-                    <span className="text-emerald-400 font-bold">{savedJob.totalAtomsSaved} atoms सुरक्षित छन्।</span>
-                    {failedCount  > 0 && <span className="text-red-400">  {" · "}{failedCount} chunks failed।</span>}
-                    {pendingCount > 0 && <span className="text-zinc-500">  {" · "}{pendingCount} untouched।</span>}
-                    {" · "}{doneCount}/{savedJob.totalChunks} done।
+                )}
+
+                {/* Messages and actions by status */}
+                {isCancelled && (
+                  <p className="text-zinc-600 text-[10px]">
+                    ✓ Previous extraction cleared — Clean Re-run गरियो।
+                    {savedJob.totalAtomsSaved > 0
+                      ? ` ${savedJob.totalAtomsSaved} atoms delete भए।`
+                      : " Fresh extraction चलाउन तयार।"}
                   </p>
-                </div>
-                {/* Mini chunk grid showing saved state */}
-                <div className="flex flex-wrap gap-0.5">
-                  {Array.from({ length: savedJob.totalChunks }, (_, i) => {
-                    const cs = savedJob.chunkStatuses[String(i)];
-                    return (
-                      <div
-                        key={i}
-                        title={cs ? `Chunk ${i + 1}: ${cs.status} · ${cs.atomCount ?? 0} atoms` : `Chunk ${i + 1}: pending`}
-                        className={`h-4 min-w-[1.5rem] rounded text-[8px] flex items-center justify-center px-0.5 transition-none ${
-                          !cs                                              ? "bg-zinc-800/40 border border-zinc-700/30 text-zinc-700"
-                          : cs.status === "done"                         ? "bg-emerald-900/60 border border-emerald-700/60 text-emerald-400"
-                          : cs.status === "failed" || cs.status === "processing" ? "bg-red-900/60 border border-red-700/60 text-red-400"
-                          : "bg-zinc-800/40 border border-zinc-700/30 text-zinc-600"
-                        }`}
+                )}
+                {isComplete && (
+                  <p className="text-emerald-500/80 text-[10px]">
+                    ✓ Extraction complete — {savedJob.totalAtomsSaved} atoms saved · {doneCount}/{savedJob.totalChunks} chunks।
+                  </p>
+                )}
+                {isPartial && fullExtrState === "idle" && (
+                  <>
+                    <p className="text-sky-300 text-[10px] font-semibold leading-relaxed">
+                      <span className="text-emerald-400">{savedJob.totalAtomsSaved} atoms सुरक्षित छन्।</span>
+                      {failedCount > 0 && <span className="text-red-400"> · {failedCount} chunks failed।</span>}
+                      {pendingCount > 0 && <span className="text-zinc-500"> · {pendingCount} untouched।</span>}
+                      {" "}Zero बाट सुरु नगर्नुस् — resume गर्नुस्।
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => void handleResume(false)}
+                        className="flex-1 text-xs py-2 rounded-xl bg-sky-900/40 border border-sky-700/60 text-sky-200 hover:bg-sky-900/60 transition-colors font-semibold"
                       >
-                        {!cs ? "·" : cs.status === "done" ? String(cs.atomCount ?? 0) : "!"}
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => void handleResume(false)}
-                    className="flex-1 text-xs py-2 rounded-xl bg-sky-900/40 border border-sky-700/60 text-sky-200 hover:bg-sky-900/60 transition-colors font-semibold"
-                  >
-                    ▶ Resume — failed + pending
-                  </button>
-                  {failedCount > 0 && (
-                    <button
-                      onClick={() => void handleResume(true)}
-                      className="flex-1 text-xs py-2 rounded-xl bg-red-900/30 border border-red-800/50 text-red-300 hover:bg-red-900/50 transition-colors font-semibold"
-                    >
-                      ↺ Retry failed only ({failedCount})
-                    </button>
-                  )}
-                </div>
-                <p className="text-zinc-700 text-[10px]">
-                  Resume = PDF re-upload → failed/pending chunks मात्र। Clean Re-run = zero बाट।
-                </p>
+                        ▶ Resume — failed + pending
+                      </button>
+                      {failedCount > 0 && (
+                        <button
+                          onClick={() => void handleResume(true)}
+                          className="flex-1 text-xs py-2 rounded-xl bg-red-900/30 border border-red-800/50 text-red-300 hover:bg-red-900/50 transition-colors font-semibold"
+                        >
+                          ↺ Retry failed ({failedCount})
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-zinc-700 text-[10px]">
+                      Resume = PDF re-upload → failed/pending chunks मात्र process। Atoms duplicate हुँदैन (deterministic ID)।
+                    </p>
+                  </>
+                )}
               </div>
             );
           })()}
@@ -1501,7 +1562,15 @@ export function CivicObjectWorkspace({
                       <input
                         type="number"
                         value={founderExpectedPages}
-                        onChange={e => setFounderExpectedPages(e.target.value)}
+                        onChange={e => {
+                          setFounderExpectedPages(e.target.value);
+                          const n = parseInt(e.target.value, 10);
+                          if (n > 0) {
+                            void updateDoc(firestoreDoc(db, "vault_documents", doc.id), {
+                              expectedPageCount: n,
+                            }).catch(() => {});
+                          }
+                        }}
                         placeholder={String(detectedPageCount ?? Math.ceil(doc.fileSize / 15000))}
                         className="flex-1 bg-zinc-900 border border-zinc-700 rounded-lg px-2 py-1 text-[10px] text-zinc-300 placeholder:text-zinc-700 focus:outline-none focus:border-sky-700"
                       />
