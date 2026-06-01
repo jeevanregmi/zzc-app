@@ -50,12 +50,13 @@ const safe = <T,>(p: Promise<T>, fb: T): Promise<T> =>
 // ── Main component ─────────────────────────────────────────────────────────────
 
 interface Props {
-  docId:      string;
-  ownerId:    string;
-  jobSummary: ExtractionJobSummary | null;
+  docId:           string;
+  ownerId:         string;
+  jobSummary:      ExtractionJobSummary | null;
+  docDownloadUrl?: string;
 }
 
-export function KnowledgeExtractionViewer({ docId, ownerId, jobSummary }: Props) {
+export function KnowledgeExtractionViewer({ docId, ownerId, jobSummary, docDownloadUrl }: Props) {
   const [atoms,          setAtoms]          = useState<RawAtom[]>([]);
   const [loading,        setLoading]        = useState(true);
   const [viewMode,       setViewMode]       = useState<"list" | "review">("list");
@@ -234,6 +235,15 @@ export function KnowledgeExtractionViewer({ docId, ownerId, jobSummary }: Props)
   function expandAll()  { setExpandedChunks(new Set(chunkGroups.map(g => g.idx))); }
   function collapseAll(){ setExpandedChunks(new Set()); }
 
+  // Clicking a "p{N}" badge switches to Page Review mode at that page
+  function handlePageBadgeClick(pageNum: number) {
+    const idx = allPages.indexOf(pageNum);
+    if (idx >= 0) {
+      setReviewPageIdx(idx);
+      setViewMode("review");
+    }
+  }
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   if (loading) {
@@ -340,6 +350,7 @@ export function KnowledgeExtractionViewer({ docId, ownerId, jobSummary }: Props)
           confirmDelete={confirmDelete}
           deleting={deleting}
           jobSummary={jobSummary}
+          docDownloadUrl={docDownloadUrl}
         />
       )}
 
@@ -470,6 +481,7 @@ export function KnowledgeExtractionViewer({ docId, ownerId, jobSummary }: Props)
                     onDelete={id => setConfirmDelete(id)}
                     onConfirmDelete={deleteAtom}
                     onCancelDelete={() => setConfirmDelete(null)}
+                    onPageBadgeClick={handlePageBadgeClick}
                   />
                 ))}
               </div>
@@ -491,29 +503,30 @@ export function KnowledgeExtractionViewer({ docId, ownerId, jobSummary }: Props)
 // ── Page Review Mode ──────────────────────────────────────────────────────────
 
 interface PageReviewProps {
-  allPages:       number[];
-  pageIdx:        number;
-  pageAtoms:      RawAtom[];
-  marks:          Record<string, string>;
-  jumpInput:      string;
-  onSetJumpInput: (v: string) => void;
-  onJump:         () => void;
-  onPrev:         () => void;
-  onNext:         () => void;
-  onMark:         (id: string, mark: string) => void;
-  onDelete:       (id: string) => void;
-  onConfirmDelete:(id: string) => Promise<void>;
-  onCancelDelete: () => void;
-  confirmDelete:  string | null;
-  deleting:       Set<string>;
-  jobSummary:     ExtractionJobSummary | null;
+  allPages:        number[];
+  pageIdx:         number;
+  pageAtoms:       RawAtom[];
+  marks:           Record<string, string>;
+  jumpInput:       string;
+  onSetJumpInput:  (v: string) => void;
+  onJump:          () => void;
+  onPrev:          () => void;
+  onNext:          () => void;
+  onMark:          (id: string, mark: string) => void;
+  onDelete:        (id: string) => void;
+  onConfirmDelete: (id: string) => Promise<void>;
+  onCancelDelete:  () => void;
+  confirmDelete:   string | null;
+  deleting:        Set<string>;
+  jobSummary:      ExtractionJobSummary | null;
+  docDownloadUrl?: string;
 }
 
 function PageReviewMode({
   allPages, pageIdx, pageAtoms, marks, jumpInput,
   onSetJumpInput, onJump, onPrev, onNext,
   onMark, onDelete, onConfirmDelete, onCancelDelete,
-  confirmDelete, deleting, jobSummary,
+  confirmDelete, deleting, jobSummary, docDownloadUrl,
 }: PageReviewProps) {
   const pageNum    = allPages[pageIdx] ?? 0;
   const totalPages = allPages.length;
@@ -581,16 +594,38 @@ function PageReviewMode({
         </div>
       </div>
 
-      {/* Page progress indicator */}
-      <div className="text-[10px] text-zinc-600">
-        Page {pageIdx + 1} of {totalPages} pages with content ·{" "}
-        <span className="text-sky-400 font-semibold">{pageAtoms.length} paragraphs</span>
-        {headingCtx?.sectionTitle && (
-          <span className="text-zinc-500"> · {headingCtx.sectionTitle}</span>
-        )}
-        {headingCtx?.heading && (
-          <span className="text-zinc-600"> › {headingCtx.heading}</span>
-        )}
+      {/* Page info + PDF verification bar */}
+      <div className="rounded-lg border border-zinc-800/40 bg-zinc-900/20 px-3 py-2 space-y-1.5">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="text-[10px] text-zinc-500">
+            <span className="text-zinc-300 font-semibold">Page {pageNum}</span>
+            {" · "}
+            <span className="text-sky-400">{pageAtoms.length} paragraphs captured</span>
+            {headingCtx?.sectionTitle && <span> · {headingCtx.sectionTitle}</span>}
+            {headingCtx?.heading && <span className="text-zinc-600"> › {headingCtx.heading}</span>}
+          </div>
+
+          {/* PDF open button */}
+          {docDownloadUrl ? (
+            <a
+              href={`${docDownloadUrl}#page=${pageNum}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[9px] px-2.5 py-1 rounded-lg border border-sky-800/50 bg-sky-950/20 text-sky-400 hover:bg-sky-950/40 hover:text-sky-300 transition-colors font-semibold whitespace-nowrap"
+            >
+              📄 PDF page {pageNum} मा खोल्नुस्
+            </a>
+          ) : (
+            <span className="text-zinc-700 text-[9px]">PDF URL उपलब्ध छैन</span>
+          )}
+        </div>
+
+        {/* Trust note */}
+        <p className="text-zinc-600 text-[9px] leading-relaxed">
+          तलको text AI (Gemini) ले PDF को page {pageNum} बाट verbatim extract गरेको हो।
+          "PDF खोल्नुस्" गरेर original page सँग verify गर्न सकिन्छ।
+          {!docDownloadUrl && " PDF preview अहिले उपलब्ध छैन — extracted text मात्र।"}
+        </p>
       </div>
 
       {/* Zero-atom warning */}
@@ -612,7 +647,7 @@ function PageReviewMode({
             }`}>
               {atom ? (
                 <div className="grid grid-cols-2 gap-0 divide-x divide-zinc-800/40">
-                  {/* Left: original paragraph */}
+                  {/* Left: verbatim source text (what Gemini read from PDF) */}
                   <div className="px-3 py-2.5 space-y-1.5">
                     <p className="text-[8px] font-mono text-zinc-600">
                       P{pageNum}.{idx}
@@ -688,11 +723,13 @@ interface AtomCardProps {
   onDelete:           (id: string) => void;
   onConfirmDelete:    (id: string) => Promise<void>;
   onCancelDelete:     () => void;
+  onPageBadgeClick?:  (pageNum: number) => void;
 }
 
 function AtomCard({
   atom, mark, isDeleting, isConfirmingDelete,
   onMark, onDelete, onConfirmDelete, onCancelDelete,
+  onPageBadgeClick,
 }: AtomCardProps) {
   const [expanded, setExpanded] = useState(false);
 
@@ -705,9 +742,14 @@ function AtomCard({
     <div className={`px-3 py-2 space-y-1.5 ${markBg}`}>
       {/* Location + type badges */}
       <div className="flex items-center gap-1 flex-wrap">
-        <span className="text-[8px] font-mono bg-zinc-800/60 text-zinc-500 px-1.5 py-0.5 rounded">
+        {/* Clickable page badge — jumps to Page Review at this page */}
+        <button
+          onClick={() => onPageBadgeClick?.(atom.pageNumber)}
+          title="Page Review मा verify गर्नुस् →"
+          className="text-[8px] font-mono bg-zinc-800/60 text-sky-500 hover:text-sky-300 hover:bg-sky-950/40 px-1.5 py-0.5 rounded transition-colors cursor-pointer border border-transparent hover:border-sky-800/50"
+        >
           p{atom.pageNumber}·{atom.paragraphIndex}
-        </span>
+        </button>
         {atom.isHeading && (
           <span className="text-[8px] border border-violet-800/40 bg-violet-950/30 text-violet-400 px-1.5 py-0.5 rounded">
             HEADING

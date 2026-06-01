@@ -1776,6 +1776,7 @@ export function CivicObjectWorkspace({
             <KnowledgeExtractionViewer
               docId={doc.id}
               ownerId={ownerId}
+              docDownloadUrl={doc.downloadUrl}
               jobSummary={savedJob ? {
                 totalChunks:   savedJob.totalChunks,
                 expectedPages: savedJob.expectedPages,
