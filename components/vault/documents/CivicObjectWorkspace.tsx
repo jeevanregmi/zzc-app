@@ -391,7 +391,7 @@ export function CivicObjectWorkspace({
       updateDoc(firestoreDoc(db, "vault_documents", doc.id), {
         "lastExtractionJob.status":    "cancelled",
         "lastExtractionJob.updatedAt": new Date().toISOString(),
-      }).catch(() => {});
+      }).catch(e => console.warn("[VaultDoc] cancel job failed:", e?.code ?? e));
       setSavedJob(prev => prev ? { ...prev, status: "cancelled" } : null);
       setCurrentJobId(null);
       setCleanRerunResult(`${toDelete.length} extraction atoms हटाइयो — Intel records सुरक्षित। Fresh extraction को लागि ready।`);
@@ -573,7 +573,7 @@ export function CivicObjectWorkspace({
             [`lastExtractionJob.chunkStatuses.${chunk.index}`]: doneStatus,
             "lastExtractionJob.totalAtomsSaved": totalAtoms,
             "lastExtractionJob.updatedAt":       new Date().toISOString(),
-          }).catch(() => {});
+          }).catch(e => console.warn("[VaultDoc] chunk done update failed:", e?.code ?? e));
           setSavedJob(prev => prev ? {
             ...prev,
             totalAtomsSaved: totalAtoms,
@@ -597,7 +597,7 @@ export function CivicObjectWorkspace({
         updateDoc(firestoreDoc(db, "vault_documents", doc.id), {
           [`lastExtractionJob.chunkStatuses.${chunk.index}`]: failedStatus,
           "lastExtractionJob.updatedAt": new Date().toISOString(),
-        }).catch(() => {});
+        }).catch(e => console.warn("[VaultDoc] chunk fail update failed:", e?.code ?? e));
         setSavedJob(prev => prev ? {
           ...prev,
           chunkStatuses: { ...prev.chunkStatuses, [String(chunk.index)]: failedStatus },
@@ -700,7 +700,7 @@ export function CivicObjectWorkspace({
     setSavedJob(initialJob);
     updateDoc(firestoreDoc(db, "vault_documents", doc.id), {
       lastExtractionJob: initialJob,
-    }).catch(() => {});
+    }).catch(e => console.warn("[VaultDoc] initial job write failed:", e?.code ?? e, "— localStorage will handle recovery"));
 
     // Step 3 — Process all chunks
     const { totalAtoms, failedCount } = await runChunks(allChunks, allChunks, fileUri, jobId, 0);
@@ -889,6 +889,13 @@ export function CivicObjectWorkspace({
     void run();
   }, [ownerId, doc.id]);
 
+  // Auto-sync savedJob → localStorage on every change (primary persistence — always works)
+  useEffect(() => {
+    const key = `zzc_extraction_job_${doc.id}`;
+    if (!savedJob) return; // don't clear on null — keep last known state
+    try { localStorage.setItem(key, JSON.stringify(savedJob)); } catch {}
+  }, [savedJob, doc.id]);
+
   // Fresh read of vault_documents on mount — gets expectedPageCount + lastExtractionJob.
   // vault_documents has working Firestore rules. document_extraction_jobs rules
   // are in code but NOT deployed via CI (Cloudflare-only Actions), so we persist
@@ -906,20 +913,29 @@ export function CivicObjectWorkspace({
         setFounderExpectedPages(String(epc));
       }
 
-      // Load last extraction job from vault_documents.lastExtractionJob
-      const job = d.lastExtractionJob as Record<string, unknown> | undefined;
-      if (job) {
+      // Load last extraction job: Firestore first, localStorage fallback
+      const firestoreJob = d.lastExtractionJob as Record<string, unknown> | undefined;
+      if (firestoreJob?.jobId) {
         setSavedJob({
-          jobId:           (job.jobId        as string) ?? "unknown",
-          expectedPages:   (job.expectedPages as number) ?? 0,
-          chunkSize:       (job.chunkSize     as number) ?? CHUNK_PAGES,
-          totalChunks:     (job.totalChunks   as number) ?? 0,
-          status:          (job.status        as JobRecord["status"]) ?? "failed",
-          totalAtomsSaved: (job.totalAtomsSaved as number) ?? 0,
-          startedAt:       (job.startedAt     as string) ?? "",
-          updatedAt:       (job.updatedAt     as string) ?? "",
-          chunkStatuses:   (job.chunkStatuses as Record<string, ChunkJobStatus>) ?? {},
+          jobId:           (firestoreJob.jobId           as string)  ?? "unknown",
+          expectedPages:   (firestoreJob.expectedPages   as number)  ?? 0,
+          chunkSize:       (firestoreJob.chunkSize       as number)  ?? CHUNK_PAGES,
+          totalChunks:     (firestoreJob.totalChunks     as number)  ?? 0,
+          status:          (firestoreJob.status          as JobRecord["status"]) ?? "failed",
+          totalAtomsSaved: (firestoreJob.totalAtomsSaved as number)  ?? 0,
+          startedAt:       (firestoreJob.startedAt       as string)  ?? "",
+          updatedAt:       (firestoreJob.updatedAt       as string)  ?? "",
+          chunkStatuses:   (firestoreJob.chunkStatuses   as Record<string, ChunkJobStatus>) ?? {},
         });
+      } else {
+        // Firestore write may have failed — check localStorage
+        try {
+          const localStr = localStorage.getItem(`zzc_extraction_job_${doc.id}`);
+          if (localStr) {
+            const localJob = JSON.parse(localStr) as JobRecord;
+            if (localJob?.jobId) setSavedJob(localJob);
+          }
+        } catch {}
       }
     })();
   }, [doc.id, ownerId]);
@@ -1442,7 +1458,10 @@ export function CivicObjectWorkspace({
                 <div className="rounded-xl border border-zinc-800/30 bg-zinc-900/10 px-4 py-3 space-y-1">
                   <p className="text-zinc-500 text-[10px] uppercase tracking-wide">Extraction Recovery</p>
                   <p className="text-zinc-600 text-[10px]">No previous extraction job found — पहिले कुनै extraction भएको छैन।</p>
-                  <p className="text-zinc-700 text-[9px] font-mono">docId: {doc.id.slice(0, 16)}… · vault_documents.lastExtractionJob: null</p>
+                  <p className="text-zinc-700 text-[9px] font-mono">
+                    docId: {doc.id.slice(0, 16)}… · Firestore: null · localStorage:{" "}
+                    {(() => { try { return localStorage.getItem(`zzc_extraction_job_${doc.id}`) ? "found ✓" : "null"; } catch { return "err"; } })()}
+                  </p>
                 </div>
               );
             }
@@ -1462,7 +1481,7 @@ export function CivicObjectWorkspace({
               }`}>
                 {/* Debug row */}
                 <p className="text-zinc-700 text-[9px] font-mono">
-                  docId: {doc.id.slice(0, 16)}… · source: vault_documents.lastExtractionJob · status: {savedJob.status}
+                  docId: {doc.id.slice(0, 16)}… · source: localStorage+Firestore · status: {savedJob.status}
                 </p>
 
                 {/* Header row */}
