@@ -7,7 +7,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import {
-  collection, query, where, limit, getDocs,
+  collection, query, where, limit, getDocs, getDoc,
   updateDoc, addDoc, deleteDoc, setDoc, doc as firestoreDoc,
 } from "firebase/firestore";
 import { db } from "../../../app/firebase";
@@ -386,13 +386,12 @@ export function CivicObjectWorkspace({
       setFullExtrChunks([]);
       setFullExtrAtoms(0);
       setFullExtrParagraphs(0);
-      // Mark any previous job as cancelled (keep state visible for history)
-      if (savedJob) {
-        updateDoc(firestoreDoc(db, "document_extraction_jobs", savedJob.jobId), {
-          status: "cancelled", updatedAt: new Date().toISOString(),
-        }).catch(() => {});
-        setSavedJob(prev => prev ? { ...prev, status: "cancelled" } : null);
-      }
+      // Mark previous job as cancelled in vault_documents (keep visible for history)
+      updateDoc(firestoreDoc(db, "vault_documents", doc.id), {
+        "lastExtractionJob.status":    "cancelled",
+        "lastExtractionJob.updatedAt": new Date().toISOString(),
+      }).catch(() => {});
+      setSavedJob(prev => prev ? { ...prev, status: "cancelled" } : null);
       setCurrentJobId(null);
       setCleanRerunResult(`${toDelete.length} extraction atoms हटाइयो — Intel records सुरक्षित। Fresh extraction को लागि ready।`);
       setCleanRerunState("done");
@@ -565,14 +564,14 @@ export function CivicObjectWorkspace({
               : c
           ));
 
-          // Update Firestore + in-memory savedJob: chunk complete
+          // Update vault_documents.lastExtractionJob + in-memory savedJob: chunk done
           const doneStatus: ChunkJobStatus = {
             status: "done", atomCount: chunkAtoms, retryCount: attempt,
           };
-          updateDoc(firestoreDoc(db, "document_extraction_jobs", jobId), {
-            [`chunkStatuses.${chunk.index}`]: { ...doneStatus, completedAt: new Date().toISOString() },
-            totalAtomsSaved: totalAtoms,
-            updatedAt:       new Date().toISOString(),
+          updateDoc(firestoreDoc(db, "vault_documents", doc.id), {
+            [`lastExtractionJob.chunkStatuses.${chunk.index}`]: doneStatus,
+            "lastExtractionJob.totalAtomsSaved": totalAtoms,
+            "lastExtractionJob.updatedAt":       new Date().toISOString(),
           }).catch(() => {});
           setSavedJob(prev => prev ? {
             ...prev,
@@ -594,9 +593,9 @@ export function CivicObjectWorkspace({
         const failedStatus: ChunkJobStatus = {
           status: "failed", atomCount: 0, error: lastError, retryCount: MAX_RETRIES,
         };
-        updateDoc(firestoreDoc(db, "document_extraction_jobs", jobId), {
-          [`chunkStatuses.${chunk.index}`]: { ...failedStatus, completedAt: new Date().toISOString() },
-          updatedAt: new Date().toISOString(),
+        updateDoc(firestoreDoc(db, "vault_documents", doc.id), {
+          [`lastExtractionJob.chunkStatuses.${chunk.index}`]: failedStatus,
+          "lastExtractionJob.updatedAt": new Date().toISOString(),
         }).catch(() => {});
         setSavedJob(prev => prev ? {
           ...prev,
@@ -683,19 +682,24 @@ export function CivicObjectWorkspace({
       });
       jobId = jobRef.id;
       setCurrentJobId(jobId);
-      // Update in-memory job so Recovery Panel shows "running" immediately
-      setSavedJob({
-        jobId,
-        expectedPages:   resolvedPageCount,
-        chunkSize:       CHUNK_PAGES,
-        totalChunks:     allChunks.length,
-        status:          "running",
-        totalAtomsSaved: 0,
-        startedAt:       new Date().toISOString(),
-        updatedAt:       new Date().toISOString(),
-        chunkStatuses:   {},
-      });
     } catch { /* continue without Firestore job if write fails */ }
+
+    // Write job state to vault_documents (uses existing rules — always works)
+    const initialJob: JobRecord = {
+      jobId,
+      expectedPages:   resolvedPageCount,
+      chunkSize:       CHUNK_PAGES,
+      totalChunks:     allChunks.length,
+      status:          "running",
+      totalAtomsSaved: 0,
+      startedAt:       new Date().toISOString(),
+      updatedAt:       new Date().toISOString(),
+      chunkStatuses:   {},
+    };
+    setSavedJob(initialJob);
+    updateDoc(firestoreDoc(db, "vault_documents", doc.id), {
+      lastExtractionJob: initialJob,
+    }).catch(() => {});
 
     // Step 3 — Process all chunks
     const { totalAtoms, failedCount } = await runChunks(allChunks, allChunks, fileUri, jobId, 0);
@@ -706,29 +710,14 @@ export function CivicObjectWorkspace({
     setTrulyAtomicCount(0);
     setFullExtrState("complete");
 
-    const finalStatus = failedCount > 0 ? "partial_complete" : "complete";
-    if (!jobId.startsWith("local_")) {
-      updateDoc(firestoreDoc(db, "document_extraction_jobs", jobId), {
-        status:          finalStatus,
-        completedAt:     new Date().toISOString(),
-        totalAtomsSaved: totalAtoms,
-        updatedAt:       new Date().toISOString(),
-      }).catch(() => {});
-    }
-
-    if (failedCount > 0) {
-      setSavedJob({
-        jobId,
-        expectedPages:   resolvedPageCount,
-        chunkSize:       CHUNK_PAGES,
-        totalChunks:     allChunks.length,
-        status:          "partial_complete",
-        totalAtomsSaved: totalAtoms,
-        startedAt:       new Date().toISOString(),
-        updatedAt:       new Date().toISOString(),
-        chunkStatuses:   {}, // already persisted chunk-by-chunk in Firestore
-      });
-    }
+    const finalStatus: JobRecord["status"] = failedCount > 0 ? "partial_complete" : "complete";
+    // Update vault_documents.lastExtractionJob with final status
+    updateDoc(firestoreDoc(db, "vault_documents", doc.id), {
+      "lastExtractionJob.status":          finalStatus,
+      "lastExtractionJob.totalAtomsSaved": totalAtoms,
+      "lastExtractionJob.updatedAt":       new Date().toISOString(),
+    }).catch(() => {});
+    setSavedJob(prev => prev ? { ...prev, status: finalStatus, totalAtomsSaved: totalAtoms } : null);
   }
 
   // ── Resume / Retry failed chunks ──────────────────────────────────────────────
@@ -800,9 +789,11 @@ export function CivicObjectWorkspace({
 
     const jobId = savedJob.jobId;
     setCurrentJobId(jobId);
-    updateDoc(firestoreDoc(db, "document_extraction_jobs", jobId), {
-      status: "running", updatedAt: new Date().toISOString(),
+    updateDoc(firestoreDoc(db, "vault_documents", doc.id), {
+      "lastExtractionJob.status":    "running",
+      "lastExtractionJob.updatedAt": new Date().toISOString(),
     }).catch(() => {});
+    setSavedJob(prev => prev ? { ...prev, status: "running" } : null);
 
     const { totalAtoms, failedCount } = await runChunks(
       chunksToProcess, allChunks, fileUri, jobId, savedJob.totalAtomsSaved,
@@ -811,12 +802,12 @@ export function CivicObjectWorkspace({
     setRawExhaustiveCount(totalAtoms);
     setFullExtrState("complete");
 
-    const finalStatus = failedCount > 0 ? "partial_complete" : "complete";
-    updateDoc(firestoreDoc(db, "document_extraction_jobs", jobId), {
-      status: finalStatus, completedAt: new Date().toISOString(),
-      totalAtomsSaved: totalAtoms, updatedAt: new Date().toISOString(),
+    const finalStatus: JobRecord["status"] = failedCount > 0 ? "partial_complete" : "complete";
+    updateDoc(firestoreDoc(db, "vault_documents", doc.id), {
+      "lastExtractionJob.status":          finalStatus,
+      "lastExtractionJob.totalAtomsSaved": totalAtoms,
+      "lastExtractionJob.updatedAt":       new Date().toISOString(),
     }).catch(() => {});
-
     setSavedJob(prev => prev
       ? { ...prev, status: finalStatus, totalAtomsSaved: totalAtoms }
       : null
@@ -897,36 +888,38 @@ export function CivicObjectWorkspace({
     void run();
   }, [ownerId, doc.id]);
 
-  // Load most recent extraction job (enables resume after reload / network failure)
+  // Fresh read of vault_documents on mount — gets expectedPageCount + lastExtractionJob.
+  // vault_documents has working Firestore rules. document_extraction_jobs rules
+  // are in code but NOT deployed via CI (Cloudflare-only Actions), so we persist
+  // job state here instead.
   useEffect(() => {
     if (!ownerId || !doc.id) return;
     void (async () => {
-      const snap = await safe(getDocs(query(
-        collection(db, "document_extraction_jobs"),
-        where("ownerId",     "==", ownerId),
-        where("sourceDocId", "==", doc.id),
-        limit(5),
-      )), null);
-      if (!snap || snap.empty) return;
-      const sorted = [...snap.docs].sort((a, b) => {
-        const aAt = (a.data() as Record<string, unknown>).startedAt as string ?? "";
-        const bAt = (b.data() as Record<string, unknown>).startedAt as string ?? "";
-        return bAt.localeCompare(aAt);
-      });
-      const latest = sorted[0];
-      const d = latest.data() as Record<string, unknown>;
-      const job: JobRecord = {
-        jobId:           latest.id,
-        expectedPages:   (d.expectedPages as number) ?? 0,
-        chunkSize:       (d.chunkSize    as number) ?? CHUNK_PAGES,
-        totalChunks:     (d.totalChunks  as number) ?? 0,
-        status:          (d.status       as JobRecord["status"]) ?? "failed",
-        totalAtomsSaved: (d.totalAtomsSaved as number) ?? 0,
-        startedAt:       (d.startedAt    as string) ?? "",
-        updatedAt:       (d.updatedAt    as string) ?? "",
-        chunkStatuses:   (d.chunkStatuses as Record<string, ChunkJobStatus>) ?? {},
-      };
-      setSavedJob(job); // always load — panel decides what to show per status
+      const snap = await safe(getDoc(firestoreDoc(db, "vault_documents", doc.id)), null);
+      if (!snap?.exists()) return;
+      const d = snap.data() as Record<string, unknown>;
+
+      // Load persisted page count override (founder set this in a previous session)
+      const epc = d.expectedPageCount as number | undefined;
+      if (epc && epc > 0) {
+        setFounderExpectedPages(String(epc));
+      }
+
+      // Load last extraction job from vault_documents.lastExtractionJob
+      const job = d.lastExtractionJob as Record<string, unknown> | undefined;
+      if (job) {
+        setSavedJob({
+          jobId:           (job.jobId        as string) ?? "unknown",
+          expectedPages:   (job.expectedPages as number) ?? 0,
+          chunkSize:       (job.chunkSize     as number) ?? CHUNK_PAGES,
+          totalChunks:     (job.totalChunks   as number) ?? 0,
+          status:          (job.status        as JobRecord["status"]) ?? "failed",
+          totalAtomsSaved: (job.totalAtomsSaved as number) ?? 0,
+          startedAt:       (job.startedAt     as string) ?? "",
+          updatedAt:       (job.updatedAt     as string) ?? "",
+          chunkStatuses:   (job.chunkStatuses as Record<string, ChunkJobStatus>) ?? {},
+        });
+      }
     })();
   }, [doc.id, ownerId]);
 
@@ -1445,9 +1438,10 @@ export function CivicObjectWorkspace({
           {!loading && isApproved && !isConst && (() => {
             if (!savedJob) {
               return (
-                <div className="rounded-xl border border-zinc-800/30 bg-zinc-900/10 px-4 py-3">
-                  <p className="text-zinc-500 text-[10px] uppercase tracking-wide mb-1">Extraction Recovery</p>
+                <div className="rounded-xl border border-zinc-800/30 bg-zinc-900/10 px-4 py-3 space-y-1">
+                  <p className="text-zinc-500 text-[10px] uppercase tracking-wide">Extraction Recovery</p>
                   <p className="text-zinc-600 text-[10px]">No previous extraction job found — पहिले कुनै extraction भएको छैन।</p>
+                  <p className="text-zinc-700 text-[9px] font-mono">docId: {doc.id.slice(0, 16)}… · vault_documents.lastExtractionJob: null</p>
                 </div>
               );
             }
@@ -1465,6 +1459,11 @@ export function CivicObjectWorkspace({
                 : isPartial   ? "border-sky-900/50 bg-sky-950/15"
                 : "border-zinc-700/40 bg-zinc-900/10"
               }`}>
+                {/* Debug row */}
+                <p className="text-zinc-700 text-[9px] font-mono">
+                  docId: {doc.id.slice(0, 16)}… · source: vault_documents.lastExtractionJob · status: {savedJob.status}
+                </p>
+
                 {/* Header row */}
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-zinc-500 text-[10px] uppercase tracking-wide">Extraction Recovery</p>
