@@ -149,10 +149,12 @@ export const onRequestPost = async (context: {
   const prompt = buildExhaustivePrompt(body);
 
   try {
+    // 55s: CF network wait doesn't count against CPU time, so we can wait
+    // much longer than 27s for Gemini OCR on chart/table-heavy scanned pages.
     const timeout = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error(
-        `Chunk ${body.chunkIndex + 1} timeout (27s) — pages ${body.startPage}-${body.endPage}`
-      )), 27_000)
+        `Chunk ${body.chunkIndex + 1} timeout (55s) — pages ${body.startPage}-${body.endPage}`
+      )), 55_000)
     );
 
     const result = await Promise.race([

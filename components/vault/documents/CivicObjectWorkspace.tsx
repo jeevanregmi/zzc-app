@@ -565,15 +565,20 @@ export function CivicObjectWorkspace({
               : c
           ));
 
-          // Update Firestore: chunk complete
+          // Update Firestore + in-memory savedJob: chunk complete
+          const doneStatus: ChunkJobStatus = {
+            status: "done", atomCount: chunkAtoms, retryCount: attempt,
+          };
           updateDoc(firestoreDoc(db, "document_extraction_jobs", jobId), {
-            [`chunkStatuses.${chunk.index}`]: {
-              status: "done", atomCount: chunkAtoms, retryCount: attempt,
-              completedAt: new Date().toISOString(),
-            },
+            [`chunkStatuses.${chunk.index}`]: { ...doneStatus, completedAt: new Date().toISOString() },
             totalAtomsSaved: totalAtoms,
             updatedAt:       new Date().toISOString(),
           }).catch(() => {});
+          setSavedJob(prev => prev ? {
+            ...prev,
+            totalAtomsSaved: totalAtoms,
+            chunkStatuses: { ...prev.chunkStatuses, [String(chunk.index)]: doneStatus },
+          } : prev);
 
           success = true;
         } catch (err) {
@@ -586,13 +591,17 @@ export function CivicObjectWorkspace({
         setFullExtrChunks(prev => prev.map(c =>
           c.index === chunk.index ? { ...c, status: "error", error: lastError } : c
         ));
+        const failedStatus: ChunkJobStatus = {
+          status: "failed", atomCount: 0, error: lastError, retryCount: MAX_RETRIES,
+        };
         updateDoc(firestoreDoc(db, "document_extraction_jobs", jobId), {
-          [`chunkStatuses.${chunk.index}`]: {
-            status: "failed", atomCount: 0, error: lastError, retryCount: MAX_RETRIES,
-            completedAt: new Date().toISOString(),
-          },
+          [`chunkStatuses.${chunk.index}`]: { ...failedStatus, completedAt: new Date().toISOString() },
           updatedAt: new Date().toISOString(),
         }).catch(() => {});
+        setSavedJob(prev => prev ? {
+          ...prev,
+          chunkStatuses: { ...prev.chunkStatuses, [String(chunk.index)]: failedStatus },
+        } : prev);
       }
     }
 
@@ -674,6 +683,18 @@ export function CivicObjectWorkspace({
       });
       jobId = jobRef.id;
       setCurrentJobId(jobId);
+      // Update in-memory job so Recovery Panel shows "running" immediately
+      setSavedJob({
+        jobId,
+        expectedPages:   resolvedPageCount,
+        chunkSize:       CHUNK_PAGES,
+        totalChunks:     allChunks.length,
+        status:          "running",
+        totalAtomsSaved: 0,
+        startedAt:       new Date().toISOString(),
+        updatedAt:       new Date().toISOString(),
+        chunkStatuses:   {},
+      });
     } catch { /* continue without Firestore job if write fails */ }
 
     // Step 3 — Process all chunks
