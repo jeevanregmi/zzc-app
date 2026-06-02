@@ -41,6 +41,8 @@ interface RawAtom {
   founderMark?:     string;
   deterministicKey: string;
   pageType:         string;
+  extractionTier?:  string;
+  extractionMode?:  string;
   isDocumentMetadata?: boolean;
   // ── Domain classification fields ───────────────────────────────────────
   clauseNumber:     string;
@@ -64,10 +66,13 @@ interface Props {
   jobSummary:               ExtractionJobSummary | null;
   docDownloadUrl?:          string;
   confirmedExpectedPages?:  number;
+  savedAtomCount?:          number;
+  jobSummaryLastUpdated?:   string | number | null;
 }
 
 export function KnowledgeExtractionViewer({
   docId, ownerId, jobSummary, docDownloadUrl, confirmedExpectedPages,
+  savedAtomCount, jobSummaryLastUpdated,
 }: Props) {
   const [atoms,          setAtoms]          = useState<RawAtom[]>([]);
   const [loading,        setLoading]        = useState(true);
@@ -115,6 +120,8 @@ export function KnowledgeExtractionViewer({
             founderMark:      x.founderMark as string | undefined,
             deterministicKey: (x.deterministicKey as string) ?? d.id,
             pageType:         (x.pageType        as string)  ?? "content",
+            extractionTier:   (x.extractionTier  as string)  ?? "unknown",
+            extractionMode:   (x.extractionMode  as string)  ?? "",
             isDocumentMetadata: (x.isDocumentMetadata as boolean) ?? false,
             clauseNumber:     (x.clauseNumber    as string)  ?? "",
             subClauseMarker:  (x.subClauseMarker as string)  ?? "",
@@ -138,7 +145,7 @@ export function KnowledgeExtractionViewer({
       if (rawAtoms.length > 0) setExpandedChunks(new Set([rawAtoms[0].extractionChunk]));
       setLoading(false);
     })();
-  }, [docId, ownerId]);
+  }, [docId, ownerId, jobSummaryLastUpdated]);
 
   // ── Derived data ──────────────────────────────────────────────────────────
 
@@ -208,6 +215,39 @@ export function KnowledgeExtractionViewer({
       avgPerPage:     pageSet.size > 0 ? (atoms.length / pageSet.size).toFixed(1) : "0",
     };
   }, [atoms, jobSummary, confirmedExpectedPages]);
+
+  const coverageDiagnostics = useMemo(() => {
+    const savedJobCount = savedAtomCount ?? (jobSummary?.chunkStatuses
+      ? Object.values(jobSummary.chunkStatuses).reduce((sum, cs) => sum + (cs.atomCount ?? 0), 0)
+      : 0);
+    const actualRawCount = atoms.length;
+    const actualFullModeCount = atoms.filter(a => a.extractionMode === "full_chunked_raw_exhaustive").length;
+    const pageNumberCount = atoms.filter(a => a.pageNumber > 0).length;
+    const noPageCount = actualRawCount - pageNumberCount;
+    const uniquePages = new Set(atoms.map(a => a.pageNumber).filter(p => p > 0)).size;
+    const queryFilters = `ownerId == ${ownerId}, sourceDocId == ${docId}, limit 2000, in-memory extractionTier == raw_exhaustive`;
+
+    const mismatch = savedJobCount > 0 && savedJobCount !== actualRawCount;
+    const expected = stats.totalExpected;
+    const allDone = jobSummary
+      ? Object.values(jobSummary.chunkStatuses).every(cs => cs.status === "done")
+      : false;
+    const coverageMismatch = allDone && expected > 0 && stats.pagesWithAtoms < expected;
+
+    return {
+      savedJobCount,
+      actualRawCount,
+      actualFullModeCount,
+      pageNumberCount,
+      noPageCount,
+      uniquePages,
+      expected,
+      pagesMissing: stats.pagesWithZero.length,
+      queryFilters,
+      mismatch,
+      coverageMismatch,
+    };
+  }, [atoms, jobSummary, ownerId, docId, stats]);
 
   const filteredAtoms = useMemo(() => {
     let r = atoms;
@@ -372,6 +412,39 @@ export function KnowledgeExtractionViewer({
           >
             🌳 Outline
           </button>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-zinc-800/30 bg-zinc-900/10 px-3 py-3">
+        <div className="grid gap-2 md:grid-cols-3 text-[10px]">
+          <div className="rounded-lg border border-zinc-800/40 bg-zinc-900/20 p-2">
+            <p className="text-zinc-400 uppercase tracking-wide">Job summary saved</p>
+            <p className="text-sky-300 font-semibold mt-1 text-sm">{coverageDiagnostics.savedJobCount}</p>
+          </div>
+          <div className="rounded-lg border border-zinc-800/40 bg-zinc-900/20 p-2">
+            <p className="text-zinc-400 uppercase tracking-wide">Firestore raw_exhaustive</p>
+            <p className="text-emerald-300 font-semibold mt-1 text-sm">{coverageDiagnostics.actualRawCount}</p>
+          </div>
+          <div className="rounded-lg border border-zinc-800/40 bg-zinc-900/20 p-2">
+            <p className="text-zinc-400 uppercase tracking-wide">Full chunked mode</p>
+            <p className="text-amber-300 font-semibold mt-1 text-sm">{coverageDiagnostics.actualFullModeCount}</p>
+          </div>
+        </div>
+        <div className="mt-2 text-[10px] text-zinc-500 space-y-1">
+          <p>{coverageDiagnostics.pageNumberCount} atoms have valid page numbers, {coverageDiagnostics.noPageCount} missing page numbers.</p>
+          <p>Unique page numbers: {coverageDiagnostics.uniquePages}. Pages missing: {coverageDiagnostics.pagesMissing}.</p>
+          <p>Expected pages: {coverageDiagnostics.expected || "Unknown"}. Query filters: {coverageDiagnostics.queryFilters}</p>
+          <p>sourceDocId: {docId}</p>
+          {coverageDiagnostics.mismatch && (
+            <p className="text-red-400 font-semibold">
+              Job reported {coverageDiagnostics.savedJobCount}, but only {coverageDiagnostics.actualRawCount} records found. Verification failed.
+            </p>
+          )}
+          {coverageDiagnostics.coverageMismatch && (
+            <p className="text-red-400 font-semibold">
+              Extraction saved, but captured pages do not meet expected page count.
+            </p>
+          )}
         </div>
       </div>
 

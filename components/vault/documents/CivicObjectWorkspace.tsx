@@ -176,6 +176,8 @@ export function CivicObjectWorkspace({
   const [dangerousFallbackCount,setDangerousFallbackCount] = useState<number | null>(null);
   const [trulyAtomicCount,    setTrulyAtomicCount]    = useState<number | null>(null);
   const [rawExhaustiveCount,  setRawExhaustiveCount]  = useState<number | null>(null);
+  const [verifiedRawCount,    setVerifiedRawCount]    = useState<number | null>(null);
+  const [verifiedFullModeCount, setVerifiedFullModeCount] = useState<number | null>(null);
   const [loading,             setLoading]             = useState(true);
   const [activeLayer,         setActiveLayer]         = useState<ActiveLayer | null>(null);
 
@@ -418,7 +420,7 @@ export function CivicObjectWorkspace({
         collection(db, "janta_intelligence"),
         where("ownerId",     "==", ownerId),
         where("sourceDocId", "==", doc.id),
-        limit(500),
+        limit(3000),
       ));
       const unreviewed = snap.docs.filter(d => {
         const data = d.data() as Record<string, unknown>;
@@ -528,7 +530,7 @@ export function CivicObjectWorkspace({
             for (const para of page.paragraphs) {
               if (!para.text?.trim()) continue;
               // Deterministic ID prevents duplicate atoms on retry
-              const atomKey = `${doc.id}_ck${chunk.index}_p${para.orderIndex}`;
+              const atomKey = `${doc.id}_pg${page.pageNumber}_ck${chunk.index}_p${para.orderIndex}`;
               savePromises.push(
                 setDoc(firestoreDoc(db, "janta_intelligence", atomKey), {
                   ownerId,
@@ -555,6 +557,7 @@ export function CivicObjectWorkspace({
                   policyAction:         para.policyAction ?? "other",
                   affectedGroup:        para.affectedGroup ?? [],
                   extractionTier:       "raw_exhaustive",
+                  extractionMode:       "full_chunked_raw_exhaustive",
                   publishToJanta:       false,
                   published:            false,
                   publicReady:          false,
@@ -572,11 +575,13 @@ export function CivicObjectWorkspace({
               chunkAtoms++;
             }
           }
-          await Promise.all(savePromises);
-
+          const settledResults = await Promise.allSettled(savePromises);
+          const successfulWrites = settledResults.filter(r => r.status === "fulfilled").length;
+          if (successfulWrites !== chunkAtoms) {
+            console.warn(`[Chunk ${chunk.index}] ${chunkAtoms - successfulWrites} atom writes failed for ${doc.id}`);
+          }
+          chunkAtoms = successfulWrites;
           totalAtoms += chunkAtoms;
-          setFullExtrAtoms(totalAtoms);
-          setFullExtrParagraphs(totalAtoms);
           setFullExtrChunks(prev => prev.map(c =>
             c.index === chunk.index
               ? { ...c, status: "done", records: chunkAtoms, paragraphs: chunkAtoms, error: undefined }
@@ -632,12 +637,10 @@ export function CivicObjectWorkspace({
 
   async function cleanupOldRawAtoms() {
     try {
-      // Query all raw_exhaustive atoms for this document
       const snap = await getDocs(query(
         collection(db, "janta_intelligence"),
-        where("ownerId",      "==", ownerId),
-        where("sourceDocId",  "==", doc.id),
-        where("extractionTier", "==", "raw_exhaustive"),
+        where("ownerId",     "==", ownerId),
+        where("sourceDocId", "==", doc.id),
         limit(3000), // Safety limit
       ));
 
@@ -645,6 +648,11 @@ export function CivicObjectWorkspace({
       const deletePromises: Promise<unknown>[] = [];
 
       for (const d of snap.docs) {
+        const data = d.data() as Record<string, unknown>;
+        const isRawAtom = data.extractionTier === "raw_exhaustive";
+        const isFullExtraction = data.extractionMode === "full_chunked_raw_exhaustive";
+        if (!isRawAtom && !isFullExtraction) continue;
+
         deletePromises.push(
           deleteDoc(firestoreDoc(db, "janta_intelligence", d.id))
             .then(() => { deletedCount++; })
@@ -659,6 +667,29 @@ export function CivicObjectWorkspace({
     } catch (err) {
       console.warn("[Cleanup] Error cleaning old atoms:", (err as Record<string, unknown>)?.code ?? err);
       // Don't block extraction if cleanup fails
+    }
+  }
+
+  async function refreshExtractionCounts() {
+    try {
+      const snap = await getDocs(query(
+        collection(db, "janta_intelligence"),
+        where("ownerId",     "==", ownerId),
+        where("sourceDocId", "==", doc.id),
+        limit(3000),
+      ));
+
+      const rawDocs = snap.docs.map(d => d.data() as Record<string, unknown>);
+      const rawCount = rawDocs.filter(d => d.extractionTier === "raw_exhaustive").length;
+      const fullModeCount = rawDocs.filter(d => d.extractionMode === "full_chunked_raw_exhaustive").length;
+
+      setRawExhaustiveCount(rawCount);
+      setVerifiedRawCount(rawCount);
+      setVerifiedFullModeCount(fullModeCount);
+      return { rawCount, fullModeCount };
+    } catch (err) {
+      console.warn("[Refresh] Unable to verify extraction counts:", (err as Record<string, unknown>)?.code ?? err);
+      return { rawCount: -1, fullModeCount: -1 };
     }
   }
 
@@ -764,8 +795,11 @@ export function CivicObjectWorkspace({
     // Step 3 — Process all chunks
     const { totalAtoms, failedCount } = await runChunks(allChunks, allChunks, fileUri, jobId, 0);
 
-    // Step 4 — Finalize
-    setRawExhaustiveCount(totalAtoms);
+    // Step 4 — Verify actual Firestore records and update UI state
+    const counts = await refreshExtractionCounts();
+    setFullExtrAtoms(totalAtoms);
+    setFullExtrParagraphs(totalAtoms);
+    setRawExhaustiveCount(counts.rawCount);
     setAtomicCount(0);
     setTrulyAtomicCount(0);
     setFullExtrState("complete");
@@ -862,7 +896,10 @@ export function CivicObjectWorkspace({
       chunksToProcess, allChunks, fileUri, jobId, savedJob.totalAtomsSaved,
     );
 
-    setRawExhaustiveCount(totalAtoms);
+    const counts = await refreshExtractionCounts();
+    setFullExtrAtoms(totalAtoms);
+    setFullExtrParagraphs(totalAtoms);
+    setRawExhaustiveCount(counts.rawCount);
     setFullExtrState("complete");
 
     const finalStatus: JobRecord["status"] = failedCount > 0 ? "partial_complete" : "complete";
@@ -1899,6 +1936,11 @@ export function CivicObjectWorkspace({
                     <span className="text-emerald-400 text-base">✓</span>
                     <div>
                       <p className="text-emerald-300 text-xs font-bold">{fullExtrParagraphs} paragraphs → {fullExtrAtoms} raw atoms saved</p>
+                      {verifiedRawCount !== null && (
+                        <p className="text-sky-300 text-[10px]">
+                          Verified Firestore raw_exhaustive records: {verifiedRawCount}
+                        </p>
+                      )}
                       <p className="text-emerald-600 text-[10px]">
                         {fullExtrChunks.filter(c => c.status === "done").length}/{fullExtrChunks.length} chunks सफल ·
                         {fullExtrChunks.filter(c => c.status === "error").length > 0
@@ -1906,6 +1948,11 @@ export function CivicObjectWorkspace({
                           : " सबै chunks ठीक"}
                         {" · extractionTier: raw_exhaustive · publicReady: false"}
                       </p>
+                      {verifiedRawCount !== null && verifiedRawCount !== fullExtrAtoms && (
+                        <p className="text-red-400 text-[10px] font-semibold mt-1">
+                          Job reported {fullExtrAtoms} atoms, but Firestore contains {verifiedRawCount}. Verification failed.
+                        </p>
+                      )}
                     </div>
                   </div>
                   {/* Failed chunk summary */}
@@ -1958,6 +2005,8 @@ export function CivicObjectWorkspace({
               ownerId={ownerId}
               docDownloadUrl={doc.downloadUrl}
               confirmedExpectedPages={parseInt(founderExpectedPages, 10) || savedJob?.expectedPages || 0}
+              savedAtomCount={fullExtrAtoms || rawExhaustiveCount || 0}
+              jobSummaryLastUpdated={savedJob?.updatedAt ?? null}
               jobSummary={savedJob ? {
                 totalChunks:   savedJob.totalChunks,
                 expectedPages: savedJob.expectedPages,
