@@ -50,13 +50,16 @@ const safe = <T,>(p: Promise<T>, fb: T): Promise<T> =>
 // ── Main component ─────────────────────────────────────────────────────────────
 
 interface Props {
-  docId:           string;
-  ownerId:         string;
-  jobSummary:      ExtractionJobSummary | null;
-  docDownloadUrl?: string;
+  docId:                    string;
+  ownerId:                  string;
+  jobSummary:               ExtractionJobSummary | null;
+  docDownloadUrl?:          string;
+  confirmedExpectedPages?:  number;
 }
 
-export function KnowledgeExtractionViewer({ docId, ownerId, jobSummary, docDownloadUrl }: Props) {
+export function KnowledgeExtractionViewer({
+  docId, ownerId, jobSummary, docDownloadUrl, confirmedExpectedPages,
+}: Props) {
   const [atoms,          setAtoms]          = useState<RawAtom[]>([]);
   const [loading,        setLoading]        = useState(true);
   const [viewMode,       setViewMode]       = useState<"list" | "review">("list");
@@ -170,15 +173,23 @@ export function KnowledgeExtractionViewer({ docId, ownerId, jobSummary, docDownl
           .map(([i]) => parseInt(i, 10))
       : [];
 
+    // confirmed pages: workspace input > job summary > 0
+    const totalExpected = (confirmedExpectedPages && confirmedExpectedPages > 0)
+      ? confirmedExpectedPages
+      : (jobSummary?.expectedPages ?? 0);
+
+    const pagesRemaining = totalExpected > 0 ? Math.max(0, totalExpected - pageSet.size) : null;
+
     return {
-      totalExpected:  jobSummary?.expectedPages ?? 0,
+      totalExpected,
+      pagesRemaining,
       totalAtoms:     atoms.length,
       pagesWithAtoms: pageSet.size,
       pagesWithZero,
       failedChunks,
       avgPerPage:     pageSet.size > 0 ? (atoms.length / pageSet.size).toFixed(1) : "0",
     };
-  }, [atoms, jobSummary]);
+  }, [atoms, jobSummary, confirmedExpectedPages]);
 
   const filteredAtoms = useMemo(() => {
     let r = atoms;
@@ -210,9 +221,14 @@ export function KnowledgeExtractionViewer({ docId, ownerId, jobSummary, docDownl
       if (next) m[atomId] = next; else delete m[atomId];
       return m;
     });
+    const reviewStatus = next === "correct" || next === "important"
+      ? "reviewed"
+      : next === "duplicate"
+      ? "duplicate"
+      : "needs_review";
     await updateDoc(firestoreDoc(db, "janta_intelligence", atomId), {
       founderMark:         next ?? null,
-      founderReviewStatus: next === "correct" || next === "important" ? "reviewed" : "needs_review",
+      founderReviewStatus: reviewStatus,
     }).catch(() => {});
   }
 
@@ -360,25 +376,50 @@ export function KnowledgeExtractionViewer({ docId, ownerId, jobSummary, docDownl
       {/* ── Coverage Quality ── */}
       <div className="rounded-lg border border-zinc-800/40 bg-zinc-900/30 px-3 py-2 space-y-2">
         <p className="text-zinc-600 text-[9px] uppercase tracking-wide">Coverage Quality / कभरेज जाँच</p>
+
+        {/* Primary coverage headline */}
+        <div className={`rounded border px-2.5 py-1.5 ${
+          stats.pagesRemaining && stats.pagesRemaining > 0
+            ? "border-amber-800/40 bg-amber-950/15"
+            : "border-emerald-800/40 bg-emerald-950/10"
+        }`}>
+          <p className={`text-[11px] font-bold ${
+            stats.pagesRemaining && stats.pagesRemaining > 0 ? "text-amber-300" : "text-emerald-400"
+          }`}>
+            {stats.pagesWithAtoms} / {stats.totalExpected || "?"} pages captured
+            {stats.pagesRemaining !== null && stats.pagesRemaining > 0 && (
+              <span className="text-amber-500 font-normal"> — {stats.pagesRemaining} pages अझै बाँकी</span>
+            )}
+          </p>
+          <p className="text-zinc-600 text-[9px] mt-0.5">
+            {stats.totalAtoms} paragraphs · avg {stats.avgPerPage}/page
+            {stats.failedChunks.length > 0 && (
+              <span className="text-red-400"> · {stats.failedChunks.length} chunks failed</span>
+            )}
+          </p>
+        </div>
+
         <div className="grid grid-cols-3 gap-x-4 gap-y-1 text-[10px]">
           <div className="flex justify-between gap-1">
             <span className="text-zinc-600">Expected pages</span>
-            <span className="text-zinc-300 font-bold">{stats.totalExpected || "?"}</span>
+            <span className={`font-bold ${stats.totalExpected > 0 ? "text-zinc-300" : "text-amber-400"}`}>
+              {stats.totalExpected || "Unknown"}
+            </span>
           </div>
           <div className="flex justify-between gap-1">
-            <span className="text-zinc-600">Pages w/ atoms</span>
+            <span className="text-zinc-600">Pages captured</span>
             <span className="text-emerald-400 font-bold">{stats.pagesWithAtoms}</span>
           </div>
           <div className="flex justify-between gap-1">
-            <span className="text-zinc-600">Total atoms</span>
+            <span className="text-zinc-600">Total paragraphs</span>
             <span className="text-sky-400 font-bold">{stats.totalAtoms}</span>
           </div>
           <div className="flex justify-between gap-1">
-            <span className="text-zinc-600">Avg atoms/page</span>
+            <span className="text-zinc-600">Avg/page</span>
             <span className="text-zinc-400 font-bold">{stats.avgPerPage}</span>
           </div>
           <div className="flex justify-between gap-1">
-            <span className="text-zinc-600">Pages w/ 0 atoms</span>
+            <span className="text-zinc-600">Pages missing atoms</span>
             <span className={`font-bold ${stats.pagesWithZero.length > 0 ? "text-amber-400" : "text-zinc-600"}`}>
               {stats.pagesWithZero.length}
             </span>
@@ -641,6 +682,10 @@ function PageReviewMode({
       {/* Side-by-side paragraph ↔ atom view */}
       {slots.length > 0 && (
         <div className="space-y-2">
+          <div className="grid grid-cols-2 gap-0 divide-x divide-zinc-800/40 rounded-lg border border-zinc-800/40 bg-zinc-900/15 px-3 py-2 text-[9px] text-zinc-500">
+            <div>Original paragraph (PDF source)</div>
+            <div>Extracted atom / AI summary</div>
+          </div>
           {slots.map(({ idx, atom }) => (
             <div key={idx} className={`rounded-lg border overflow-hidden ${
               !atom ? "border-amber-800/30 bg-amber-950/10" : "border-zinc-800/40 bg-zinc-900/10"

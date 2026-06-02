@@ -85,6 +85,13 @@ function isConstitutionDoc(doc: IntelligenceDocument): boolean {
   );
 }
 
+function parsePageCount(value: string | number | null | undefined): number {
+  const parsed = typeof value === "number"
+    ? value
+    : parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
 // ── Public route display ───────────────────────────────────────────────────────
 
 const PUBLIC_ROUTES = [
@@ -818,6 +825,16 @@ export function CivicObjectWorkspace({
   const isConst    = isConstitutionDoc(doc);
   const isApproved = doc.adminApprovalStatus === "approved";
   const hasAI      = doc.processingStatus === "ai_ready";
+  const detectedPageCountNumber = detectedPageCount ?? 0;
+  const expectedPageCount = parsePageCount(founderExpectedPages) || savedJob?.expectedPages || detectedPageCountNumber;
+  const savedJobExpectedPages = savedJob?.expectedPages ?? 0;
+  const pageReviewStatus: "verified" | "mismatch" | "needs_review" = (() => {
+    if (expectedPageCount <= 0) return "needs_review";
+    if (savedJobExpectedPages > 0) {
+      return savedJobExpectedPages === expectedPageCount ? "verified" : "mismatch";
+    }
+    return "needs_review";
+  })();
   // public_ready = page-traced atoms + any intel records marked publishToJanta
   // Approximated as trulyAtomicCount for now; RecordLayerViewer does the exact query
   const allPublicCount = (trulyAtomicCount ?? 0);
@@ -896,46 +913,69 @@ export function CivicObjectWorkspace({
     try { localStorage.setItem(key, JSON.stringify(savedJob)); } catch {}
   }, [savedJob, doc.id]);
 
-  // Fresh read of vault_documents on mount — gets expectedPageCount + lastExtractionJob.
-  // vault_documents has working Firestore rules. document_extraction_jobs rules
-  // are in code but NOT deployed via CI (Cloudflare-only Actions), so we persist
-  // job state here instead.
+  // Fresh read of vault_documents on mount.
+  // Cascades: Firestore.expectedPageCount → job.expectedPages → localStorage.expectedPages
   useEffect(() => {
     if (!ownerId || !doc.id) return;
     void (async () => {
       const snap = await safe(getDoc(firestoreDoc(db, "vault_documents", doc.id)), null);
-      if (!snap?.exists()) return;
-      const d = snap.data() as Record<string, unknown>;
+      const d = snap?.exists() ? (snap.data() as Record<string, unknown>) : {};
 
-      // Load persisted page count override (founder set this in a previous session)
+      // ── Page count: cascade through all sources ──────────────────────────
       const epc = d.expectedPageCount as number | undefined;
-      if (epc && epc > 0) {
-        setFounderExpectedPages(String(epc));
-      }
+      let resolvedPages = epc && epc > 0 ? epc : 0;
 
-      // Load last extraction job: Firestore first, localStorage fallback
-      const firestoreJob = d.lastExtractionJob as Record<string, unknown> | undefined;
-      if (firestoreJob?.jobId) {
-        setSavedJob({
-          jobId:           (firestoreJob.jobId           as string)  ?? "unknown",
-          expectedPages:   (firestoreJob.expectedPages   as number)  ?? 0,
-          chunkSize:       (firestoreJob.chunkSize       as number)  ?? CHUNK_PAGES,
-          totalChunks:     (firestoreJob.totalChunks     as number)  ?? 0,
-          status:          (firestoreJob.status          as JobRecord["status"]) ?? "failed",
-          totalAtomsSaved: (firestoreJob.totalAtomsSaved as number)  ?? 0,
-          startedAt:       (firestoreJob.startedAt       as string)  ?? "",
-          updatedAt:       (firestoreJob.updatedAt       as string)  ?? "",
-          chunkStatuses:   (firestoreJob.chunkStatuses   as Record<string, ChunkJobStatus>) ?? {},
-        });
+      // Load extraction job: Firestore first, then localStorage
+      const firestoreJobRaw = d.lastExtractionJob as Record<string, unknown> | undefined;
+      let loadedJob: JobRecord | null = null;
+
+      if (firestoreJobRaw?.jobId) {
+        loadedJob = {
+          jobId:           (firestoreJobRaw.jobId           as string)  ?? "unknown",
+          expectedPages:   (firestoreJobRaw.expectedPages   as number)  ?? 0,
+          chunkSize:       (firestoreJobRaw.chunkSize       as number)  ?? CHUNK_PAGES,
+          totalChunks:     (firestoreJobRaw.totalChunks     as number)  ?? 0,
+          status:          (firestoreJobRaw.status          as JobRecord["status"]) ?? "failed",
+          totalAtomsSaved: (firestoreJobRaw.totalAtomsSaved as number)  ?? 0,
+          startedAt:       (firestoreJobRaw.startedAt       as string)  ?? "",
+          updatedAt:       (firestoreJobRaw.updatedAt       as string)  ?? "",
+          chunkStatuses:   (firestoreJobRaw.chunkStatuses   as Record<string, ChunkJobStatus>) ?? {},
+        };
+        setSavedJob(loadedJob);
       } else {
-        // Firestore write may have failed — check localStorage
         try {
           const localStr = localStorage.getItem(`zzc_extraction_job_${doc.id}`);
           if (localStr) {
             const localJob = JSON.parse(localStr) as JobRecord;
-            if (localJob?.jobId) setSavedJob(localJob);
+            if (localJob?.jobId) { setSavedJob(localJob); loadedJob = localJob; }
           }
         } catch {}
+      }
+
+      // Fallback: use job.expectedPages if no explicit expectedPageCount saved
+      if (resolvedPages === 0 && loadedJob?.expectedPages && loadedJob.expectedPages > 0) {
+        resolvedPages = loadedJob.expectedPages;
+      }
+
+      // Also check localStorage for page count even if no job stored there
+      if (resolvedPages === 0) {
+        try {
+          const localStr = localStorage.getItem(`zzc_extraction_job_${doc.id}`);
+          const lj = localStr ? (JSON.parse(localStr) as Record<string, unknown>) : null;
+          if (lj?.expectedPages && (lj.expectedPages as number) > 0) {
+            resolvedPages = lj.expectedPages as number;
+          }
+        } catch {}
+      }
+
+      if (resolvedPages > 0) {
+        setFounderExpectedPages(String(resolvedPages));
+        // Backfill vault_documents.expectedPageCount so future sessions don't need to cascade
+        if (!epc) {
+          void updateDoc(firestoreDoc(db, "vault_documents", doc.id), {
+            expectedPageCount: resolvedPages,
+          }).catch(e => console.warn("[VaultDoc] expectedPageCount backfill:", e?.code ?? e));
+        }
       }
     })();
   }, [doc.id, ownerId]);
@@ -1498,6 +1538,7 @@ export function CivicObjectWorkspace({
                   <div className="flex justify-between"><span className="text-zinc-600">कुल pages</span><span className="text-zinc-300 font-bold">{savedJob.expectedPages}</span></div>
                   <div className="flex justify-between"><span className="text-zinc-600">सफल groups</span><span className="text-emerald-400 font-bold">{doneCount}</span></div>
                   <div className="flex justify-between"><span className="text-zinc-600">Failed groups</span><span className={`font-bold ${failedCount > 0 ? "text-red-400" : "text-zinc-600"}`}>{failedCount}</span></div>
+                  <div className="flex justify-between"><span className="text-zinc-600">Expected pages</span><span className={`font-bold ${pageReviewStatus === "verified" ? "text-emerald-400" : pageReviewStatus === "mismatch" ? "text-amber-400" : "text-zinc-400"}`}>{expectedPageCount || "unknown"}</span></div>
                   <div className="flex justify-between"><span className="text-zinc-600">बाँकी groups</span><span className="text-zinc-500 font-bold">{pendingCount}</span></div>
                   <div className="flex justify-between"><span className="text-zinc-600">Paragraphs saved</span><span className="text-sky-400 font-bold">{savedJob.totalAtomsSaved}</span></div>
                   <div className="flex justify-between"><span className="text-zinc-600">Total groups</span><span className="text-zinc-400 font-bold">{savedJob.totalChunks}</span></div>
@@ -1539,6 +1580,11 @@ export function CivicObjectWorkspace({
                 {isComplete && (
                   <p className="text-emerald-500/80 text-[10px]">
                     ✓ {savedJob.totalAtomsSaved} paragraphs capture भए · {doneCount}/{savedJob.totalChunks} page groups सफल।
+                  </p>
+                )}
+                {expectedPageCount > 0 && (
+                  <p className={`text-[10px] ${pageReviewStatus === "verified" ? "text-emerald-400" : pageReviewStatus === "mismatch" ? "text-amber-400" : "text-zinc-500"}`}>
+                    Page review: expected {expectedPageCount} pages {pageReviewStatus === "verified" ? "verified" : pageReviewStatus === "mismatch" ? `— last job used ${savedJobExpectedPages}` : "needs confirmation"}.
                   </p>
                 )}
                 {isPartial && fullExtrState === "idle" && (
@@ -1618,27 +1664,106 @@ export function CivicObjectWorkspace({
                       const base = detectedPageCount ?? Math.ceil(doc.fileSize / 15000);
                       const resolved = override > 0 ? override : base;
                       return (
-                        <p className="text-zinc-600 text-[10px]">
-                          → <span className="text-sky-400 font-medium">{Math.ceil(resolved / 3)} chunks</span> (3 pages each) · {resolved} total pages
-                        </p>
+                        <>
+                          <p className="text-zinc-600 text-[10px]">
+                            → <span className={`font-medium ${override > 0 ? "text-sky-400" : "text-amber-400"}`}>
+                              {Math.ceil(resolved / 3)} chunks
+                            </span> (3 pages each) · {resolved} total pages
+                            {override === 0 && <span className="text-amber-500"> (size estimate — enter correct count above)</span>}
+                          </p>
+                          <p className={`text-[10px] ${pageReviewStatus === "verified" ? "text-emerald-400" : pageReviewStatus === "mismatch" ? "text-amber-400" : "text-zinc-500"}`}>
+                            Page review: expected {expectedPageCount || "unknown"} pages {pageReviewStatus === "verified" ? "verified" : pageReviewStatus === "mismatch" ? `— last job used ${savedJobExpectedPages}` : "— confirm before extraction"}.
+                          </p>
+                        </>
                       );
                     })()}
                   </div>
+
+                  {/* ── Page count warning / mismatch ── */}
+                  {(() => {
+                    const current  = parseInt(founderExpectedPages, 10);
+                    const jobPages = savedJob?.expectedPages ?? 0;
+                    const sizeEst  = Math.ceil(doc.fileSize / 15000);
+                    const isEmpty  = !founderExpectedPages || current <= 0;
+                    const isEstimate = current === sizeEst && !founderExpectedPages;
+                    const mismatch = jobPages > 0 && current > 0 && current !== jobPages && Math.abs(current - jobPages) > 3;
+
+                    if (isEmpty) {
+                      return (
+                        <div className="rounded-lg border border-amber-800/50 bg-amber-950/20 px-3 py-2 space-y-1.5">
+                          <p className="text-amber-300 text-[10px] font-bold">
+                            ⚠ Page count अज्ञात — extraction सुरु गर्नु अगाडि correct page count enter गर्नुस्।
+                          </p>
+                          {jobPages > 0 && (
+                            <button
+                              onClick={() => setFounderExpectedPages(String(jobPages))}
+                              className="text-[10px] px-2.5 py-1 rounded border border-amber-700/60 bg-amber-900/30 text-amber-200 hover:bg-amber-900/50 transition-colors font-semibold"
+                            >
+                              ✓ {jobPages} pages use गर्नुस् (पहिलेको extraction बाट)
+                            </button>
+                          )}
+                        </div>
+                      );
+                    }
+
+                    if (mismatch) {
+                      return (
+                        <div className="rounded-lg border border-amber-800/50 bg-amber-950/20 px-3 py-2 space-y-1.5">
+                          <p className="text-amber-300 text-[10px] font-bold">
+                            ⚠ Page count mismatch — पहिलेको extraction {jobPages} pages मा भएको थियो
+                          </p>
+                          <p className="text-amber-600 text-[10px]">
+                            हाल: {current} pages · पहिले: {jobPages} pages
+                          </p>
+                          <button
+                            onClick={() => setFounderExpectedPages(String(jobPages))}
+                            className="text-[10px] px-2.5 py-1 rounded border border-amber-700/60 bg-amber-900/30 text-amber-200 hover:bg-amber-900/50 transition-colors font-semibold"
+                          >
+                            ✓ {jobPages} pages use गर्नुस्
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    if (isEstimate) {
+                      return (
+                        <p className="text-amber-500 text-[10px]">
+                          ⚠ यो estimate मात्र हो (file size बाट) — document को actual page count enter गर्नुस्।
+                        </p>
+                      );
+                    }
+
+                    // All good — confirm
+                    return (
+                      <p className="text-emerald-600 text-[10px]">
+                        ✓ {current} pages confirmed — {Math.ceil(current / 3)} chunks plan।
+                      </p>
+                    );
+                  })()}
+
                   {((rawExhaustiveCount ?? 0) > 0 || (trulyAtomicCount ?? 0) > 0) && (
                     <p className="text-amber-400 text-[10px] leading-relaxed">
                       ⚠{" "}
-                      {(rawExhaustiveCount ?? 0) > 0 && `${rawExhaustiveCount} raw + `}
-                      {(trulyAtomicCount ?? 0) > 0 && `${trulyAtomicCount} atomic `}
-                      atoms पहिलेदेखि छन् — re-run गर्दा नयाँ atoms थपिन्छन्, पुरानाहरू मिसिन्छन्।
-                      <span className="text-amber-600"> माथि "Clean Re-run" बाट पहिले हटाउनुहोस्।</span>
+                      {(rawExhaustiveCount ?? 0) > 0 && `${rawExhaustiveCount} paragraphs + `}
+                      {(trulyAtomicCount ?? 0) > 0 && `${trulyAtomicCount} atoms `}
+                      पहिलेदेखि छन् — re-run गर्दा नयाँ atoms थपिन्छन्, पुरानाहरू मिसिन्छन्।
+                      <span className="text-amber-600"> माथि "Old extraction atoms हटाउनुहोस्" बाट पहिले हटाउनुहोस्।</span>
                     </p>
                   )}
-                  <button
-                    onClick={() => void handleFullExtraction()}
-                    className="w-full text-xs py-2.5 rounded-xl bg-sky-900/40 border border-sky-700/60 text-sky-200 hover:bg-sky-900/60 transition-colors font-semibold"
-                  >
-                    📄 Full Document Extraction चलाउनुहोस्
-                  </button>
+
+                  {/* Block extraction if page count is unknown */}
+                  {!founderExpectedPages || parseInt(founderExpectedPages, 10) <= 0 ? (
+                    <div className="w-full text-center py-2.5 rounded-xl border border-zinc-700/40 text-zinc-600 text-xs">
+                      Page count enter गर्नुस् — त्यसपछि extraction button देखिनेछ।
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => void handleFullExtraction()}
+                      className="w-full text-xs py-2.5 rounded-xl bg-sky-900/40 border border-sky-700/60 text-sky-200 hover:bg-sky-900/60 transition-colors font-semibold"
+                    >
+                      📄 Full Document Extraction चलाउनुहोस् ({Math.ceil(parseInt(founderExpectedPages, 10) / 3)} chunks)
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -1772,11 +1897,12 @@ export function CivicObjectWorkspace({
 
           {/* ── Source Coverage Verification ── */}
           {/* ── Knowledge Extraction Viewer ── */}
-          {!loading && isApproved && !isConst && (rawExhaustiveCount ?? 0) > 0 && (
+          {!loading && isApproved && !isConst && ((rawExhaustiveCount ?? 0) > 0 || (trulyAtomicCount ?? 0) > 0) && (
             <KnowledgeExtractionViewer
               docId={doc.id}
               ownerId={ownerId}
               docDownloadUrl={doc.downloadUrl}
+              confirmedExpectedPages={parseInt(founderExpectedPages, 10) || savedJob?.expectedPages || 0}
               jobSummary={savedJob ? {
                 totalChunks:   savedJob.totalChunks,
                 expectedPages: savedJob.expectedPages,
