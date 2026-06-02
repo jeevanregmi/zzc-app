@@ -705,9 +705,13 @@ export function CivicObjectWorkspace({
       chunkStatuses:   {},
     };
     setSavedJob(initialJob);
-    updateDoc(firestoreDoc(db, "vault_documents", doc.id), {
-      lastExtractionJob: initialJob,
-    }).catch(e => console.warn("[VaultDoc] initial job write failed:", e?.code ?? e, "— localStorage will handle recovery"));
+    // Persist expectedPageCount explicitly when founder provided an override so future sessions read it.
+    try {
+      void updateDoc(firestoreDoc(db, "vault_documents", doc.id), {
+        lastExtractionJob: initialJob,
+        expectedPageCount: resolvedPageCount,
+      }).catch(e => console.warn("[VaultDoc] initial job write failed:", e?.code ?? e, "— localStorage will handle recovery"));
+    } catch {}
 
     // Step 3 — Process all chunks
     const { totalAtoms, failedCount } = await runChunks(allChunks, allChunks, fileUri, jobId, 0);
@@ -733,7 +737,10 @@ export function CivicObjectWorkspace({
   async function handleResume(retryFailedOnly: boolean) {
     if (!savedJob) return;
 
-    const allChunks = buildChunkPlan(savedJob.expectedPages);
+    // Respect founder override if provided in the UI (founderExpectedPages), else fall back to saved job pages
+    const overridePages = parsePageCount(founderExpectedPages);
+    const resumeExpectedPages = overridePages > 0 ? overridePages : (savedJob.expectedPages || 0);
+    const allChunks = buildChunkPlan(resumeExpectedPages);
 
     // Restore display chunk grid from saved Firestore state
     const displayChunks: ChunkStatus[] = allChunks.map(c => {
