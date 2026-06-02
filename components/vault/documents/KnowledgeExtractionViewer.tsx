@@ -8,7 +8,7 @@
  * and identify coverage gaps before domain classification.
  */
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, ReactNode } from "react";
 import {
   collection, query, where, limit, getDocs,
   updateDoc, deleteDoc, doc as firestoreDoc,
@@ -40,6 +40,13 @@ interface RawAtom {
   founderReviewStatus: string;
   founderMark?:     string;
   deterministicKey: string;
+  // ── Domain classification fields ───────────────────────────────────────
+  clauseNumber:     string;
+  subClauseMarker:  string;
+  domain:           string;
+  taxType:          string;
+  policyAction:     string;
+  affectedGroup:    string[];
 }
 
 type FilterType = "all" | "needs_review" | "missing_heading" | "very_short" | "important" | "wrong";
@@ -62,7 +69,7 @@ export function KnowledgeExtractionViewer({
 }: Props) {
   const [atoms,          setAtoms]          = useState<RawAtom[]>([]);
   const [loading,        setLoading]        = useState(true);
-  const [viewMode,       setViewMode]       = useState<"list" | "review">("list");
+  const [viewMode,       setViewMode]       = useState<"list" | "review" | "outline">("list");
   const [reviewPageIdx,  setReviewPageIdx]  = useState(0);
   const [jumpInput,      setJumpInput]      = useState("");
   const [expandedChunks, setExpandedChunks] = useState<Set<number>>(new Set());
@@ -71,6 +78,7 @@ export function KnowledgeExtractionViewer({
   const [marks,          setMarks]          = useState<Record<string, string>>({});
   const [deleting,       setDeleting]       = useState<Set<string>>(new Set());
   const [confirmDelete,  setConfirmDelete]  = useState<string | null>(null);
+  const [expandedOutlineNodes, setExpandedOutlineNodes] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     setLoading(true);
@@ -104,6 +112,12 @@ export function KnowledgeExtractionViewer({
             founderReviewStatus: (x.founderReviewStatus as string) ?? "needs_review",
             founderMark:      x.founderMark as string | undefined,
             deterministicKey: (x.deterministicKey as string) ?? d.id,
+            clauseNumber:     (x.clauseNumber    as string)  ?? "",
+            subClauseMarker:  (x.subClauseMarker as string)  ?? "",
+            domain:           (x.domain          as string)  ?? "other",
+            taxType:          (x.taxType         as string)  ?? "",
+            policyAction:     (x.policyAction    as string)  ?? "other",
+            affectedGroup:    Array.isArray(x.affectedGroup) ? (x.affectedGroup as string[]) : [],
           };
         });
 
@@ -344,6 +358,16 @@ export function KnowledgeExtractionViewer({
           >
             📖 Page Review
           </button>
+          <button
+            onClick={() => setViewMode("outline")}
+            className={`text-[9px] px-2 py-1 rounded border transition-colors ${
+              viewMode === "outline"
+                ? "border-emerald-700 bg-emerald-900/40 text-emerald-300"
+                : "border-zinc-700 text-zinc-500 hover:text-zinc-300"
+            }`}
+          >
+            🌳 Outline
+          </button>
         </div>
       </div>
 
@@ -537,6 +561,23 @@ export function KnowledgeExtractionViewer({
         Wrong marks — delete गर्नुहोस्। Important marks — public routing मा priority।
       </p>
       </>) /* end list mode */}
+
+      {/* ── DOCUMENT OUTLINE MODE ── */}
+      {viewMode === "outline" && (
+        <DocumentOutlineView
+          atoms={atoms}
+          marks={marks}
+          onMark={markAtom}
+          onDelete={deleteAtom}
+          onPageBadgeClick={handlePageBadgeClick}
+          expandedNodes={expandedOutlineNodes}
+          onToggleNode={(nodeId) => {
+            const newSet = new Set(expandedOutlineNodes);
+            if (newSet.has(nodeId)) newSet.delete(nodeId); else newSet.add(nodeId);
+            setExpandedOutlineNodes(newSet);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -795,6 +836,36 @@ function AtomCard({
         >
           p{atom.pageNumber}·{atom.paragraphIndex}
         </button>
+        {atom.clauseNumber && (
+          <span className="text-[8px] border border-amber-800/40 bg-amber-950/20 text-amber-400 px-1.5 py-0.5 rounded">
+            {atom.clauseNumber}
+          </span>
+        )}
+        {atom.subClauseMarker && (
+          <span className="text-[8px] border border-amber-800/40 bg-amber-950/20 text-amber-300 px-1.5 py-0.5 rounded font-bold">
+            {atom.subClauseMarker}
+          </span>
+        )}
+        {atom.domain && atom.domain !== "other" && (
+          <span className="text-[8px] border border-violet-800/40 bg-violet-950/20 text-violet-400 px-1.5 py-0.5 rounded">
+            {atom.domain}
+          </span>
+        )}
+        {atom.taxType && (
+          <span className="text-[8px] border border-cyan-800/40 bg-cyan-950/20 text-cyan-400 px-1.5 py-0.5 rounded">
+            {atom.taxType}
+          </span>
+        )}
+        {atom.policyAction && atom.policyAction !== "other" && (
+          <span className="text-[8px] border border-emerald-800/40 bg-emerald-950/20 text-emerald-400 px-1.5 py-0.5 rounded">
+            {atom.policyAction}
+          </span>
+        )}
+        {atom.affectedGroup && atom.affectedGroup.length > 0 && (
+          <span className="text-[8px] border border-rose-800/40 bg-rose-950/20 text-rose-400 px-1.5 py-0.5 rounded">
+            {atom.affectedGroup.join(", ")}
+          </span>
+        )}
         {atom.isHeading && (
           <span className="text-[8px] border border-violet-800/40 bg-violet-950/30 text-violet-400 px-1.5 py-0.5 rounded">
             HEADING
@@ -894,5 +965,248 @@ function Btn({ label, title, active, color, onClick }: {
       className={`text-[10px] w-6 h-5 rounded border transition-colors ${cls}`}>
       {label}
     </button>
+  );
+}
+
+// ── Document Outline View ────────────────────────────────────────────────────
+
+interface DocumentOutlineProps {
+  atoms:             RawAtom[];
+  marks:             Record<string, string>;
+  onMark:            (id: string, mark: string) => void;
+  onDelete:          (id: string) => Promise<void>;
+  onPageBadgeClick?: (pageNum: number) => void;
+  expandedNodes:     Set<string>;
+  onToggleNode:      (nodeId: string) => void;
+}
+
+function DocumentOutlineView({
+  atoms, marks, onMark, onDelete, onPageBadgeClick,
+  expandedNodes, onToggleNode,
+}: DocumentOutlineProps) {
+  // Build hierarchical structure: section → heading → subheading → atoms
+  interface OutlineNode {
+    id:         string;
+    type:       "section" | "heading" | "subheading" | "atom";
+    label:      string;
+    atoms:      RawAtom[];
+    children:   OutlineNode[];
+  }
+
+  const nodeMap = new Map<string, OutlineNode>();
+  const rootNodes: OutlineNode[] = [];
+
+  // Group atoms into hierarchy
+  for (const atom of atoms.sort((a, b) => 
+    a.pageNumber !== b.pageNumber ? a.pageNumber - b.pageNumber :
+    a.paragraphIndex - b.paragraphIndex
+  )) {
+    const sectionKey = `sec:${atom.sectionTitle || "unnamed"}`;
+    const headingKey  = `${sectionKey}_head:${atom.heading || "unnamed"}`;
+    const subheadKey  = `${headingKey}_sub:${atom.subheading || "unnamed"}`;
+
+    // Create section node if needed
+    if (!nodeMap.has(sectionKey) && atom.sectionTitle) {
+      const secNode: OutlineNode = {
+        id: sectionKey,
+        type: "section",
+        label: atom.sectionTitle,
+        atoms: [],
+        children: [],
+      };
+      nodeMap.set(sectionKey, secNode);
+      rootNodes.push(secNode);
+    }
+
+    // Create heading node if needed
+    if (!nodeMap.has(headingKey) && atom.heading) {
+      const headNode: OutlineNode = {
+        id: headingKey,
+        type: "heading",
+        label: atom.heading,
+        atoms: [],
+        children: [],
+      };
+      nodeMap.set(headingKey, headNode);
+      const secNode = sectionKey && atom.sectionTitle ? nodeMap.get(sectionKey) : null;
+      if (secNode) secNode.children.push(headNode);
+      else rootNodes.push(headNode);
+    }
+
+    // Create subheading node if needed
+    if (!nodeMap.has(subheadKey) && atom.subheading) {
+      const subNode: OutlineNode = {
+        id: subheadKey,
+        type: "subheading",
+        label: atom.subheading,
+        atoms: [],
+        children: [],
+      };
+      nodeMap.set(subheadKey, subNode);
+      const headNode = headingKey && atom.heading ? nodeMap.get(headingKey) : null;
+      if (headNode) headNode.children.push(subNode);
+      else if (sectionKey && atom.sectionTitle) {
+        const secNode = nodeMap.get(sectionKey);
+        if (secNode) secNode.children.push(subNode);
+      } else rootNodes.push(subNode);
+    }
+
+    // Add atom node
+    const atomNode: OutlineNode = {
+      id: atom.id,
+      type: "atom",
+      label: atom.originalText.slice(0, 100) + (atom.originalText.length > 100 ? "…" : ""),
+      atoms: [atom],
+      children: [],
+    };
+
+    const targetNode = atom.subheading && nodeMap.has(subheadKey)
+      ? nodeMap.get(subheadKey)
+      : atom.heading && nodeMap.has(headingKey)
+      ? nodeMap.get(headingKey)
+      : atom.sectionTitle && nodeMap.has(sectionKey)
+      ? nodeMap.get(sectionKey)
+      : null;
+
+    if (targetNode) {
+      targetNode.children.push(atomNode);
+      targetNode.atoms.push(atom);
+    } else {
+      rootNodes.push(atomNode);
+    }
+  }
+
+  // Render tree
+  function renderNode(node: OutlineNode, depth: number): ReactNode {
+    const isExpanded = expandedNodes.has(node.id);
+    const isAtom = node.type === "atom";
+    const atom = node.atoms[0];
+
+    const bgColor = node.type === "section" ? "bg-zinc-900/30"
+                  : node.type === "heading" ? "bg-zinc-900/20"
+                  : node.type === "subheading" ? "bg-zinc-900/10"
+                  : "bg-zinc-900/5";
+
+    const markBg = atom && marks[atom.id] === "wrong"     ? "bg-red-950/15"
+                 : atom && marks[atom.id] === "important" ? "bg-amber-950/10"
+                 : atom && marks[atom.id] === "correct"   ? "bg-emerald-950/5"
+                 : "";
+
+    return (
+      <div key={node.id} className={`${markBg}`}>
+        {isAtom && atom ? (
+          // Atom card
+          <div className="px-3 py-2 space-y-1.5 text-[9px]">
+            <div className="flex items-center gap-1 flex-wrap">
+              <button
+                onClick={() => onPageBadgeClick?.(atom.pageNumber)}
+                title="Jump to Page Review"
+                className="text-[8px] font-mono bg-zinc-800/60 text-sky-500 hover:text-sky-300 hover:bg-sky-950/40 px-1.5 py-0.5 rounded transition-colors border border-transparent hover:border-sky-800/50"
+              >
+                p{atom.pageNumber}·{atom.paragraphIndex}
+              </button>
+              {atom.clauseNumber && (
+                <span className="text-[8px] border border-amber-800/40 bg-amber-950/20 text-amber-400 px-1.5 py-0.5 rounded">
+                  {atom.clauseNumber}
+                </span>
+              )}
+              {atom.subClauseMarker && (
+                <span className="text-[8px] border border-amber-800/40 bg-amber-950/20 text-amber-300 px-1.5 py-0.5 rounded font-bold">
+                  {atom.subClauseMarker}
+                </span>
+              )}
+              {atom.domain && atom.domain !== "other" && (
+                <span className="text-[8px] border border-violet-800/40 bg-violet-950/20 text-violet-400 px-1.5 py-0.5 rounded">
+                  {atom.domain}
+                </span>
+              )}
+              {atom.taxType && (
+                <span className="text-[8px] border border-cyan-800/40 bg-cyan-950/20 text-cyan-400 px-1.5 py-0.5 rounded">
+                  {atom.taxType}
+                </span>
+              )}
+              {atom.policyAction && atom.policyAction !== "other" && (
+                <span className="text-[8px] border border-emerald-800/40 bg-emerald-950/20 text-emerald-400 px-1.5 py-0.5 rounded">
+                  {atom.policyAction}
+                </span>
+              )}
+              {!!marks[atom.id] && (
+                <span className={`text-[8px] font-bold uppercase ml-auto ${
+                  marks[atom.id] === "correct"   ? "text-emerald-400" :
+                  marks[atom.id] === "important" ? "text-amber-400"   :
+                  marks[atom.id] === "wrong"     ? "text-red-400"     :
+                  "text-violet-400"
+                }`}>{marks[atom.id]}</span>
+              )}
+            </div>
+            <p className="text-zinc-300 text-[9px] leading-relaxed">{atom.originalText}</p>
+            {!!atom.summaryNepali && (
+              <p className="text-sky-600/90 text-[8px] italic">{atom.summaryNepali}</p>
+            )}
+            <div className="flex items-center gap-1 pt-0.5">
+              <Btn label="✓" title="Correct"   active={marks[atom.id] === "correct"}   color="emerald" onClick={() => onMark(atom.id, "correct")} />
+              <Btn label="★" title="Important" active={marks[atom.id] === "important"} color="amber"   onClick={() => onMark(atom.id, "important")} />
+              <Btn label="✗" title="Wrong"     active={marks[atom.id] === "wrong"}     color="red"     onClick={() => onMark(atom.id, "wrong")} />
+            </div>
+          </div>
+        ) : (
+          // Group node
+          <>
+            <button
+              onClick={() => onToggleNode(node.id)}
+              className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-zinc-800/30 transition-colors text-left"
+              style={{ paddingLeft: `${12 + depth * 16}px` }}
+            >
+              <span className="text-zinc-600 text-[9px]">{isExpanded ? "▼" : "▶"}</span>
+              <span className={`text-[10px] font-semibold ${
+                node.type === "section" ? "text-zinc-300" :
+                node.type === "heading" ? "text-zinc-400" :
+                "text-zinc-500"
+              }`}>
+                {node.label}
+              </span>
+              <span className="text-zinc-600 text-[9px] ml-auto">
+                {node.children.length} {node.children.length === 1 ? "item" : "items"}
+              </span>
+            </button>
+            {isExpanded && (
+              <div className="border-l border-zinc-800/30">
+                {node.children.map(child => renderNode(child, depth + 1))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between px-3 py-2">
+        <p className="text-zinc-600 text-[9px] font-semibold">Document Structure Hierarchy</p>
+        <div className="flex gap-2">
+          <button
+            onClick={() => onToggleNode("expand-all")}
+            className="text-[9px] text-zinc-600 hover:text-zinc-400 transition-colors"
+          >
+            Expand all
+          </button>
+          <button
+            onClick={() => onToggleNode("collapse-all")}
+            className="text-[9px] text-zinc-600 hover:text-zinc-400 transition-colors"
+          >
+            Collapse all
+          </button>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-zinc-800/40 bg-zinc-900/20 overflow-hidden max-h-[600px] overflow-y-auto">
+        {rootNodes.length === 0 ? (
+          <div className="px-3 py-4 text-zinc-600 text-[9px]">No structured headings found</div>
+        ) : (
+          rootNodes.map(node => renderNode(node, 0))
+        )}
+      </div>
+    </div>
   );
 }

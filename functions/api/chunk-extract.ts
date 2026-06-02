@@ -42,6 +42,13 @@ export interface RawParagraph {
   heading?:      string;
   subheading?:   string;
   isHeading?:    boolean;
+  // ── Domain classification fields ───────────────────────────────────────
+  clauseNumber?:    string;      // e.g., "१.", "२.", "१. (क)", etc.
+  subClauseMarker?: string;      // e.g., "(क)", "(ख)", "(ग)", "(घ)"
+  domain?:          string;      // tax_policy | revenue | industry | green_policy | governance | employment | social | infrastructure | other
+  taxType?:         string;      // customs_duty | income_tax | green_tax | excise | VAT | property_tax | other
+  policyAction?:    string;      // increase | decrease | exemption | reform | new_program | continuation
+  affectedGroup?:   string[];    // industry | taxpayer | household | importer | producer | farmer | government | civil_service | other
 }
 
 export interface RawPage {
@@ -78,6 +85,12 @@ For EACH paragraph, extract:
 - heading: the nearest heading above this paragraph (e.g. "Education Budget Allocation"), empty string if none
 - subheading: the nearest subheading above this paragraph (e.g. "Secondary School Programs"), empty string if none
 - isHeading: true if this paragraph IS itself a heading/title/section title, false otherwise
+- clauseNumber: if this paragraph is a numbered clause (e.g., "१.", "२.", "३.") or contains a clause reference, extract it; otherwise empty string
+- subClauseMarker: if this paragraph contains a sub-clause marker like (क), (ख), (ग), (घ), or (a), (b), (c), extract it; otherwise empty string
+- domain: classify the content domain: "tax_policy" | "revenue" | "industry" | "green_policy" | "governance" | "employment" | "social" | "infrastructure" | "other"
+- taxType: if domain is "tax_policy" or "revenue", extract the tax type: "customs_duty" | "income_tax" | "green_tax" | "excise" | "VAT" | "property_tax" | "other"; otherwise empty string
+- policyAction: the type of action being described: "increase" | "decrease" | "exemption" | "reform" | "new_program" | "continuation" | "other"
+- affectedGroup: array of groups affected by this paragraph (choose from): ["industry"] | ["taxpayer"] | ["household"] | ["importer"] | ["producer"] | ["farmer"] | ["government"] | ["civil_service"] | ["other"]
 
 DOCUMENT STRUCTURE RULES:
 - Every paragraph must carry the sectionTitle and heading from its context — even if they appeared on a previous page in this chunk
@@ -108,7 +121,13 @@ Return ONLY this JSON (no markdown, no explanation, start with {):
           "sectionTitle": "Part 1: Economic Overview",
           "heading": "Introduction",
           "subheading": "",
-          "isHeading": false
+          "isHeading": false,
+          "clauseNumber": "",
+          "subClauseMarker": "",
+          "domain": "other",
+          "taxType": "",
+          "policyAction": "other",
+          "affectedGroup": []
         }
       ]
     }
@@ -208,6 +227,12 @@ export const onRequestPost = async (context: {
               heading:       String(para.heading ?? ""),
               subheading:    String(para.subheading ?? ""),
               isHeading:     para.isHeading === true,
+              clauseNumber:  String(para.clauseNumber ?? ""),
+              subClauseMarker: String(para.subClauseMarker ?? ""),
+              domain:        String(para.domain ?? "other"),
+              taxType:       String(para.taxType ?? ""),
+              policyAction:  String(para.policyAction ?? "other"),
+              affectedGroup: Array.isArray(para.affectedGroup) ? (para.affectedGroup as string[]) : [],
             }))
         : [];
 

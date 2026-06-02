@@ -510,6 +510,8 @@ export function CivicObjectWorkspace({
               paragraphs: Array<{
                 text: string; summaryNepali: string; type: string; orderIndex: number;
                 sectionTitle?: string; heading?: string; subheading?: string; isHeading?: boolean;
+                clauseNumber?: string; subClauseMarker?: string;
+                domain?: string; taxType?: string; policyAction?: string; affectedGroup?: string[];
               }>;
             }>;
             error?: string;
@@ -543,6 +545,12 @@ export function CivicObjectWorkspace({
                   heading:              para.heading      ?? "",
                   subheading:           para.subheading   ?? "",
                   isHeading:            para.isHeading    ?? false,
+                  clauseNumber:         para.clauseNumber ?? "",
+                  subClauseMarker:      para.subClauseMarker ?? "",
+                  domain:               para.domain ?? "other",
+                  taxType:              para.taxType ?? "",
+                  policyAction:         para.policyAction ?? "other",
+                  affectedGroup:        para.affectedGroup ?? [],
                   extractionTier:       "raw_exhaustive",
                   publishToJanta:       false,
                   published:            false,
