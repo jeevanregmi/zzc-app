@@ -510,6 +510,7 @@ export function CivicObjectWorkspace({
               paragraphs: Array<{
                 text: string; summaryNepali: string; type: string; orderIndex: number;
                 sectionTitle?: string; heading?: string; subheading?: string; isHeading?: boolean;
+                pageType?: string;
                 clauseNumber?: string; subClauseMarker?: string;
                 domain?: string; taxType?: string; policyAction?: string; affectedGroup?: string[];
               }>;
@@ -545,6 +546,8 @@ export function CivicObjectWorkspace({
                   heading:              para.heading      ?? "",
                   subheading:           para.subheading   ?? "",
                   isHeading:            para.isHeading    ?? false,
+                  pageType:             para.pageType ?? "content",
+                  isDocumentMetadata:   (para.pageType === "cover_page" || para.pageType === "metadata") ?? false,
                   clauseNumber:         para.clauseNumber ?? "",
                   subClauseMarker:      para.subClauseMarker ?? "",
                   domain:               para.domain ?? "other",
@@ -625,11 +628,48 @@ export function CivicObjectWorkspace({
 
   // ── Full chunked extraction (Phase 2 — fresh start) ───────────────────────────
 
+  // ── Clean up old extraction atoms before fresh run ────────────────────────
+
+  async function cleanupOldRawAtoms() {
+    try {
+      // Query all raw_exhaustive atoms for this document
+      const snap = await getDocs(query(
+        collection(db, "janta_intelligence"),
+        where("ownerId",      "==", ownerId),
+        where("sourceDocId",  "==", doc.id),
+        where("extractionTier", "==", "raw_exhaustive"),
+        limit(3000), // Safety limit
+      ));
+
+      let deletedCount = 0;
+      const deletePromises: Promise<unknown>[] = [];
+
+      for (const d of snap.docs) {
+        deletePromises.push(
+          deleteDoc(firestoreDoc(db, "janta_intelligence", d.id))
+            .then(() => { deletedCount++; })
+            .catch(() => {}) // Silent fail — don't block extraction
+        );
+      }
+
+      await Promise.all(deletePromises);
+      if (deletedCount > 0) {
+        console.log(`[Cleanup] Deleted ${deletedCount} old raw_exhaustive atoms for doc ${doc.id}`);
+      }
+    } catch (err) {
+      console.warn("[Cleanup] Error cleaning old atoms:", (err as Record<string, unknown>)?.code ?? err);
+      // Don't block extraction if cleanup fails
+    }
+  }
+
   async function handleFullExtraction() {
     setFullExtrAtoms(0);
     setFullExtrParagraphs(0);
     setFullExtrError("");
     setFullExtrState("uploading");
+
+    // Step 0 — Clean up old raw_exhaustive atoms from previous runs
+    await cleanupOldRawAtoms();
 
     // Step 1 — Upload PDF to Gemini Files API
     let fileUri = "";

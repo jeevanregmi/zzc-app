@@ -40,6 +40,8 @@ interface RawAtom {
   founderReviewStatus: string;
   founderMark?:     string;
   deterministicKey: string;
+  pageType:         string;
+  isDocumentMetadata?: boolean;
   // ── Domain classification fields ───────────────────────────────────────
   clauseNumber:     string;
   subClauseMarker:  string;
@@ -112,6 +114,8 @@ export function KnowledgeExtractionViewer({
             founderReviewStatus: (x.founderReviewStatus as string) ?? "needs_review",
             founderMark:      x.founderMark as string | undefined,
             deterministicKey: (x.deterministicKey as string) ?? d.id,
+            pageType:         (x.pageType        as string)  ?? "content",
+            isDocumentMetadata: (x.isDocumentMetadata as boolean) ?? false,
             clauseNumber:     (x.clauseNumber    as string)  ?? "",
             subClauseMarker:  (x.subClauseMarker as string)  ?? "",
             domain:           (x.domain          as string)  ?? "other",
@@ -871,6 +875,15 @@ function AtomCard({
             HEADING
           </span>
         )}
+        {atom.pageType && atom.pageType !== "content" && (
+          <span className={`text-[8px] border px-1.5 py-0.5 rounded font-semibold ${
+            atom.pageType === "cover_page"
+              ? "border-gray-800/40 bg-gray-950/20 text-gray-400"
+              : "border-zinc-800/40 bg-zinc-950/20 text-zinc-400"
+          }`}>
+            {atom.pageType === "cover_page" ? "📄 Cover" : "📋 Metadata"}
+          </span>
+        )}
         <span className="text-[8px] border border-zinc-700/40 text-zinc-500 px-1.5 py-0.5 rounded">
           {atom.type}
         </span>
@@ -1128,6 +1141,15 @@ function DocumentOutlineView({
               {atom.policyAction && atom.policyAction !== "other" && (
                 <span className="text-[8px] border border-emerald-800/40 bg-emerald-950/20 text-emerald-400 px-1.5 py-0.5 rounded">
                   {atom.policyAction}
+                </span>
+              )}
+              {atom.pageType && atom.pageType !== "content" && (
+                <span className={`text-[8px] border px-1.5 py-0.5 rounded font-semibold ${
+                  atom.pageType === "cover_page"
+                    ? "border-gray-800/40 bg-gray-950/20 text-gray-400"
+                    : "border-zinc-800/40 bg-zinc-950/20 text-zinc-400"
+                }`}>
+                  {atom.pageType === "cover_page" ? "📄 Cover" : "📋 Metadata"}
                 </span>
               )}
               {!!marks[atom.id] && (

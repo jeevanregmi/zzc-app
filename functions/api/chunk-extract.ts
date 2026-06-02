@@ -42,6 +42,7 @@ export interface RawParagraph {
   heading?:      string;
   subheading?:   string;
   isHeading?:    boolean;
+  pageType?:     string;         // "cover_page" | "metadata" | "content" — identifies non-policy pages
   // ── Domain classification fields ───────────────────────────────────────
   clauseNumber?:    string;      // e.g., "१.", "२.", "१. (क)", etc.
   subClauseMarker?: string;      // e.g., "(क)", "(ख)", "(ग)", "(घ)"
@@ -91,6 +92,15 @@ For EACH paragraph, extract:
 - taxType: if domain is "tax_policy" or "revenue", extract the tax type: "customs_duty" | "income_tax" | "green_tax" | "excise" | "VAT" | "property_tax" | "other"; otherwise empty string
 - policyAction: the type of action being described: "increase" | "decrease" | "exemption" | "reform" | "new_program" | "continuation" | "other"
 - affectedGroup: array of groups affected by this paragraph (choose from): ["industry"] | ["taxpayer"] | ["household"] | ["importer"] | ["producer"] | ["farmer"] | ["government"] | ["civil_service"] | ["other"]
+- pageType: classify the page type for this paragraph: "cover_page" | "metadata" | "content"
+  * "cover_page" — if page is primarily title/presenter/ministry/date/website/introduction with minimal policy content (typically first 1-2 pages)
+  * "metadata" — if paragraph is document metadata (date, version, signature line, page footer, document source URL)
+  * "content" — normal policy/governance content (default; use for all policy paragraphs)
+
+COVER/METADATA DETECTION RULES:
+- If page ${req.startPage} (first page of chunk) contains mostly: title, presenter name, ministry name, date, website, logo, opening preamble → mark paragraphs on that page as "cover_page"
+- Metadata includes: "वार्षिक प्रतिवेदन", "तयारी गरेको", "प्रकाशन मिति", "वेबसाइट", "डाउनलोड गरियो", "संस्करण", "हस्ताक्षर", page numbers, footer text
+- Do NOT mark policy paragraphs (budget amounts, policy directives, program descriptions) as cover/metadata — always use "content"
 
 DOCUMENT STRUCTURE RULES:
 - Every paragraph must carry the sectionTitle and heading from its context — even if they appeared on a previous page in this chunk
@@ -122,6 +132,7 @@ Return ONLY this JSON (no markdown, no explanation, start with {):
           "heading": "Introduction",
           "subheading": "",
           "isHeading": false,
+          "pageType": "content",
           "clauseNumber": "",
           "subClauseMarker": "",
           "domain": "other",
@@ -227,6 +238,7 @@ export const onRequestPost = async (context: {
               heading:       String(para.heading ?? ""),
               subheading:    String(para.subheading ?? ""),
               isHeading:     para.isHeading === true,
+              pageType:      String(para.pageType ?? "content"),
               clauseNumber:  String(para.clauseNumber ?? ""),
               subClauseMarker: String(para.subClauseMarker ?? ""),
               domain:        String(para.domain ?? "other"),
